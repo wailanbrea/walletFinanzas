@@ -7,6 +7,11 @@
 - **Backend Laravel:** no creado, conforme al orden obligatorio.
 - **Módulo Android de correo:** no creado, conforme al orden obligatorio.
 
+## Control de versión
+
+- **Commit base recuperable:** `48eef59` — `chore: establish verified Android baseline` (20/07/2026).
+- Credenciales, `local.properties`, `google-services.json`, outputs de build y artefactos de emulador permanecen fuera del commit por `.gitignore`.
+
 ## Evidencia de la sesión — 2026-07-20
 
 **Objetivo:** validar la línea base real y eliminar el bloqueo de compilación de pruebas unitarias.

@@ -33,8 +33,8 @@ Una tarea solo se marca `[x]` si el código existe, compila, sus pruebas aplicab
 - [x] Revisar `git status` y separar artefactos de pruebas/emulador del código fuente. Evidencia 20/07/2026: se identificaron XML/PNG de emulador en raíz y se excluyeron mediante `.gitignore`, sin borrar archivos.
 - [x] Completar `.gitignore` para Gradle, IDE, APK, archivos locales, credenciales y capturas temporales. Evidencia 20/07/2026: reglas verificadas para `local.properties`, Firebase, APK, salida Graphify y artefactos UI/emulador.
 - [x] Verificar que `local.properties`, secretos y credenciales Firebase privadas no queden versionados. Evidencia 20/07/2026: `git check-ignore -v` confirma `local.properties` y `app/google-services.json`.
-- [ ] Crear un commit base intencional antes del módulo de correo.
-- [ ] Registrar hash del commit base en `IMPLEMENTATION_STATUS.md`.
+- [x] Crear un commit base intencional antes del módulo de correo. Evidencia 20/07/2026: commit raíz `48eef59` (`chore: establish verified Android baseline`).
+- [x] Registrar hash del commit base en `IMPLEMENTATION_STATUS.md`. Evidencia: sección de control de versión agregada 20/07/2026.
 
 ### 0.2 Calidad Android actual
 
