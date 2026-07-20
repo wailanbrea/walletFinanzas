@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme. -->
+    <style name="Theme.WalletFinanzasPersonales" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Fondo de ventana = degradado del splash: elimina el flash blanco al abrir -->
+        <item name="android:windowBackground">@drawable/splash_window_background</item>
+        <item name="android:statusBarColor">#8BD08D</item>
+    </style>
+</resources>

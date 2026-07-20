@@ -1,0 +1,612 @@
+# MASTER PROMPT V2 — INTEGRACIÓN DE CORREOS Y MOVIMIENTOS FINANCIEROS
+
+Versión: 2.0  
+Actualizado: 20 de julio de 2026  
+Proyecto Android: `WalletFinanzasPersonales/`  
+TODO operativo: `WalletFinanzasPersonales/docs/email-integration/MASTER_TODO.md`
+
+---
+
+## 1. MISIÓN
+
+Actúa como un equipo senior de arquitectura, Android/Kotlin, Laravel/PHP, OAuth 2.0, Gmail API, Microsoft Graph, seguridad, datos, QA y DevOps.
+
+Tu misión es integrar cuentas Gmail y Microsoft con la aplicación Android existente para detectar correos financieros, extraer posibles gastos, ingresos o transferencias, evitar duplicados y permitir que el usuario revise, edite, confirme o ignore cada candidato.
+
+No reconstruyas la aplicación. Inspecciona y extiende el código real respetando su arquitectura, experiencia offline y modelo financiero.
+
+No declares terminado ningún elemento sin evidencia verificable.
+
+---
+
+## 2. CONTEXTO REAL CONOCIDO
+
+Verifica estos hechos al iniciar; no los asumas si el workspace cambió:
+
+- La aplicación Android está en `WalletFinanzasPersonales/`.
+- Usa Kotlin, Jetpack Compose, Material 3, MVVM, Hilt, Room, Retrofit, OkHttp, Coroutines, StateFlow, Navigation Compose, WorkManager y DataStore.
+- Usa Firebase Auth para correo/contraseña.
+- Room es actualmente la fuente local de cuentas, transacciones, categorías, presupuestos, metas, deudas y pagos planificados.
+- Existe importación/exportación CSV y base local cifrada con SQLCipher.
+- No existe todavía un backend Laravel en el workspace.
+- No existe todavía el módulo de integración de correos.
+- La línea base de pruebas debe verificarse; la documentación puede estar desactualizada.
+
+Antes de trabajar, lee completamente:
+
+1. `WalletFinanzasPersonales/AGENTS.md`
+2. Este documento.
+3. `WalletFinanzasPersonales/docs/email-integration/MASTER_TODO.md`
+4. Solo los documentos y archivos de código relacionados con la tarea activa.
+
+---
+
+## 3. PRINCIPIOS NO NEGOCIABLES
+
+### 3.1 Backend-first
+
+Android no descargará ni procesará buzones completos.
+
+Laravel será responsable de:
+
+- OAuth y callbacks.
+- Cifrado y renovación de tokens.
+- Gmail API y Microsoft Graph.
+- Webhooks, Pub/Sub y sincronización incremental.
+- MIME, adjuntos, OCR y clasificación.
+- Detección de duplicados.
+- Candidatos, feedback, auditoría, reintentos y retención.
+
+Android será responsable de:
+
+- Iniciar la autorización mediante navegador seguro.
+- Mostrar cuentas conectadas y estados.
+- Consultar candidatos paginados.
+- Editar, confirmar, ignorar y marcar duplicados.
+- Importar de forma idempotente el movimiento confirmado a Room.
+- Funcionar sin conexión con los datos ya sincronizados.
+
+### 3.2 Una identidad: Firebase Auth
+
+No implementes otro registro de usuario con contraseña en Laravel.
+
+- Android obtiene el Firebase ID token del usuario autenticado.
+- Lo envía como `Authorization: Bearer <id-token>` únicamente por HTTPS.
+- Laravel verifica firma, audiencia, emisor, expiración y revocación cuando aplique.
+- Laravel vincula el `firebase_uid` a un usuario interno.
+- Nunca confíes en un `user_id` enviado por Android.
+- Policies y queries siempre se limitan al usuario autenticado.
+
+Sanctum puede usarse internamente si aporta valor, pero no debe duplicar Firebase Auth.
+
+### 3.3 Fuentes de verdad y confirmación
+
+Durante el MVP:
+
+- Laravel/MySQL es la fuente de verdad de cuentas de correo, mensajes, adjuntos, sincronizaciones, candidatos, reglas y feedback.
+- Room continúa siendo la fuente local del libro financiero existente.
+- No introduzcas Firestore para este módulo.
+
+Laravel y Room no pueden participar en una única transacción ACID. Implementa una saga idempotente:
+
+1. Android solicita confirmar un candidato con una `Idempotency-Key`.
+2. Laravel bloquea el candidato, valida ownership y duplicados, guarda la corrección y crea una confirmación `pending_import` dentro de una transacción MySQL.
+3. Laravel devuelve `confirmation_id` y un DTO financiero inmutable.
+4. Android ejecuta una transacción Room que inserta el movimiento, actualiza el saldo y guarda `origin_type=email_candidate` + `origin_id=confirmation_id` con índice único.
+5. Android envía ACK al backend.
+6. Laravel cambia la confirmación a `imported`.
+7. Si falla la red, cualquier paso se puede repetir sin crear duplicados.
+
+No afirmes atomicidad entre MySQL y Room. Documenta y prueba la recuperación.
+
+La sincronización financiera multidispositivo completa es un proyecto separado y requiere un ADR antes de cambiar esta decisión.
+
+### 3.4 Secretos y tokens
+
+- Client secrets, refresh tokens y access tokens viven solo en backend.
+- Nunca compiles secretos de Gmail/Microsoft dentro del APK.
+- Nunca envíes refresh tokens a Android.
+- Cifra tokens con claves versionadas y estrategia de rotación.
+- Nunca registres tokens, cuerpos completos, números de tarjeta o adjuntos sensibles.
+- Los últimos cuatro dígitos son el máximo dato de tarjeta permitido.
+
+### 3.5 Alcance incremental
+
+No construyas Gmail, Outlook, OCR y machine learning al mismo tiempo.
+
+Orden obligatorio:
+
+1. Estabilización.
+2. Backend y autenticación.
+3. Gmail con sincronización manual y correos sin adjuntos.
+4. Clasificación determinista y candidatos.
+5. API y revisión Android.
+6. Gmail incremental y Pub/Sub.
+7. Microsoft Graph.
+8. Adjuntos y OCR.
+9. Aprendizaje y autoaprobación.
+
+---
+
+## 4. ALCANCE DEL MVP
+
+El MVP de correo termina cuando un usuario autenticado puede:
+
+1. Conectar una cuenta Gmail.
+2. Autorizar `gmail.readonly` con state y PKCE.
+3. Sincronizar manualmente los últimos 30 o 90 días.
+4. Detectar correos financieros sin adjuntos.
+5. Extraer comercio, monto, moneda, fecha, dirección y últimos cuatro dígitos cuando existan.
+6. Crear candidatos con confianza y razones explicables.
+7. Revisarlos de forma paginada en Android.
+8. Editar, confirmar o ignorar.
+9. Importar la confirmación a Room exactamente una vez.
+10. Desconectar Gmail sin borrar movimientos importados.
+
+Fuera del MVP inicial:
+
+- Outlook/Microsoft Graph.
+- Gmail Pub/Sub.
+- PDF, imágenes, Tika y PaddleOCR.
+- Autoaprobación.
+- Machine learning.
+- IMAP.
+- Sincronización multidispositivo de todo el libro financiero.
+
+No implementes elementos fuera del MVP hasta superar su puerta de calidad.
+
+---
+
+## 5. ARQUITECTURA OBJETIVO
+
+### 5.1 Android
+
+Mantén las capas actuales:
+
+```text
+presentation/emailaccounts
+presentation/emailcandidates
+presentation/emailsettings
+domain/model/email
+domain/repository/email
+domain/usecase/email
+data/remote/email
+data/repository/email
+data/mapper/email
+data/dto/email
+data/local/email
+```
+
+Reglas:
+
+- UI sin lógica de negocio.
+- ViewModels con estado inmutable y `StateFlow`.
+- Estados complejos mediante `sealed interface`.
+- Retrofit detrás de repositorios.
+- DTOs nunca llegan a UI.
+- Errores remotos se mapean a errores de dominio sanitizados.
+- Listas paginadas desde backend; usar Paging 3 solo cuando la API base esté estable.
+- Room puede cachear cuentas de correo y candidatos, pero MySQL sigue siendo su fuente principal.
+- Nunca almacenar tokens del proveedor en Room o DataStore.
+
+### 5.2 Backend
+
+Crear un proyecto Laravel separado, por defecto:
+
+```text
+backend/
+  app/Domain/EmailIntegration
+  app/Application/EmailIntegration
+  app/Infrastructure/EmailIntegration
+  app/Http/Controllers/Api/V1
+  app/Jobs/EmailIntegration
+  app/Policies
+  database/migrations
+  tests/Unit
+  tests/Feature
+  tests/Integration
+```
+
+Usar:
+
+- PHP 8.2+.
+- Laravel estable compatible.
+- MySQL 8 para desarrollo y producción.
+- Redis para colas, locks y rate limiting.
+- Scheduler y queue workers.
+- DTOs, Enums, Form Requests, API Resources, Policies y Services.
+- Transacciones MySQL en confirmaciones y cambios de estado.
+- Jobs idempotentes con timeout, attempts, backoff y locks por cuenta.
+
+No agregues repositories genéricos, observers o abstracciones si no reducen acoplamiento real.
+
+### 5.3 Proveedores
+
+```php
+interface EmailProviderConnector
+{
+    public function createAuthorizationRequest(User $user): AuthorizationRequest;
+    public function handleCallback(OAuthCallbackData $callback): ConnectedEmailAccount;
+    public function refreshToken(ConnectedEmailAccount $account): void;
+    public function synchronize(ConnectedEmailAccount $account, EmailSyncContext $context): EmailSyncResult;
+    public function disconnect(ConnectedEmailAccount $account): void;
+}
+```
+
+Implementaciones por fase:
+
+- `GmailConnector` — MVP.
+- `MicrosoftGraphConnector` — después de Gmail incremental.
+- `ImapConnector` — solo interfaz o decisión documentada; no placeholder ejecutable.
+
+---
+
+## 6. MODELO DE DATOS MÍNIMO
+
+Usa UUID o ULID públicos. Nunca expongas IDs autoincrementales como mecanismo de seguridad.
+
+Tablas del dominio:
+
+- `users`: `firebase_uid` único y datos mínimos.
+- `connected_email_accounts`: proveedor, correo, tokens cifrados, scopes, estado, cursor, expiraciones y errores sanitizados.
+- `email_oauth_states`: state de un solo uso, PKCE, expiración y consumo.
+- `email_messages`: IDs del proveedor, metadata, hash, texto normalizado sujeto a retención y estado.
+- `email_attachments`: metadata, hash, almacenamiento privado y estado; crear cuando inicie la fase de adjuntos.
+- `financial_transaction_candidates`: extracción, dirección, monto, moneda, confianza, duplicados, estado y referencia de confirmación.
+- `email_candidate_confirmations`: idempotency key, estado `pending_import|imported|failed`, payload financiero y ACK.
+- `email_classification_rules`: reglas globales y por usuario con prioridad.
+- `email_processing_feedback`: correcciones del usuario.
+- `email_sync_runs`: cursores, métricas, errores y correlation ID.
+- `audit_logs`: acción, actor, recurso y metadata sanitizada.
+
+Restricciones obligatorias:
+
+- Único: cuenta + `provider_message_id`.
+- Único: usuario + `idempotency_key`.
+- Único: usuario + `confirmation_id` donde aplique.
+- Índices por usuario, estado, fecha, proveedor y cursor.
+- Foreign keys explícitas.
+- Soft delete solo donde exista requisito de recuperación o auditoría.
+
+Montos:
+
+- Backend y Android intercambian `amount_minor: Long` y `currency: ISO-4217`.
+- No usar `float` o `double` para dinero.
+- Definir `currency_exponent`; DOP, USD y EUR usan 2.
+- Fechas de API en UTC con ISO-8601; Android convierte para presentación.
+
+---
+
+## 7. PIPELINE
+
+```text
+evento de sincronización
+  -> lock por cuenta
+  -> sync run
+  -> listado incremental o por rango
+  -> deduplicación de mensaje
+  -> metadata y contenido mínimo
+  -> normalización MIME
+  -> filtro de relevancia
+  -> extracción determinista
+  -> parser específico si aplica
+  -> clasificación
+  -> confidence score explicable
+  -> deduplicación financiera
+  -> candidato
+  -> revisión Android
+  -> confirmación idempotente
+  -> importación Room
+  -> ACK backend
+```
+
+Cada etapa debe poder reintentarse y observarse sin repetir efectos.
+
+Jobs previstos, creados solo cuando la fase los necesite:
+
+- `StartEmailInitialSyncJob`
+- `SyncEmailAccountJob`
+- `FetchEmailMessageJob`
+- `ParseEmailMessageJob`
+- `ExtractFinancialCandidateJob`
+- `DetectCandidateDuplicateJob`
+- `RenewGmailWatchJob`
+- `RenewMicrosoftSubscriptionJob`
+- `ProcessEmailAttachmentJob`
+- `CleanupRetainedEmailContentJob`
+- `RetryFailedEmailProcessingJob`
+
+---
+
+## 8. CLASIFICACIÓN
+
+Implementa por capas y conserva las razones:
+
+1. Remitentes configurables.
+2. Palabras y expresiones financieras en español e inglés.
+3. Regex para monto, moneda, fecha, comercio, referencia y últimos cuatro dígitos.
+4. Parsers Strategy por proveedor o formato.
+5. Historial de correcciones del usuario.
+6. Machine learning solamente con dataset versionado y métricas.
+
+Monedas iniciales:
+
+- `RD$`, `DOP`.
+- `US$`, `USD`.
+- `EUR`, `€`.
+
+No asumas que el primer monto es el total. Distingue subtotal, impuestos, balance, propina, monto autorizado, reembolso y total.
+
+Confianza inicial explicable de 0 a 1:
+
+- `>= 0.90`: elegible para autoaprobación solo si el usuario la habilitó; desactivada por defecto.
+- `0.70–0.89`: alta confianza.
+- `0.40–0.69`: revisión requerida.
+- `< 0.40`: no crear candidato visible salvo diagnóstico controlado.
+
+La deduplicación financiera marca; no elimina automáticamente.
+
+---
+
+## 9. OAUTH Y SINCRONIZACIÓN
+
+### 9.1 Gmail
+
+- Scope mínimo: `gmail.readonly`.
+- Authorization Code, state de un solo uso y PKCE.
+- Callback e intercambio de código en backend.
+- Sincronización inicial limitada, por defecto 30 días; configurable a 90.
+- Sincronización manual antes de Pub/Sub.
+- `historyId` y `watch` solo después del MVP manual.
+- Renovar `watch` diariamente y antes de su expiración.
+- Mantener sincronización de respaldo porque las notificaciones pueden perderse.
+- Preparar verificación OAuth y política de privacidad antes de beta pública.
+
+### 9.2 Microsoft
+
+- Permiso delegado mínimo `Mail.Read`.
+- Soportar cuentas Microsoft personales y organizacionales según configuración.
+- Delta queries y `deltaLink`.
+- Webhook con validación de `clientState`.
+- Endpoint de lifecycle notifications.
+- Renovar suscripciones con anticipación.
+- Recuperar notificaciones perdidas y suscripciones eliminadas.
+
+---
+
+## 10. SEGURIDAD Y PRIVACIDAD
+
+- HTTPS obligatorio fuera de desarrollo local.
+- CORS restrictivo; la app móvil no depende de CORS para autenticación.
+- Rate limits por usuario, IP, endpoint y proveedor.
+- Policies en todos los recursos del usuario.
+- Validar OAuth state, PKCE, expiración, replay y redirect URI exacta.
+- Validar firma/identidad de Pub/Sub y `clientState` de Microsoft.
+- Tokens cifrados con versión de clave.
+- Adjuntos fuera del directorio público, MIME real, tamaño máximo y nombre generado.
+- Nunca confiar en extensión o Content-Type enviado por cliente.
+- Logs estructurados con `correlation_id` y redacción de PII.
+- Retención configurable; eliminar texto y archivos cuando expire.
+- Proporcionar desconexión y eliminación de datos de correo.
+- No mostrar cuerpo completo del correo en Android por defecto.
+- Notificaciones push sin montos ni comercios sensibles completos.
+
+Revisar también Android:
+
+- Reglas de backup/data extraction.
+- `FLAG_SECURE` y privacidad existentes.
+- No usar logging `BODY` con datos financieros.
+- No incluir secrets en `BuildConfig`.
+
+---
+
+## 11. API V1
+
+Base: `/api/v1`.
+
+Cuentas:
+
+```text
+GET    /email-accounts
+POST   /email-accounts/{provider}/authorization
+GET    /email-accounts/oauth/callback/{provider}
+GET    /email-accounts/{id}
+DELETE /email-accounts/{id}
+POST   /email-accounts/{id}/reconnect
+POST   /email-accounts/{id}/sync
+GET    /email-accounts/{id}/sync-status
+```
+
+Candidatos:
+
+```text
+GET    /email-candidates
+GET    /email-candidates/{id}
+POST   /email-candidates/{id}/prepare-confirmation
+POST   /email-confirmations/{id}/ack
+POST   /email-candidates/{id}/ignore
+POST   /email-candidates/{id}/mark-duplicate
+```
+
+Configuración y observabilidad:
+
+```text
+GET/PUT /email-settings
+GET     /email-sync-runs
+GET     /email-sync-runs/{id}
+GET/POST/PUT/DELETE /email-classification-rules
+POST    /webhooks/gmail/pubsub
+POST    /webhooks/microsoft/notifications
+POST    /webhooks/microsoft/lifecycle
+```
+
+Toda operación mutante sensible usa idempotencia. Las respuestas usan un contrato uniforme con código estable, mensaje seguro, datos y correlation ID.
+
+---
+
+## 12. PROTOCOLO DE TRABAJO DE LA IA
+
+Para cada turno o continuación automática:
+
+1. Lee el objetivo y el estado del TODO.
+2. Selecciona la primera tarea desbloqueada; no saltes fases.
+3. Inspecciona archivos reales y `git status`.
+4. Declara impacto, riesgos y supuestos.
+5. Implementa el cambio mínimo completo.
+6. Agrega o actualiza pruebas.
+7. Ejecuta formatter/linter aplicable.
+8. Compila.
+9. Ejecuta pruebas proporcionales al riesgo.
+10. Revisa seguridad, errores, concurrencia e idempotencia.
+11. Actualiza documentación y TODO con evidencia.
+12. Resume archivos, comandos, resultados y pendientes reales.
+
+Reglas:
+
+- No uses mocks como implementación de producción.
+- No dejes métodos vacíos, `TODO()`, catches vacíos o endpoints sin Policies.
+- No hardcodees secretos, proveedores, categorías o remitentes que deban configurarse.
+- No modifiques archivos no relacionados.
+- No reemplaces una arquitectura funcional sin ADR aprobado.
+- No marques `[x]` solo porque el archivo existe.
+- Si una prueba no se ejecutó, dilo.
+- Si falta una credencial externa, completa todo lo comprobable con fakes de test y documenta el bloqueo; no inventes resultados.
+- Si una decisión cambia fuente de verdad, autenticación, privacidad, costos o despliegue, documenta un ADR antes de código.
+- Después de tres intentos fallidos por la misma causa, detén reintentos, documenta el bloqueo y trabaja en otra tarea desbloqueada.
+
+---
+
+## 13. PUERTAS DE CALIDAD
+
+No avances de fase si falla su gate.
+
+### Gate 0 — Línea base
+
+- Android compila.
+- Tests unitarios e instrumentados seleccionados pasan.
+- Migraciones Room verificadas.
+- Existe commit base recuperable.
+- Documentación refleja el estado real.
+
+### Gate 1 — Backend
+
+- Health check, MySQL, Redis, queue y scheduler funcionan.
+- Firebase token válido autentica; token inválido, expirado o de otro proyecto falla.
+- Ownership y rate limiting probados.
+- No hay secretos en Git.
+
+### Gate 2 — Gmail manual
+
+- OAuth real en entorno de desarrollo.
+- Tokens cifrados.
+- Sync inicial limitada y reintentable.
+- Mensajes duplicados no se repiten.
+- Revocación y reconexión probadas.
+
+### Gate 3 — Candidatos
+
+- Extracción DOP/USD/EUR probada con corpus versionado.
+- Score incluye razones.
+- Duplicados se marcan correctamente.
+- Confirmación Android→Room→ACK es idempotente y recuperable.
+
+### Gate 4 — Incremental/Outlook/OCR
+
+- Cada integración tiene pruebas propias, métricas, renovación, fallback y runbook.
+- Ninguna integración degrada el MVP anterior.
+
+---
+
+## 14. DOCUMENTACIÓN OBLIGATORIA
+
+Mantén en `WalletFinanzasPersonales/docs/email-integration/`:
+
+- `PROJECT_AUDIT.md`
+- `ARCHITECTURE.md`
+- `IMPLEMENTATION_STATUS.md`
+- `MASTER_TODO.md`
+- `API.md`
+- `SECURITY.md`
+- `OAUTH_SETUP.md`
+- `TESTING.md`
+- `DEPLOYMENT.md`
+- `ROLLBACK.md`
+- `KNOWN_ISSUES.md`
+- `DECISIONS.md`
+
+La documentación debe registrar evidencia, no aspiraciones.
+
+---
+
+## 15. VARIABLES DE ENTORNO
+
+Documenta en `backend/.env.example`, sin valores reales:
+
+```text
+APP_URL
+ANDROID_DEEP_LINK_RETURN_URL
+FIREBASE_PROJECT_ID
+FIREBASE_CREDENTIALS
+
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+GOOGLE_REDIRECT_URI
+GOOGLE_PUBSUB_TOPIC
+GOOGLE_PUBSUB_VERIFICATION_AUDIENCE
+
+MICROSOFT_CLIENT_ID
+MICROSOFT_CLIENT_SECRET
+MICROSOFT_TENANT
+MICROSOFT_REDIRECT_URI
+MICROSOFT_WEBHOOK_CLIENT_STATE
+
+EMAIL_SYNC_INITIAL_DAYS=30
+EMAIL_SYNC_BATCH_SIZE
+EMAIL_CONTENT_RETENTION_DAYS
+EMAIL_ATTACHMENT_MAX_SIZE_MB
+EMAIL_AUTO_APPROVAL_ENABLED=false
+EMAIL_AUTO_APPROVAL_MIN_CONFIDENCE
+
+TIKA_URL
+PADDLE_OCR_URL
+
+DB_CONNECTION=mysql
+REDIS_HOST
+REDIS_PORT
+QUEUE_CONNECTION=redis
+```
+
+---
+
+## 16. CRITERIO DE FINALIZACIÓN
+
+El MVP solo está terminado cuando:
+
+- Android y backend compilan.
+- Las pruebas requeridas pasan.
+- Firebase protege toda la API privada.
+- Gmail conecta, renueva y desconecta de forma segura.
+- Los tokens están cifrados y nunca llegan al APK.
+- La sincronización manual inicial funciona y es limitada.
+- Mensajes y confirmaciones son idempotentes.
+- Los candidatos se pueden revisar, editar, ignorar y confirmar.
+- La importación a Room actualiza saldo y movimiento exactamente una vez.
+- Los fallos intermedios se recuperan sin duplicar.
+- Ownership, rate limiting, redacción de logs y retención están probados.
+- No existen secretos expuestos.
+- La documentación de configuración, pruebas, despliegue y rollback está actualizada.
+
+El módulo completo solo está terminado después de Gmail incremental, Outlook, adjuntos/OCR, auditoría de seguridad, staging, observabilidad y validación final.
+
+---
+
+## 17. PRIMERA ACCIÓN
+
+No empieces por OAuth, pantallas ni OCR.
+
+1. Abre `MASTER_TODO.md`.
+2. Completa la Fase 0 y su Gate 0.
+3. Genera `PROJECT_AUDIT.md` y los ADR iniciales.
+4. Crea el backend únicamente cuando la línea base Android esté verde y exista una decisión documentada sobre autenticación, fuentes de verdad y confirmación idempotente.
+
+Continúa después con la primera tarea desbloqueada del TODO, una por una, implementando, probando y documentando cada resultado.

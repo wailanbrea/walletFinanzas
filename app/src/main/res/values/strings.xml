@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wallet Finanzas BS</string>
+
+    <!-- Splash -->
+    <string name="splash_title">Wallet Finanzas</string>
+    <string name="splash_subtitle">Tus finanzas personales, sin conexión</string>
+
+    <!-- Navegación inferior -->
+    <string name="nav_home">Inicio</string>
+    <string name="nav_accounts">Cuentas</string>
+    <string name="nav_transactions">Registros</string>
+    <string name="nav_budgets">Presupuestos</string>
+    <string name="nav_reports">Reportes</string>
+
+    <!-- Drawer -->
+    <string name="drawer_premium">Obtener Premium</string>
+    <string name="drawer_bank_sync">Sincronización bancaria</string>
+    <string name="drawer_imports">Importaciones</string>
+    <string name="drawer_home">Inicio</string>
+    <string name="drawer_records">Registros</string>
+    <string name="drawer_investments">Inversiones</string>
+    <string name="drawer_statistics">Estadísticas</string>
+    <string name="drawer_planned_payments">Pagos planificados</string>
+    <string name="drawer_budgets">Presupuestos</string>
+    <string name="drawer_debts">Deudas</string>
+    <string name="drawer_goals">Metas</string>
+    <string name="drawer_badge_new">Nuevo</string>
+    <string name="drawer_expand">Expandir</string>
+    <string name="drawer_collapse">Contraer</string>
+
+    <!-- Comunes -->
+    <string name="common_back">Volver</string>
+
+    <!-- Sincronización bancaria (Salt Edge) -->
+    <string name="bank_sync_title">Sincronización bancaria</string>
+    <string name="bank_sync_connect">Conectar banco</string>
+    <string name="bank_sync_refresh">Sincronizar</string>
+    <string name="bank_sync_connections">Conexiones</string>
+    <string name="bank_sync_empty">Aún no hay bancos conectados. Toca «Conectar banco» para vincular una cuenta.</string>
+    <string name="bank_sync_unavailable">La sincronización bancaria estará disponible próximamente.</string>
+    <string name="bank_sync_sandbox_note">Modo de prueba: los bancos disponibles son proveedores simulados de Salt Edge. Ninguna credencial bancaria real es necesaria.</string>
+    <string name="bank_sync_result">Sincronizado: %1$d conexión(es), %2$d cuenta(s), %3$d movimiento(s) importados.</string>
+
+    <string name="dashboard_other_currencies">Además: %1$s</string>
+    <string name="privacy_hide_amounts">Ocultar montos</string>
+    <string name="privacy_show_amounts">Mostrar montos</string>
+    <string name="privacy_auth_title">Verifica tu identidad</string>
+    <string name="privacy_auth_subtitle">Autentícate para cambiar la visibilidad de tus montos</string>
+
+    <!-- Encuentra tu banco -->
+    <string name="find_bank_title">Encuentra tu banco</string>
+    <string name="find_bank_country">País</string>
+    <string name="find_bank_country_do">República Dominicana</string>
+    <string name="find_bank_country_sandbox">Bancos de prueba (sandbox)</string>
+    <string name="find_bank_name_label">Nombre del banco</string>
+    <string name="find_bank_select">Selecciona el banco</string>
+    <string name="find_bank_search_hint">Buscar un banco</string>
+    <string name="find_bank_connect">Conectar</string>
+    <string name="find_bank_none">No hay bancos disponibles para este país.</string>
+    <string name="common_open_menu">Abrir menú</string>
+    <string name="common_save">Guardar</string>
+    <string name="common_cancel">Cancelar</string>
+    <string name="common_delete">Eliminar</string>
+    <string name="common_edit">Editar</string>
+    <string name="common_settings">Ajustes</string>
+    <string name="common_notifications">Notificaciones</string>
+    <string name="common_account">Cuenta</string>
+    <string name="common_category">Categoría</string>
+    <string name="common_note_optional">Nota (opcional)</string>
+    <string name="common_select_account">Seleccionar Cuenta</string>
+    <string name="common_coming_soon">Próximamente</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Finanzas</string>
+    <string name="dashboard_total_balance">Balance Total</string>
+    <string name="dashboard_income">Ingresos</string>
+    <string name="dashboard_expenses">Gastos</string>
+    <string name="dashboard_expenses_by_category">Gastos por Categoría</string>
+    <string name="dashboard_no_expenses_month">Sin gastos este mes</string>
+    <string name="dashboard_recent_transactions">Transacciones Recientes</string>
+    <string name="dashboard_see_all">Ver todas</string>
+    <string name="dashboard_trend_vs_last_month">%1$s%2$d%% gasto vs mes anterior</string>
+    <string name="dashboard_add_transaction">Agregar movimiento</string>
+
+    <!-- Pestañas del dashboard -->
+    <string name="dashboard_tab_accounts">Cuentas</string>
+    <string name="dashboard_tab_budgets_goals">Presupuesto y Objetivos</string>
+    <string name="dashboard_active_budgets">Presupuestos Activos</string>
+    <string name="dashboard_no_active_budgets">No tienes presupuestos activos</string>
+    <string name="dashboard_create_budget">Crear Presupuesto</string>
+    <string name="dashboard_budget_consumed">%1$d%% consumido</string>
+    <string name="dashboard_goals_section">Objetivos y Metas</string>
+    <string name="dashboard_no_active_goals">No tienes metas de ahorro activas</string>
+    <string name="dashboard_create_goal">Crear Meta</string>
+    <string name="dashboard_other_category">Otros</string>
+
+    <!-- Alta rápida -->
+    <string name="quick_new_transaction">Nueva Transacción</string>
+    <string name="quick_expense">Gasto</string>
+    <string name="quick_expense_desc">Registrar un gasto</string>
+    <string name="quick_income">Ingreso</string>
+    <string name="quick_income_desc">Registrar un ingreso</string>
+    <string name="quick_transfer">Transferencia</string>
+    <string name="quick_transfer_desc">Mover dinero entre cuentas</string>
+    <string name="quick_new_type">Nuevo %1$s</string>
+    <string name="quick_save_type">Guardar %1$s</string>
+
+    <!-- Transferencias -->
+    <string name="transfer_title">Transferencia entre Cuentas</string>
+    <string name="transfer_from">Desde</string>
+    <string name="transfer_to">Hacia</string>
+    <string name="transfer_insufficient">Saldo insuficiente en %1$s</string>
+    <string name="transfer_action">Transferir</string>
+
+    <!-- Placeholder -->
+    <string name="placeholder_premium_title">Obtener Premium</string>
+    <string name="placeholder_premium_desc">Desbloquea sincronización bancaria ilimitada, reportes avanzados y más.</string>
+    <string name="placeholder_investments_title">Inversiones</string>
+    <string name="placeholder_investments_desc">Sigue el rendimiento de tus inversiones y tu portafolio.</string>
+
+    <!-- Metas -->
+    <string name="goals_title">Metas</string>
+    <string name="goals_new">Nueva meta</string>
+    <string name="goals_empty_title">Sin metas todavía</string>
+    <string name="goals_empty_desc">Crea tu primera meta de ahorro con el botón +</string>
+    <string name="goals_saved_total">Ahorrado en metas</string>
+    <string name="goals_of_amount">de %1$s</string>
+    <string name="goals_progress_of">%1$s de %2$s</string>
+    <string name="goals_contribute">Aportar</string>
+    <string name="goals_completed">¡Completada!</string>
+    <string name="goals_delete">Eliminar meta</string>
+    <string name="goals_create_title">Nueva Meta</string>
+    <string name="goals_name_hint">Nombre (ej. Vacaciones)</string>
+    <string name="goals_target_amount">Monto objetivo (%1$s)</string>
+    <string name="goals_create_action">Crear Meta</string>
+    <string name="goals_contribute_to">Aportar a \"%1$s\"</string>
+    <string name="goals_remaining_to_complete">Faltan %1$s para completar la meta</string>
+    <string name="goals_contribute_amount">Monto a aportar (%1$s)</string>
+
+    <!-- Deudas -->
+    <string name="debts_title">Deudas</string>
+    <string name="debts_new">Nueva deuda</string>
+    <string name="debts_empty_title">Sin deudas registradas</string>
+    <string name="debts_empty_desc">Registra lo que debes o lo que te deben con el botón +</string>
+    <string name="debts_i_owe">Yo debo</string>
+    <string name="debts_owed_to_me">Me deben</string>
+    <string name="debts_settled">Saldada</string>
+    <string name="debts_remaining_of">Restan %1$s de %2$s</string>
+    <string name="debts_remaining">Restan %1$s</string>
+    <string name="debts_record_payment">Registrar abono</string>
+    <string name="debts_delete">Eliminar deuda</string>
+    <string name="debts_create_title">Nueva Deuda</string>
+    <string name="debts_who_you_owe">¿A quién le debes?</string>
+    <string name="debts_who_owes_you">¿Quién te debe?</string>
+    <string name="debts_description_optional">Descripción (opcional)</string>
+    <string name="debts_total_amount">Monto total (%1$s)</string>
+    <string name="debts_save">Guardar Deuda</string>
+    <string name="debts_payment_to">Abono a \"%1$s\"</string>
+    <string name="debts_payment_amount">Monto del abono (%1$s)</string>
+    <string name="debts_payment_action">Registrar Abono</string>
+    <string name="debts_delete_confirm">Se eliminará \"%1$s\". ¿Continuar?</string>
+
+    <!-- Pagos planificados -->
+    <string name="planned_title">Pagos planificados</string>
+    <string name="planned_new">Nuevo pago planificado</string>
+    <string name="planned_empty_title">Sin pagos planificados</string>
+    <string name="planned_empty_desc">Programa pagos recurrentes como renta, luz o suscripciones con el botón +</string>
+    <string name="planned_monthly_total">Total mensual planificado</string>
+    <string name="planned_next">Próximo: %1$s</string>
+    <string name="planned_overdue">Vencido: %1$s</string>
+    <string name="planned_inactive">Inactivo</string>
+    <string name="planned_pay_now">Pagar ahora</string>
+    <string name="planned_delete">Eliminar pago</string>
+    <string name="planned_create_title">Nuevo Pago Planificado</string>
+    <string name="planned_name_hint">Nombre (ej. Renta)</string>
+    <string name="planned_amount">Monto (%1$s)</string>
+    <string name="planned_frequency">Frecuencia</string>
+    <string name="freq_weekly">Semanal</string>
+    <string name="freq_biweekly">Quincenal</string>
+    <string name="freq_monthly">Mensual</string>
+    <string name="freq_yearly">Anual</string>
+    <string name="freq_once">Una vez</string>
+
+    <!-- Categorías -->
+    <string name="categories_title">Categorías</string>
+    <string name="categories_new">Nueva categoría</string>
+    <string name="categories_empty_title">No hay categorías</string>
+    <string name="categories_empty_desc">Crea la primera con el botón +</string>
+    <string name="categories_create_title">Nueva Categoría</string>
+    <string name="categories_edit_title">Editar Categoría</string>
+    <string name="categories_name">Nombre</string>
+    <string name="categories_icon">Icono</string>
+    <string name="categories_color">Color</string>
+    <string name="categories_delete">Eliminar categoría</string>
+    <string name="categories_delete_confirm">Los movimientos existentes conservarán su historial, pero quedarán sin categoría visible. ¿Continuar?</string>
+
+    <!-- Importar CSV -->
+    <string name="import_title">Importar CSV</string>
+    <string name="import_header">Importar movimientos de tu banco</string>
+    <string name="import_desc">Descarga el estado de cuenta en CSV desde tu banca en línea y selecciónalo aquí. Verás una previsualización antes de importar y los duplicados se detectan automáticamente.</string>
+    <string name="import_pick_file">Seleccionar archivo</string>
+    <string name="import_format_hint">Columnas esperadas: Fecha, Descripción y Monto (negativo = gasto). Separador , o ; · fechas dd/MM/yyyy o yyyy-MM-dd.</string>
+    <string name="import_mapping">Mapeo de columnas</string>
+    <string name="import_col_date">Fecha</string>
+    <string name="import_col_description">Descripción</string>
+    <string name="import_col_amount">Monto</string>
+    <string name="import_col_unassigned">— sin asignar —</string>
+    <string name="import_target_account">Cuenta destino</string>
+    <string name="import_include_duplicates">Incluir %1$d duplicadas</string>
+    <string name="import_preview">Previsualización</string>
+    <string name="import_action">Importar %1$d movimientos</string>
+    <string name="import_done_title">Importación completada</string>
+    <string name="import_another">Importar otro archivo</string>
+    <string name="import_done">Listo</string>
+
+    <!-- Comunes extra -->
+    <string name="common_name">Nombre</string>
+    <string name="common_create">Crear</string>
+    <string name="common_close">Cerrar</string>
+
+    <!-- Cuentas -->
+    <string name="accounts_title">Mis Cuentas</string>
+    <string name="accounts_detail_title">Detalle de Cuenta</string>
+    <string name="accounts_new">Nueva Cuenta</string>
+    <string name="accounts_add">Agregar cuenta</string>
+    <string name="accounts_edit">Editar cuenta</string>
+    <string name="accounts_edit_title">Editar Cuenta</string>
+    <string name="accounts_delete">Eliminar cuenta</string>
+    <string name="accounts_delete_confirm">Se eliminará \"%1$s\". Sus movimientos históricos se conservarán. ¿Continuar?</string>
+    <string name="accounts_name_hint">Nombre de la Cuenta</string>
+    <string name="accounts_type">Tipo de Cuenta</string>
+    <string name="accounts_initial_balance">Saldo Inicial (%1$s)</string>
+    <string name="account_type_bank">Banco</string>
+    <string name="account_type_cash">Efectivo</string>
+    <string name="account_type_debit">Tarjeta de Débito</string>
+    <string name="account_type_savings">Ahorros</string>
+    <string name="account_type_credit">Tarjeta de Crédito</string>
+    <string name="account_type_checking">Cuenta Corriente</string>
+    <string name="accounts_available_balance">Saldo Disponible</string>
+    <string name="accounts_movements">Movimientos</string>
+    <string name="accounts_no_transactions">No hay transacciones registradas en esta cuenta.</string>
+    <string name="accounts_card_last_four">Últimos 4 dígitos</string>
+    <string name="accounts_institution_label">Entidad financiera (%1$s)</string>
+    <string name="accounts_institution_other">Otro / no aparece</string>
+    <string name="accounts_card_security_note">Solo se guardan estos cuatro dígitos, nunca el número completo.</string>
+
+    <!-- Registros / movimientos -->
+    <string name="tx_generic">Transacción</string>
+    <string name="tx_search_hint">Buscar movimientos…</string>
+    <string name="tx_filter_month">Este mes</string>
+    <string name="tx_filter_all_accounts">Todas las cuentas</string>
+    <string name="tx_empty">No se encontraron movimientos.</string>
+    <string name="tx_edit_title">Editar %1$s</string>
+    <string name="tx_amount">Monto</string>
+    <string name="tx_note">Nota</string>
+    <string name="tx_date">Fecha</string>
+    <string name="tx_no_category">Sin categoría</string>
+    <string name="tx_delete_title">Eliminar movimiento</string>
+    <string name="tx_delete_confirm">Se eliminará este movimiento y se revertirá su efecto en el balance de la cuenta. ¿Continuar?</string>
+    <string name="tx_add_title">Agregar Movimiento</string>
+    <string name="tx_save">Guardar Movimiento</string>
+
+    <!-- Presupuestos -->
+    <string name="budgets_total">Presupuesto Total</string>
+    <string name="budgets_used">%1$d%% Usado</string>
+    <string name="budgets_remaining">%1$s restantes</string>
+    <string name="budgets_active">Activo</string>
+    <string name="budgets_empty">No tienes presupuestos configurados.</string>
+    <string name="budgets_near_limit">Cerca del límite</string>
+    <string name="budgets_exceeded">Excedido por %1$s</string>
+    <string name="budgets_new">Nuevo Presupuesto</string>
+    <string name="budgets_select_category">Seleccionar Categoría</string>
+    <string name="budgets_limit">Límite mensual (%1$s)</string>
+    <string name="budgets_edit_title">Presupuesto: %1$s</string>
+    <string name="budgets_spent_month">Gastado este mes: %1$s</string>
+    <string name="budgets_delete">Eliminar presupuesto</string>
+    <string name="budgets_delete_confirm">Se eliminará el presupuesto de \"%1$s\". ¿Continuar?</string>
+
+    <!-- Reportes -->
+    <string name="reports_header">Reportes Analíticos</string>
+    <string name="reports_subtitle">Resumen de tu actividad financiera</string>
+    <string name="reports_no_expenses">Sin gastos aún</string>
+    <string name="reports_total">Total</string>
+    <string name="reports_income_vs_expenses">Ingresos vs Gastos</string>
+
+    <!-- Perfil -->
+    <string name="profile_title">Perfil</string>
+    <string name="profile_no_email">Sin correo configurado</string>
+    <string name="profile_full_name">Nombre completo</string>
+    <string name="profile_email">Correo electrónico</string>
+    <string name="profile_wallet_name">Nombre de tu wallet</string>
+    <string name="profile_financial_country">País financiero predeterminado</string>
+    <string name="profile_country_do">República Dominicana</string>
+    <string name="profile_save">Guardar cambios</string>
+    <string name="profile_saved">Guardado ✓</string>
+
+    <!-- Ajustes -->
+    <string name="settings_title">Más opciones</string>
+    <string name="settings_no_session">Sin sesión iniciada</string>
+    <string name="settings_edit_profile">Editar Perfil</string>
+    <string name="settings_profile_sub">Datos personales y preferencias</string>
+    <string name="settings_accounts_sub">Gestiona tus bancos y tarjetas</string>
+    <string name="settings_categories_sub">Personaliza tus gastos</string>
+    <string name="settings_security_sub">Biometría y contraseñas</string>
+    <string name="settings_sync">Sincronización</string>
+    <string name="settings_sync_sub">Conexión con la nube</string>
+    <string name="settings_import">Importar movimientos (CSV)</string>
+    <string name="settings_import_sub">Trae el estado de cuenta de tu banco</string>
+    <string name="settings_export">Exportar datos (CSV)</string>
+    <string name="settings_export_sub">Respaldo de todos tus movimientos</string>
+    <string name="settings_login">Iniciar sesión</string>
+    <string name="settings_login_sub">Necesaria para la sincronización en la nube</string>
+    <string name="settings_logout">Cerrar sesión</string>
+    <string name="settings_logout_confirm">Tus datos locales se conservan en este dispositivo. ¿Cerrar la sesión de %1$s?</string>
+    <string name="settings_support">Soporte</string>
+    <string name="settings_support_sub">Ayuda y contacto</string>
+    <string name="settings_export_ok">Movimientos exportados</string>
+    <string name="settings_export_error">Error al exportar: %1$s</string>
+
+    <!-- Seguridad y bloqueo -->
+    <string name="security_title">Seguridad</string>
+    <string name="security_lock_title">Bloqueo al abrir</string>
+    <string name="security_lock_available">Pide huella, rostro o PIN del dispositivo al abrir la app</string>
+    <string name="security_lock_unavailable">Configura primero una huella o PIN en los ajustes del dispositivo</string>
+    <string name="security_screen_capture_title">Bloquear capturas de pantalla</string>
+    <string name="security_screen_capture_description">Evita capturas y la vista previa de la app en aplicaciones recientes.</string>
+    <string name="security_encryption_note">Tus datos financieros se guardan cifrados en este dispositivo (AES-256 con SQLCipher). La clave nunca sale de tu teléfono.</string>
+    <string name="lock_title">Wallet bloqueada</string>
+    <string name="lock_subtitle">Confirma tu identidad para continuar</string>
+    <string name="lock_unlock">Desbloquear</string>
+    <string name="lock_prompt_title">Desbloquear Wallet</string>
+    <string name="lock_prompt_subtitle">Confirma tu identidad para ver tus finanzas</string>
+
+    <!-- Autenticación -->
+    <string name="auth_tagline">Control total, precisión absoluta.</string>
+    <string name="auth_email">Correo Electrónico</string>
+    <string name="auth_email_hint">tu@email.com</string>
+    <string name="auth_password">Contraseña</string>
+    <string name="auth_confirm_password">Confirmar Contraseña</string>
+    <string name="auth_forgot_password">¿Olvidé mi contraseña?</string>
+    <string name="auth_toggle_password">Mostrar u ocultar contraseña</string>
+    <string name="auth_login">Iniciar Sesión</string>
+    <string name="auth_or">o</string>
+    <string name="auth_create_account">Crear Cuenta</string>
+    <string name="auth_register">Registrarse</string>
+    <string name="auth_privacy_note">Al iniciar sesión o crear una cuenta, aceptas nuestro Aviso de Privacidad y Términos de Servicio.</string>
+    <string name="recover_title">Recuperar Contraseña</string>
+    <string name="recover_success">Se ha enviado un correo electrónico con instrucciones para restablecer tu contraseña. Revisa tu bandeja de entrada.</string>
+    <string name="recover_instructions">Ingresa tu correo electrónico para enviarte un enlace de recuperación.</string>
+    <string name="recover_send">Enviar Enlace</string>
+    <string name="recover_back_to_login">Volver al Login</string>
+
+    <!-- Sincronización -->
+    <string name="sync_auto_title">Sincronización automática</string>
+    <string name="sync_auto_desc">Sincronizar datos automáticamente cuando haya conexión a internet</string>
+    <string name="sync_freq_title">Frecuencia de sincronización</string>
+    <string name="sync_freq_desc">Intervalo entre sincronizaciones automáticas (mínimo 12 horas en plan Free)</string>
+    <string name="sync_now">Sincronizar ahora</string>
+    <string name="sync_last_title">Última sincronización</string>
+    <string name="sync_never">Nunca se ha sincronizado con el servidor</string>
+
+    <!-- Notificaciones -->
+    <string name="notif_channel_name">Pagos planificados</string>
+    <string name="notif_channel_desc">Recordatorios de pagos próximos o vencidos</string>
+    <string name="notif_payment_due">Pago próximo: %1$s</string>
+    <string name="notif_payment_overdue">Pago vencido: %1$s</string>
+    <string name="notif_payment_amount">Monto: %1$s · toca para abrir Wallet</string>
+    <string name="notif_budget_exceeded">Presupuesto excedido: %1$s</string>
+    <string name="notif_budget_over_by">Te pasaste por %1$s este mes</string>
+</resources>

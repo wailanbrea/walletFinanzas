@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fondo de la ventana mientras arranca la app: mismo degradado que el SplashScreen,
+     así el primer frame del sistema ya es verde de marca (sin flash blanco). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="270"
+        android:startColor="#8BD08D"
+        android:endColor="#3FA45B"
+        android:type="linear" />
+</shape>

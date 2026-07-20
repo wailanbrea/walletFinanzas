@@ -1,0 +1,47 @@
+# Gradle and Android Studio
+.gradle/
+build/
+**/build/
+!.gradle/verification-metadata.xml
+
+# Local machine configuration and secrets
+local.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+key.properties
+
+# Firebase and service credentials
+google-services.json
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+.externalNativeBuild/
+.cxx/
+
+# Kotlin compiler output
+.kotlin/
+
+# OS/editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Sensitive local app data / captures
+*.db
+*.db-shm
+*.db-wal
+*.apk
+*.aab
+
+# Root-level emulator/UI inspection artifacts (not app resources)
+/emulator-*.png
+/*.xml
+
+# Graphify output is local traceability material; commit only if deliberately versioning architecture artifacts
+graphify-out/
