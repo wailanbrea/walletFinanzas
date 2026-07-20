@@ -11,6 +11,7 @@ class TransactionResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'idempotency_key' => $this->idempotency_key,
             'account_id' => $this->account_id,
             'amount' => $this->amount,
             'currency' => $this->currency,

@@ -13,6 +13,7 @@ class Transaction extends Model
 
     protected $fillable = [
         'user_id',
+        'idempotency_key',
         'account_id',
         'amount',
         'currency',

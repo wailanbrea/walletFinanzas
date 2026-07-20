@@ -87,8 +87,13 @@ curl -X POST http://127.0.0.1:8000/api/v1/accounts \
 ```bash
 php artisan test
 vendor/bin/pint --test
+npm run build
 php artisan migrate:status
+python tests/Integration/idempotency_concurrency.py
 ```
+
+La prueba de concurrencia requiere dos servidores Laravel en `127.0.0.1:8000` y
+`127.0.0.1:8001`; dispara operaciones simultáneas contra la misma MariaDB.
 
 ## Reglas financieras implementadas
 
@@ -97,6 +102,8 @@ php artisan migrate:status
 - Un usuario no puede consultar ni modificar recursos de otro usuario.
 - La moneda de un movimiento debe coincidir con la moneda de su cuenta.
 - Crear un movimiento y actualizar el saldo ocurre dentro de una transacción SQL.
+- Cada movimiento exige `idempotency_key` UUID; repetir la misma operación no la duplica ni vuelve a modificar el saldo.
+- Los importes numéricos se canonizan como enteros y las fechas como UTC con precisión de segundos antes de persistir y comparar.
 - Los importes decimales y el importe cero se rechazan.
 
 ## Preparación para VPS
