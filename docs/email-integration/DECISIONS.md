@@ -2,7 +2,7 @@
 
 ## Estado
 
-Los ADRs de la Fase 1 son obligatorios y **todavía no están aprobados**. Este archivo es el índice controlado; ningún cambio de fuente de verdad, autenticación, privacidad, coste o despliegue se implementará sin su ADR correspondiente.
+Los ADRs de la Fase 1 son obligatorios. ADR-003 fue aprobado por el product owner; los demás continúan pendientes. Ningún cambio adicional de fuente de verdad, privacidad, coste o despliegue se implementará sin su ADR correspondiente.
 
 ## ADRs requeridos
 
@@ -10,7 +10,7 @@ Los ADRs de la Fase 1 son obligatorios y **todavía no están aprobados**. Este 
 |---|---|---|
 | ADR-001 | MySQL para correo/candidatos y Room para libro local durante MVP. | Pendiente |
 | ADR-002 | Saga Android → Room → ACK e idempotencia. | Pendiente |
-| ADR-003 | Firebase Auth como identidad única del backend. | Pendiente |
+| [ADR-003](ADR-003-sanctum-identity.md) | Laravel Sanctum como identidad canónica; Firebase Auth retirado. | Aprobado |
 | ADR-004 | OAuth backend-first, state, PKCE, callback y deep link. | Pendiente |
 | ADR-005 | Docker Compose con MySQL 8 y Redis en desarrollo. | Pendiente |
 | ADR-006 | Cifrado de tokens y rotación de claves. | Pendiente |
@@ -23,5 +23,5 @@ Los ADRs de la Fase 1 son obligatorios y **todavía no están aprobados**. Este 
 
 - Room/SQLCipher continúa como libro local offline-first.
 - Los importes financieros locales usan `Long`; no se introducirán `Float`/`Double` para dinero.
-- Firebase Auth ya está presente, pero el arranque no exige sesión; el backend deberá rechazar recursos privados sin token Firebase válido sin cambiar el comportamiento offline existente.
+- Laravel Sanctum protege todos los recursos remotos; Room/SQLCipher conserva el comportamiento offline sin login obligatorio para datos locales.
 - Salt Edge sandbox no forma parte de la nueva integración de correo y debe permanecer aislado.

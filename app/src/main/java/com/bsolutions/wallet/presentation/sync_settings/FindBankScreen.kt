@@ -1,6 +1,5 @@
 package com.bsolutions.wallet.presentation.sync_settings
 
-import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.core.net.toUri
 import com.bsolutions.wallet.R
 import com.bsolutions.wallet.core.network.ProviderDto
 import com.bsolutions.wallet.data.repository.BankSyncRepository
@@ -126,7 +126,7 @@ fun FindBankScreen(
     LaunchedEffect(uiState.connectUrl) {
         uiState.connectUrl?.let { url ->
             viewModel.consumeConnectUrl()
-            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+            CustomTabsIntent.Builder().build().launchUrl(context, url.toUri())
         }
     }
 

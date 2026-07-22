@@ -1,0 +1,24 @@
+{
+  "description": "Reglas de exclusión para copias de seguridad y extracción de datos sensibles.",
+  "rules": [
+    {
+      "scope": "com.bsolutions.wallet.core.database",
+      "exclude": [
+        "DatabaseKeyProvider",
+        "WalletDatabaseMigrations",
+        "EncryptedPreferences"
+      ],
+      "reason": "Contiene claves de cifrado y lógica de seguridad crítica."
+    },
+    {
+      "scope": "com.bsolutions.wallet.data.local.entity",
+      "exclude_fields": [
+        "secret_token",
+        "biometric_id",
+        "raw_password"
+      ],
+      "reason": "Datos personales identificables o credenciales crudas."
+    }
+  ],
+  "backup_strategy": "Selective_Exclusion"
+}

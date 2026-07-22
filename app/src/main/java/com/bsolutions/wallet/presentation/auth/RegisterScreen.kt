@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +32,7 @@ fun RegisterScreen(
     onRegisterSuccess: () -> Unit,
     viewModel: AuthViewModel = hiltViewModel()
 ) {
+    var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -97,6 +99,27 @@ fun RegisterScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = stringResource(R.string.common_name),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    textAlign = TextAlign.Start
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    placeholder = { Text(stringResource(R.string.auth_name_hint)) },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    singleLine = true
+                )
 
                 // Email
                 Text(
@@ -184,13 +207,17 @@ fun RegisterScreen(
 
                 // Register Button
                 Button(
-                    onClick = { viewModel.register(email, password) },
+                    onClick = { viewModel.register(name, email, password) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
                     shape = RoundedCornerShape(24.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    enabled = email.isNotEmpty() && password.isNotEmpty() && password == confirmPassword && !isLoading
+                    enabled = name.isNotBlank() &&
+                        email.isNotEmpty() &&
+                        password.length >= 10 &&
+                        password == confirmPassword &&
+                        !isLoading
                 ) {
                     if (isLoading) {
                         CircularProgressIndicator(

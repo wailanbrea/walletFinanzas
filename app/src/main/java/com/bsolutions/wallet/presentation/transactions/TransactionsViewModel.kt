@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
+import com.bsolutions.wallet.core.common.CategoryRuleRepository
+import com.bsolutions.wallet.core.common.EmptyCategoryRules
+import com.bsolutions.wallet.core.common.ExpenseCategorizer
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.repository.CategoryRepository
@@ -13,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -29,7 +33,9 @@ data class TransactionsUiState(
 class TransactionsViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
     private val accountRepository: AccountRepository,
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    // Default para tests: Hilt inyecta la implementación real de todos modos.
+    private val categoryRules: CategoryRuleRepository = EmptyCategoryRules
 ) : ViewModel() {
 
     private val searchQuery = MutableStateFlow("")
@@ -70,57 +76,68 @@ class TransactionsViewModel @Inject constructor(
         note: String
     ) {
         viewModelScope.launch {
-            // Update account balance (decrease if Expense, increase if Income)
-            val account = accountRepository.getAccount(accountId)
-            if (account != null) {
-                val newBalance = if (type == "INCOME") {
-                    account.balance + amount
-                } else {
-                    account.balance - amount
-                }
-                accountRepository.updateAccount(account.copy(balance = newBalance))
+            // El movimiento hereda la divisa de su cuenta; saldo y movimiento se
+            // escriben atómicamente para evitar descuadres.
+            val account = accountRepository.getAccount(accountId) ?: return@launch
+            // Sin categoría elegida: se infiere de la nota (reglas del usuario primero).
+            val finalCategoryId = categoryId.ifBlank {
+                ExpenseCategorizer.categoryIdFor(
+                    text = note,
+                    categories = categoryRepository.getCategories().first(),
+                    customRules = categoryRules.rules.first()
+                ).orEmpty()
             }
-
-            // Save transaction
-            transactionRepository.addTransaction(
+            transactionRepository.addTransactionWithBalance(
                 Transaction(
                     id = UUID.randomUUID().toString(),
                     accountId = accountId,
                     amount = amount,
                     type = type,
-                    categoryId = categoryId,
+                    categoryId = finalCategoryId,
                     date = System.currentTimeMillis(),
-                    note = note
+                    note = note,
+                    currency = account.currency
                 )
             )
         }
     }
 
-    /** Ajusta el balance de una cuenta según el tipo de movimiento y su signo. */
-    private suspend fun applyBalanceDelta(accountId: String, amount: Long, type: String, revert: Boolean) {
-        if (type == "TRANSFER") return // las transferencias se manejan aparte
-        val account = accountRepository.getAccount(accountId) ?: return
-        val sign = if (type == "INCOME") 1 else -1
-        val delta = amount * sign * (if (revert) -1 else 1)
-        accountRepository.updateAccount(account.copy(balance = account.balance + delta))
-    }
-
     fun updateTransaction(original: Transaction, newAmount: Long, newCategoryId: String, newNote: String) {
         if (newAmount <= 0L) return
         viewModelScope.launch {
-            // Revertir el efecto original y aplicar el nuevo monto
-            applyBalanceDelta(original.accountId, original.amount, original.type, revert = true)
-            applyBalanceDelta(original.accountId, newAmount, original.type, revert = false)
-            transactionRepository.updateTransaction(
-                original.copy(amount = newAmount, categoryId = newCategoryId, note = newNote)
+            val categories = categoryRepository.getCategories().first()
+            val validSelectedCategoryId = newCategoryId.takeIf { selectedId ->
+                selectedId.isNotBlank() && categories.any { it.id == selectedId }
+            }
+            val finalCategoryId = validSelectedCategoryId ?: ExpenseCategorizer.categoryIdFor(
+                text = newNote,
+                categories = categories,
+                customRules = categoryRules.rules.first()
+            ).orEmpty()
+            // Ajuste de saldo por la diferencia + actualización del movimiento, atómico.
+            // (Las transferencias se editan por otra vía; aquí solo income/gasto.)
+            if (original.type == "TRANSFER") {
+                transactionRepository.updateTransaction(
+                    original.copy(amount = newAmount, categoryId = finalCategoryId, note = newNote)
+                )
+                return@launch
+            }
+            transactionRepository.updateTransactionWithBalance(
+                original.copy(amount = newAmount, categoryId = finalCategoryId, note = newNote),
+                oldAmount = original.amount
             )
         }
     }
 
     fun deleteTransaction(transaction: Transaction) {
         viewModelScope.launch {
-            applyBalanceDelta(transaction.accountId, transaction.amount, transaction.type, revert = true)
-            transactionRepository.deleteTransaction(transaction.id)
+            // Revierte el efecto en el saldo y borra, atómico. Los TRANSFER no ajustan
+            // saldo por esta vía (su reverso requeriría tocar ambas cuentas).
+            if (transaction.type == "TRANSFER") {
+                transactionRepository.deleteTransaction(transaction.id)
+            } else {
+                transactionRepository.deleteTransactionWithBalance(transaction)
+            }
         }
     }
 }

@@ -2,7 +2,7 @@ package com.bsolutions.wallet.presentation.navigation
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import com.bsolutions.wallet.core.network.SaltEdgeConfig
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.AccountBalance
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.Home
@@ -101,16 +102,10 @@ val drawerItems = listOf(
     DrawerItem("planned_payments", R.string.drawer_planned_payments, Icons.Outlined.Update, IconOrange),
     DrawerItem("debts", R.string.drawer_debts, Icons.Outlined.MonetizationOn, IconRed),
     DrawerItem("goals", R.string.drawer_goals, Icons.Outlined.TrackChanges, IconTeal),
-    // Sincronización bancaria (Salt Edge): oculta en producción — ningún agregador da
-    // soporte a RD (ver docs/11_AISP_INTEGRACION.md). Solo visible en builds DEBUG con
-    // credenciales, para pruebas de desarrollo. Se re-inserta condicionalmente al render.
+    DrawerItem("email_connections", R.string.drawer_email_sync, Icons.Outlined.Email, IconBlue),
     DrawerItem("import_csv", R.string.drawer_imports, Icons.Outlined.SaveAlt, IconBlue),
     DrawerItem("settings", R.string.common_settings, Icons.Outlined.Settings, IconGray, showDividerBefore = true)
 )
-
-/** Entrada de sincronización bancaria; solo cuando el sandbox de Salt Edge está disponible. */
-private val bankSyncDrawerItem =
-    DrawerItem("sync_settings", R.string.drawer_bank_sync, Icons.Outlined.AccountBalance, IconBlue)
 
 @Composable
 fun AppDrawerContent(
@@ -137,17 +132,7 @@ fun AppDrawerContent(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Inserta la sincronización bancaria antes de "Importaciones" solo si el
-            // sandbox de Salt Edge está disponible (DEBUG + credenciales); oculta en producción.
-            val items = if (SaltEdgeConfig.isAvailable) {
-                drawerItems.flatMap { item ->
-                    if (item.route == "import_csv") listOf(bankSyncDrawerItem, item) else listOf(item)
-                }
-            } else {
-                drawerItems
-            }
-
-            items.forEach { item ->
+            drawerItems.forEach { item ->
                 if (item.showDividerBefore) {
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

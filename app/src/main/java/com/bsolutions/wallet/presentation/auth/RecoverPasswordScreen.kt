@@ -143,7 +143,7 @@ fun RecoverPasswordScreen(
                         singleLine = true
                     )
 
-                    // Mensaje de error real de Firebase
+                    // Mensaje de error real del backend Wallet
                     authState.error?.let { error ->
                         Text(
                             text = error,
@@ -156,7 +156,7 @@ fun RecoverPasswordScreen(
                         )
                     }
 
-                    // Send Button (envío real vía Firebase Auth)
+                    // Envío real mediante el endpoint de recuperación Wallet
                     Button(
                         onClick = { viewModel.recoverPassword(email) },
                         modifier = Modifier

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -34,6 +35,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -41,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -89,6 +92,7 @@ import com.bsolutions.wallet.presentation.goals.CreateGoalSheet
 import com.bsolutions.wallet.presentation.goals.ContributeSheet
 import com.bsolutions.wallet.domain.model.Goal
 import com.bsolutions.wallet.presentation.common.animatedProgress
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,8 +112,17 @@ fun DashboardScreen(
     val privacyAuthTitle = stringResource(R.string.privacy_auth_title)
     val privacyAuthSubtitle = stringResource(R.string.privacy_auth_subtitle)
 
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
     var showQuickActionSheet by remember { mutableStateOf(false) }
+    var showFilterDialog by remember { mutableStateOf(false) }
+    var showCardSelector by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            viewModel.refreshTime()
+        }
+    }
 
     // Budgets states
     var showAddBudgetDialog by remember { mutableStateOf(false) }
@@ -120,6 +133,37 @@ fun DashboardScreen(
     var contributeGoal by remember { mutableStateOf<Goal?>(null) }
 
     // Dialog overlays
+    if (showFilterDialog) {
+        DashboardFilterDialog(
+            selectedPeriod = uiState.selectedPeriod,
+            selectedCategoryId = uiState.selectedCategoryId,
+            categories = uiState.categories.values.sortedBy { it.name },
+            onDismiss = { showFilterDialog = false },
+            onApply = { period, categoryId ->
+                viewModel.setPeriodFilter(period)
+                viewModel.setCategoryFilter(categoryId)
+                showFilterDialog = false
+            },
+            onClear = {
+                viewModel.setPeriodFilter(DashboardPeriodFilter.THIS_MONTH)
+                viewModel.setCategoryFilter(null)
+                showFilterDialog = false
+            }
+        )
+    }
+
+    if (showCardSelector) {
+        DashboardCardSelectorDialog(
+            uiState = uiState,
+            onDismiss = { showCardSelector = false },
+            onSetCardEnabled = viewModel::setDashboardCardEnabled,
+            onNavigateToTransactions = {
+                showCardSelector = false
+                onNavigateToTransactions()
+            }
+        )
+    }
+
     if (showQuickActionSheet) {
         QuickActionBottomSheet(
             accounts = uiState.accounts,
@@ -278,194 +322,42 @@ fun DashboardScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                item {
+                if (DashboardCardType.TOTAL_BALANCE in uiState.selectedCards) item {
                     Spacer(modifier = Modifier.height(8.dp))
                     TotalBalanceCard(
                         totalBalance = uiState.totalBalance,
                         foreignSubtitle = uiState.foreignBalancesSubtitle,
                         expenseTrendPercent = uiState.expenseTrendPercent,
-                        hidden = uiState.balancesHidden
+                        hidden = uiState.balancesHidden,
+                        onFilterClick = { showFilterDialog = true }
                     )
                 }
 
-                // Income / Expense Row
+                if (DashboardCardType.CASH_FLOW in uiState.selectedCards) item {
+                    CashFlowCard(uiState)
+                }
+
+                if (DashboardCardType.EXPENSE_STRUCTURE in uiState.selectedCards) item {
+                    ExpenseStructureCard(uiState)
+                }
+
+                if (DashboardCardType.RECENT_TRANSACTIONS in uiState.selectedCards) item {
+                    RecentTransactionsCard(uiState, onNavigateToTransactions)
+                }
+
+                if (DashboardCardType.ACCOUNT_BALANCES in uiState.selectedCards) item {
+                    AccountBalancesCard(uiState)
+                }
+
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    OutlinedButton(
+                        onClick = { showCardSelector = true },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Income Card
-                        Card(
-                            modifier = Modifier.weight(1f),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowDownward,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.secondary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = stringResource(R.string.dashboard_income),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = MoneyFormat.format(uiState.monthlyIncome),
-                                    modifier = Modifier.privacyBlur(uiState.balancesHidden, radius = 10.dp),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        // Expense Card
-                        Card(
-                            modifier = Modifier.weight(1f),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.1f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowUpward,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = stringResource(R.string.dashboard_expenses),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = MoneyFormat.format(uiState.monthlyExpenses),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.error,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.dashboard_card_add_more))
                     }
-                }
-
-                // Gastos por Categoría del mes en curso (datos reales de Room)
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.dashboard_expenses_by_category),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                if (uiState.categorySpending.isEmpty()) {
-                                    Text(
-                                        text = stringResource(R.string.dashboard_no_expenses_month),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                } else {
-                                    val fallback = MaterialTheme.colorScheme.primary
-                                    uiState.categorySpending.take(3).forEach { spend ->
-                                        CategoryLegendItem(
-                                            text = "${spend.category.name} (${spend.percentage}%)",
-                                            color = parseHexColor(spend.category.colorHex, fallback)
-                                        )
-                                    }
-                                }
-                            }
-
-                            val fallback = MaterialTheme.colorScheme.primary
-                            DonutChart(
-                                segments = uiState.categorySpending.map { spend ->
-                                    DonutSegment(
-                                        value = spend.amount,
-                                        color = parseHexColor(spend.category.colorHex, fallback)
-                                    )
-                                },
-                                size = 96.dp,
-                                strokeWidth = 14.dp
-                            )
-                        }
-                    }
-                }
-
-                // Recent Transactions Title
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stringResource(R.string.dashboard_recent_transactions),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = stringResource(R.string.dashboard_see_all),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                            .minimumInteractiveComponentSize()
-                            .clickable { onNavigateToTransactions() }
-                        )
-                    }
-                }
-
-                // Recent Transactions List
-                items(uiState.recentTransactions) { tx ->
-                    val category = uiState.categories[tx.categoryId]
-                    val dateStr = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(tx.date))
-                    
-                    TransactionItem(
-                        title = tx.note.ifEmpty { category?.name ?: stringResource(R.string.dashboard_other_category) },
-                        subtitle = dateStr,
-                        amount = tx.amount,
-                        type = tx.type,
-                        icon = getIconForName(category?.icon ?: "shopping_cart"),
-                        currency = tx.currency
-                    )
-                }
-
-                item {
-                    // Espacio extra para que el FAB no tape la última transacción
                     Spacer(modifier = Modifier.height(88.dp))
                 }
             }
@@ -674,6 +566,127 @@ fun DashboardScreen(
     }
 }
 
+@Composable
+private fun DashboardFilterDialog(
+    selectedPeriod: DashboardPeriodFilter,
+    selectedCategoryId: String?,
+    categories: List<Category>,
+    onDismiss: () -> Unit,
+    onApply: (DashboardPeriodFilter, String?) -> Unit,
+    onClear: () -> Unit
+) {
+    var period by remember(selectedPeriod) { mutableStateOf(selectedPeriod) }
+    var categoryId by remember(selectedCategoryId) { mutableStateOf(selectedCategoryId) }
+    var periodExpanded by remember { mutableStateOf(false) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.dashboard_filter_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(stringResource(R.string.dashboard_filter_period), style = MaterialTheme.typography.labelLarge)
+                    Box {
+                        OutlinedButton(
+                            onClick = { periodExpanded = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(dashboardPeriodLabel(period), modifier = Modifier.weight(1f))
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                        }
+                        DropdownMenu(
+                            expanded = periodExpanded,
+                            onDismissRequest = { periodExpanded = false }
+                        ) {
+                            DashboardPeriodFilter.entries.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(dashboardPeriodLabel(option)) },
+                                    onClick = {
+                                        period = option
+                                        periodExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(stringResource(R.string.dashboard_filter_category), style = MaterialTheme.typography.labelLarge)
+                    Box {
+                        OutlinedButton(
+                            onClick = { categoryExpanded = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                categories.firstOrNull { it.id == categoryId }?.name
+                                    ?: stringResource(R.string.dashboard_filter_all_categories),
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                        }
+                        DropdownMenu(
+                            expanded = categoryExpanded,
+                            onDismissRequest = { categoryExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.dashboard_filter_all_categories)) },
+                                onClick = {
+                                    categoryId = null
+                                    categoryExpanded = false
+                                }
+                            )
+                            categories.forEach { category ->
+                                DropdownMenuItem(
+                                    text = { Text(category.name) },
+                                    onClick = {
+                                        categoryId = category.id
+                                        categoryExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onApply(period, categoryId) }) {
+                Text(stringResource(R.string.dashboard_filter_apply))
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onClear) {
+                    Text(stringResource(R.string.dashboard_filter_clear))
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.dashboard_filter_cancel))
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun dashboardPeriodLabel(period: DashboardPeriodFilter): String = stringResource(
+    when (period) {
+        DashboardPeriodFilter.TODAY -> R.string.dashboard_filter_today
+        DashboardPeriodFilter.THIS_WEEK -> R.string.dashboard_filter_this_week
+        DashboardPeriodFilter.THIS_MONTH -> R.string.dashboard_filter_this_month
+        DashboardPeriodFilter.THIS_YEAR -> R.string.dashboard_filter_this_year
+        DashboardPeriodFilter.LAST_7_DAYS -> R.string.dashboard_filter_last_7_days
+        DashboardPeriodFilter.LAST_30_DAYS -> R.string.dashboard_filter_last_30_days
+        DashboardPeriodFilter.LAST_12_WEEKS -> R.string.dashboard_filter_last_12_weeks
+        DashboardPeriodFilter.LAST_6_MONTHS -> R.string.dashboard_filter_last_6_months
+        DashboardPeriodFilter.LAST_1_YEAR -> R.string.dashboard_filter_last_1_year
+        DashboardPeriodFilter.LAST_5_YEARS -> R.string.dashboard_filter_last_5_years
+    }
+)
+
 /**
  * Tarjeta de Balance Total con degradado de marca, círculos decorativos
  * y monto animado (cuenta suavemente hacia el valor al entrar y al cambiar).
@@ -683,7 +696,8 @@ fun TotalBalanceCard(
     totalBalance: Long,
     foreignSubtitle: String? = null,
     expenseTrendPercent: Int?,
-    hidden: Boolean = false
+    hidden: Boolean = false,
+    onFilterClick: (() -> Unit)? = null
 ) {
     // Estado para forzar la animación en cada entrada a la composición
     var startAnimation by remember { mutableStateOf(false) }
@@ -813,6 +827,20 @@ fun TotalBalanceCard(
                 }
             }
         }
+        onFilterClick?.let { onClick ->
+            IconButton(
+                onClick = onClick,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FilterList,
+                    contentDescription = stringResource(R.string.dashboard_filter_action),
+                    tint = Color.White
+                )
+            }
+        }
     }
 }
 
@@ -845,6 +873,7 @@ fun TransactionItem(
     type: String,
     icon: ImageVector,
     currency: String = MoneyFormat.DEFAULT_CURRENCY,
+    categoryName: String? = null,
     onClick: () -> Unit = {}
 ) {
     Row(
@@ -888,6 +917,16 @@ fun TransactionItem(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Categoría del movimiento, pequeña bajo la fecha
+                if (!categoryName.isNullOrBlank()) {
+                    Text(
+                        text = categoryName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 
@@ -909,6 +948,10 @@ fun TransactionItem(
 val categoryIcons: Map<String, ImageVector> = mapOf(
     "home" to Icons.Default.Home,
     "restaurant" to Icons.Default.Restaurant,
+    "fastfood" to Icons.Default.Fastfood,
+    "restaurant_menu" to Icons.Default.RestaurantMenu,
+    "local_cafe" to Icons.Default.LocalCafe,
+    "local_gas_station" to Icons.Default.LocalGasStation,
     "directions_car" to Icons.Default.DirectionsCar,
     "shopping_cart" to Icons.Default.ShoppingCart,
     "payments" to Icons.Default.Payments,
@@ -1067,7 +1110,8 @@ fun QuickActionFormSheet(
 ) {
     var amountStr by remember { mutableStateOf("") }
     var selectedAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: "") }
-    var selectedCategoryId by remember { mutableStateOf(categories.firstOrNull()?.id ?: "") }
+    // Vacío = "Sin categoría (automática)": si el usuario no elige, se infiere de la nota.
+    var selectedCategoryId by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
 
     val typeLabel = stringResource(if (actionType == "EXPENSE") R.string.quick_expense else R.string.quick_income)
@@ -1160,25 +1204,45 @@ fun QuickActionFormSheet(
                 }
             }
 
-            if (categories.isNotEmpty()) {
-                Text(stringResource(R.string.common_category), style = MaterialTheme.typography.labelLarge)
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // Selector de categoría SIEMPRE visible (antes se ocultaba si la lista estaba
+            // vacía). "Sin categoría" deja que se infiera automáticamente de la nota.
+            Text(stringResource(R.string.common_category), style = MaterialTheme.typography.labelLarge)
+            var expandedCat by remember { mutableStateOf(false) }
+            val selectedCat = categories.find { it.id == selectedCategoryId }
+            Box {
+                OutlinedButton(
+                    onClick = { expandedCat = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            selectedCat?.let {
+                                Icon(getIconForName(it.icon), contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                            Text(selectedCat?.name ?: stringResource(R.string.category_none_auto))
+                        }
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
+                }
+                DropdownMenu(
+                    expanded = expandedCat,
+                    onDismissRequest = { expandedCat = false },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(categories) { cat ->
-                        val selected = selectedCategoryId == cat.id
-                        FilterChip(
-                            selected = selected,
-                            onClick = { selectedCategoryId = cat.id },
-                            label = { Text(cat.name) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = getIconForName(cat.icon),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.category_none_auto)) },
+                        onClick = { selectedCategoryId = ""; expandedCat = false }
+                    )
+                    categories.forEach { cat ->
+                        DropdownMenuItem(
+                            text = { Text(cat.name) },
+                            leadingIcon = { Icon(getIconForName(cat.icon), contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            onClick = { selectedCategoryId = cat.id; expandedCat = false }
                         )
                     }
                 }
@@ -1197,6 +1261,8 @@ fun QuickActionFormSheet(
                 onClick = {
                     val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
                     if (amount > 0L && selectedAccountId.isNotEmpty()) {
+                        // Con categoría vacía, el ViewModel infiere por palabras clave
+                        // (reglas del usuario primero, luego las integradas).
                         onSave(selectedAccountId, amount, selectedCategoryId, note)
                     }
                 },

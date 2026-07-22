@@ -24,10 +24,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import com.bsolutions.wallet.R
 import com.bsolutions.wallet.presentation.common.walletTopBarColors
 import com.bsolutions.wallet.presentation.auth.AuthViewModel
 import com.bsolutions.wallet.presentation.profile.ProfileViewModel
+import com.bsolutions.wallet.presentation.sync.SyncViewModel
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +48,7 @@ fun SettingsScreen(
     onNavigateToProfile: () -> Unit = {},
     onNavigateToAccounts: () -> Unit = {},
     onNavigateToCategories: () -> Unit = {},
+    onNavigateToCategoryRules: () -> Unit = {},
     onNavigateToSecurity: () -> Unit = {},
     onNavigateToSyncSettings: () -> Unit = {},
     onNavigateToImportCsv: () -> Unit = {},
@@ -53,13 +56,18 @@ fun SettingsScreen(
     onLogout: () -> Unit = {},
     profileViewModel: ProfileViewModel = hiltViewModel(),
     authViewModel: AuthViewModel = hiltViewModel(),
-    exportViewModel: ExportViewModel = hiltViewModel()
+    exportViewModel: ExportViewModel = hiltViewModel(),
+    syncViewModel: SyncViewModel = hiltViewModel()
 ) {
     val profile by profileViewModel.profile.collectAsState()
     val authState by authViewModel.uiState.collectAsState()
+    val syncState by syncViewModel.uiState.collectAsState()
+    val pendingCount by syncViewModel.pendingCount.collectAsState()
     var confirmLogout by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val exportSuccessMessage = stringResource(R.string.settings_export_ok)
+    val exportErrorMessage = stringResource(R.string.settings_export_error, "")
     val scope = rememberCoroutineScope()
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
@@ -71,9 +79,9 @@ fun SettingsScreen(
                     context.contentResolver.openOutputStream(uri)?.use { out ->
                         out.write(csv.toByteArray(Charsets.UTF_8))
                     }
-                    Toast.makeText(context, context.getString(R.string.settings_export_ok), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, exportSuccessMessage, Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
-                    Toast.makeText(context, context.getString(R.string.settings_export_error, e.message ?: ""), Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "$exportErrorMessage ${e.message.orEmpty()}".trim(), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -184,6 +192,13 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.tertiaryContainer,
                     onClick = onNavigateToCategories
                 )
+                SettingsItem(
+                    title = stringResource(R.string.category_rules_title),
+                    subtitle = stringResource(R.string.category_rules_sub),
+                    icon = Icons.Default.AutoAwesome,
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    onClick = onNavigateToCategoryRules
+                )
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
@@ -200,6 +215,23 @@ fun SettingsScreen(
                     icon = Icons.Default.Sync,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     onClick = onNavigateToSyncSettings
+                )
+                // Sincronización con el backend (push/pull offline-first)
+                SettingsItem(
+                    title = stringResource(R.string.settings_cloud_sync),
+                    subtitle = when {
+                        syncState.isSyncing -> stringResource(R.string.settings_cloud_sync_running)
+                        syncState.lastResult != null -> syncState.lastResult!!
+                        pendingCount > 0 -> pluralStringResource(
+                            R.plurals.settings_cloud_sync_pending,
+                            pendingCount,
+                            pendingCount
+                        )
+                        else -> stringResource(R.string.settings_cloud_sync_sub)
+                    },
+                    icon = Icons.Default.CloudSync,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    onClick = { syncViewModel.syncNow() }
                 )
                 SettingsItem(
                     title = stringResource(R.string.settings_import),
@@ -218,7 +250,7 @@ fun SettingsScreen(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                // Sesión Firebase: iniciar o cerrar según el estado
+                // Sesión Wallet/Sanctum: iniciar o cerrar según el estado
                 if (authState.isLoggedIn) {
                     SettingsItem(
                         title = stringResource(R.string.settings_logout),

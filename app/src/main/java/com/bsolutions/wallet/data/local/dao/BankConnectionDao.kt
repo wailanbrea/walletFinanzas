@@ -9,12 +9,12 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BankConnectionDao {
-    @Query("SELECT * FROM bank_connections ORDER BY providerName")
-    fun getAll(): Flow<List<BankConnectionEntity>>
+    @Query("SELECT * FROM bank_connections WHERE ownerId = :ownerId ORDER BY providerName")
+    fun getAll(ownerId: String): Flow<List<BankConnectionEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(connections: List<BankConnectionEntity>)
 
-    @Query("DELETE FROM bank_connections WHERE id = :id")
-    suspend fun delete(id: String)
+    @Query("DELETE FROM bank_connections WHERE ownerId = :ownerId AND id = :id")
+    suspend fun delete(ownerId: String, id: String)
 }

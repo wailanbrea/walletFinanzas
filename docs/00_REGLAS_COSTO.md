@@ -5,21 +5,17 @@ Este documento establece las restricciones estrictas para evitar exceder las cuo
 
 ---
 
-## 1. Firebase (Plan Spark - Gratuito) — ÚNICO BACKEND
+## 1. Backend Laravel — identidad canónica
 
-> **Decisión 16/07/2026**: Supabase queda **eliminado del stack**. Firebase en plan Spark
-> cubre auth Y sync de datos (Firestore) sin riesgo de cobro: en Spark no hay tarjeta
-> asociada — si se excede la cuota, el servicio se pausa hasta el día siguiente, nunca cobra.
-> El candado de costo real es uno solo: **NUNCA activar el plan Blaze.**
+> **Decisión vigente 20/07/2026 (ADR-003):** Laravel Sanctum es la única identidad
+> remota. Firebase Auth fue retirado para evitar usuarios duplicados y ownership ambiguo.
+> El costo del backend depende del hosting elegido y debe aprobarse antes de producción.
 
-### Servicios Permitidos
-- ✅ **Authentication** (Email/Password ya activo; Google Sign-In opcional) — integrado 16/07/2026
-- ✅ **Firestore** SOLO para sincronización (Room sigue siendo la fuente de verdad local).
-  Cuotas Spark: 1 GB almacenamiento, 50k lecturas/día, 20k escrituras/día — sobra para 25 beta.
-  Ventaja clave: persistencia offline nativa del SDK (elimina el SyncManager artesanal).
-- ✅ **Cloud Messaging (FCM)** para notificaciones push
-- ✅ **Crashlytics** para monitoreo de errores
-- ✅ **App Check** para seguridad
+### Servicios vigentes
+- ✅ **Laravel Sanctum** para registro, login, recuperación, sesiones y ownership remoto.
+- ✅ **Room/SQLCipher** como fuente de verdad local offline-first.
+- ✅ **MySQL** para datos remotos del backend Wallet.
+- ⏸️ FCM, Crashlytics o Firestore no forman parte del runtime actual; requieren ADR y presupuesto propios.
 
 ### Servicios PROHIBIDOS en MVP
 - ❌ **Plan Blaze** — prohibición absoluta; es el único camino a un cobro
@@ -180,11 +176,9 @@ if (storageUsedBytes > STORAGE_INTERNAL_LIMIT_BYTES * 0.9) {
 
 ## 7. Costos Estimados MVP
 
-### Firebase Spark (único backend)
-- ✅ Authentication: $0 (incluido en Spark)
-- ✅ Firestore (sync): $0 dentro de cuotas Spark — sin tarjeta no puede haber cobro
-- ✅ FCM: $0 (hasta 100k messages/mes gratis)
-- ✅ Crashlytics: $0 (gratuito con Spark)
+### Backend Wallet
+- Laravel/Sanctum: software sin licencia; hosting, base de datos, correo y dominio pendientes de cotización.
+- OAuth Gmail/Microsoft: sin coste directo de API en el alcance actual, sujeto a cuotas y verificación del proveedor.
 
 ### Hosting MVP
 - ✅ Build APK: Gracis con Gradle
@@ -227,7 +221,7 @@ class CostMonitor : Service {
 
 ### ✅ Hacer
 - Usar Room como fuente de verdad principal
-- Firebase para auth, notificaciones y sync (Firestore, cuando se active)
+- Laravel Sanctum como única identidad remota
 - Salt Edge en sandbox/fake mode
 - Implementar Cost Guard desde el inicio
 

@@ -8,6 +8,7 @@ import com.bsolutions.wallet.data.local.dao.BudgetDao
 import com.bsolutions.wallet.data.local.dao.CategoryDao
 import com.bsolutions.wallet.data.local.dao.DebtDao
 import com.bsolutions.wallet.data.local.dao.GoalDao
+import com.bsolutions.wallet.data.local.dao.PendingOperationDao
 import com.bsolutions.wallet.data.local.dao.PlannedPaymentDao
 import com.bsolutions.wallet.data.local.dao.TransactionDao
 import com.bsolutions.wallet.data.local.entity.AccountEntity
@@ -16,6 +17,7 @@ import com.bsolutions.wallet.data.local.entity.BudgetEntity
 import com.bsolutions.wallet.data.local.entity.CategoryEntity
 import com.bsolutions.wallet.data.local.entity.DebtEntity
 import com.bsolutions.wallet.data.local.entity.GoalEntity
+import com.bsolutions.wallet.data.local.entity.PendingOperationEntity
 import com.bsolutions.wallet.data.local.entity.PlannedPaymentEntity
 import com.bsolutions.wallet.data.local.entity.TransactionEntity
 
@@ -28,10 +30,11 @@ import com.bsolutions.wallet.data.local.entity.TransactionEntity
         GoalEntity::class,
         PlannedPaymentEntity::class,
         DebtEntity::class,
-        BankConnectionEntity::class
+        BankConnectionEntity::class,
+        PendingOperationEntity::class
     ],
-    version = 6,
-    exportSchema = false
+    version = 9,
+    exportSchema = true
 )
 abstract class WalletDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
@@ -42,4 +45,6 @@ abstract class WalletDatabase : RoomDatabase() {
     abstract fun plannedPaymentDao(): PlannedPaymentDao
     abstract fun debtDao(): DebtDao
     abstract fun bankConnectionDao(): BankConnectionDao
+    abstract fun pendingOperationDao(): PendingOperationDao
+    abstract fun ownerIsolationDao(): OwnerIsolationDao
 }

@@ -1,5 +1,9 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.bsolutions.wallet.data.repository
 
+import com.bsolutions.wallet.core.common.CategoryRuleRepository
+import com.bsolutions.wallet.core.common.ExpenseCategorizer
 import com.bsolutions.wallet.core.network.AttemptData
 import com.bsolutions.wallet.core.network.ConnectSessionData
 import com.bsolutions.wallet.core.network.ConnectSessionRequest
@@ -9,14 +13,18 @@ import com.bsolutions.wallet.core.network.CustomerIdentifier
 import com.bsolutions.wallet.core.network.ProviderDto
 import com.bsolutions.wallet.core.network.ProviderRef
 import com.bsolutions.wallet.core.network.SaltEdgeApi
+import com.bsolutions.wallet.core.database.WalletOwnerScope
 import com.bsolutions.wallet.data.local.dao.BankConnectionDao
 import com.bsolutions.wallet.data.local.entity.BankConnectionEntity
 import com.bsolutions.wallet.data.preferences.UserPreferencesRepository
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
+import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.UUID
@@ -42,10 +50,14 @@ class BankSyncRepository @Inject constructor(
     private val bankConnectionDao: BankConnectionDao,
     private val accountRepository: AccountRepository,
     private val transactionRepository: TransactionRepository,
-    private val prefs: UserPreferencesRepository
+    private val categoryRepository: CategoryRepository,
+    private val categoryRules: CategoryRuleRepository,
+    private val prefs: UserPreferencesRepository,
+    private val ownerScope: WalletOwnerScope
 ) {
 
-    fun getConnections(): Flow<List<BankConnectionEntity>> = bankConnectionDao.getAll()
+    fun getConnections(): Flow<List<BankConnectionEntity>> =
+        ownerScope.ownerId.flatMapLatest { bankConnectionDao.getAll(it) }
 
     /** Crea (una sola vez) el customer en Salt Edge y devuelve su id. */
     private suspend fun ensureCustomer(): String {
@@ -86,6 +98,8 @@ class BankSyncRepository @Inject constructor(
     suspend fun refresh(): BankSyncResult {
         val customerId = prefs.getSaltEdgeCustomerId() ?: return BankSyncResult(0, 0, 0)
         val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val categories = categoryRepository.getCategories().first()
+        val customRules = categoryRules.rules.first()
 
         val connections = api.listConnections(customerId).data
         bankConnectionDao.upsertAll(
@@ -96,7 +110,8 @@ class BankSyncRepository @Inject constructor(
                     providerCode = it.providerCode.orEmpty(),
                     countryCode = it.countryCode.orEmpty(),
                     status = it.status.orEmpty(),
-                    lastSyncAt = System.currentTimeMillis()
+                    lastSyncAt = System.currentTimeMillis(),
+                    ownerId = ownerScope.currentOwnerId()
                 )
             }
         )
@@ -132,15 +147,21 @@ class BankSyncRepository @Inject constructor(
                     val amount = tx.amount ?: return@tx
                     val dateMillis = tx.madeOn?.let { runCatching { dateFormat.parse(it)?.time }.getOrNull() }
                         ?: System.currentTimeMillis()
+                    val description = tx.description ?: tx.category.orEmpty()
+                    val categoryId = ExpenseCategorizer.categoryIdFor(
+                        text = listOfNotNull(tx.description, tx.category).joinToString(" "),
+                        categories = categories,
+                        customRules = customRules
+                    ).orEmpty()
                     transactionRepository.addTransaction(
                         Transaction(
                             id = "se_${tx.id}",
                             accountId = "se_${remote.id}",
                             amount = (abs(amount) * 100).roundToLong(),
                             type = if (amount < 0) "EXPENSE" else "INCOME",
-                            categoryId = "",
+                            categoryId = categoryId,
                             date = dateMillis,
-                            note = tx.description ?: tx.category ?: "",
+                            note = description,
                             currency = remote.currencyCode ?: tx.currencyCode ?: "USD"
                         )
                     )
@@ -153,6 +174,6 @@ class BankSyncRepository @Inject constructor(
     }
 
     suspend fun removeConnection(id: String) {
-        bankConnectionDao.delete(id)
+        bankConnectionDao.delete(ownerScope.currentOwnerId(), id)
     }
 }

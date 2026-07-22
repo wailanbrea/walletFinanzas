@@ -3,9 +3,12 @@ package com.bsolutions.wallet.presentation.importcsv
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bsolutions.wallet.core.common.CsvParser
+import com.bsolutions.wallet.core.common.CategoryRuleRepository
+import com.bsolutions.wallet.core.common.ExpenseCategorizer
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
+import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,7 +60,9 @@ data class ImportCsvUiState(
 @HiltViewModel
 class ImportCsvViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
-    private val accountRepository: AccountRepository
+    private val accountRepository: AccountRepository,
+    private val categoryRepository: CategoryRepository,
+    private val categoryRules: CategoryRuleRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ImportCsvUiState())
@@ -135,7 +140,13 @@ class ImportCsvViewModel @Inject constructor(
             var imported = 0
             var skippedDup = 0
             var skippedInvalid = 0
-            var balanceDelta = 0L
+
+            // Divisa de la cuenta destino; cada fila se escribe atómica (movimiento + saldo),
+            // así una interrupción deja un import parcial consistente en vez de descuadrado.
+            val account = accountRepository.getAccount(state.selectedAccountId)
+            val currency = account?.currency ?: "DOP"
+            val categories = categoryRepository.getCategories().first()
+            val customRules = categoryRules.rules.first()
 
             for (row in state.previewRows) {
                 if (!row.isValid) { skippedInvalid++; continue }
@@ -143,24 +154,24 @@ class ImportCsvViewModel @Inject constructor(
 
                 val amountAbs = kotlin.math.abs(row.amount!!)
                 val isIncome = row.amount > 0
-                transactionRepository.addTransaction(
+                val categoryId = ExpenseCategorizer.categoryIdFor(
+                    text = row.description,
+                    categories = categories,
+                    customRules = customRules
+                ).orEmpty()
+                transactionRepository.addTransactionWithBalance(
                     Transaction(
                         id = UUID.randomUUID().toString(),
                         accountId = state.selectedAccountId,
                         amount = amountAbs,
                         type = if (isIncome) "INCOME" else "EXPENSE",
-                        categoryId = "",
+                        categoryId = categoryId,
                         date = row.date!!,
-                        note = row.description
+                        note = row.description,
+                        currency = currency
                     )
                 )
-                balanceDelta += row.amount
                 imported++
-            }
-
-            // Un solo ajuste de balance al final
-            accountRepository.getAccount(state.selectedAccountId)?.let { account ->
-                accountRepository.updateAccount(account.copy(balance = account.balance + balanceDelta))
             }
 
             _uiState.value = _uiState.value.copy(

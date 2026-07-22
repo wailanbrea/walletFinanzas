@@ -2,6 +2,7 @@ package com.bsolutions.wallet.presentation.dashboard
 
 import com.bsolutions.wallet.data.preferences.UserProfilePrefs
 import com.bsolutions.wallet.data.preferences.UserProfilePreferences
+import com.bsolutions.wallet.core.common.DefaultCategories
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.model.Category
@@ -25,6 +26,9 @@ import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import java.util.Calendar
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * Tests de la lógica de mes en curso, tendencia de gasto y gasto por categoría
@@ -59,12 +63,13 @@ class DashboardViewModelTest {
 
     private fun buildViewModel(
         transactions: List<Transaction>,
-        categories: List<Category> = listOf(Category("food", "Alimentación", "restaurant", "#1B873F"))
+        categories: List<Category> = listOf(Category("food", "Alimentación", "restaurant", "#1B873F")),
+        preferences: FakeUserProfilePreferences = FakeUserProfilePreferences()
     ): DashboardViewModel = DashboardViewModel(
         FakeAccountRepository(Account("acc-1", "Cuenta", "BANK", 50_000L, "DOP")),
         FakeTransactionRepository(transactions),
         FakeCategoryRepository(categories),
-        FakeUserProfilePreferences()
+        preferences
     )
 
     private suspend fun kotlinx.coroutines.test.TestScope.awaitState(viewModel: DashboardViewModel): DashboardUiState {
@@ -144,6 +149,25 @@ class DashboardViewModelTest {
     }
 
     @Test
+    fun `gasto sin categoria o con referencia eliminada permanece visible`() = runTest {
+        val viewModel = buildViewModel(
+            listOf(
+                tx("blank", 1_000L, "EXPENSE", thisMonth(), categoryId = ""),
+                tx("deleted", 2_000L, "EXPENSE", thisMonth(), categoryId = "deleted-id"),
+                tx("known", 3_000L, "EXPENSE", thisMonth(), categoryId = "food")
+            )
+        )
+
+        val state = awaitState(viewModel)
+
+        assertEquals(6_000L, state.monthlyExpenses)
+        assertEquals(2, state.categorySpending.size)
+        val uncategorized = state.categorySpending.first { it.category.id == "__uncategorized__" }
+        assertEquals(3_000L, uncategorized.amount)
+        assertEquals(50, uncategorized.percentage)
+    }
+
+    @Test
     fun `transacciones recientes ordenadas por fecha descendente y limitadas a 5`() = runTest {
         val base = thisMonth(day = 1)
         val viewModel = buildViewModel(
@@ -155,6 +179,138 @@ class DashboardViewModelTest {
         assertEquals(5, state.recentTransactions.size)
         assertEquals("tx-7", state.recentTransactions.first().id)
         assertEquals("tx-3", state.recentTransactions.last().id)
+    }
+
+    @Test
+    fun `rangos de fecha producen los inicios esperados`() {
+        val zone = ZoneId.of("UTC")
+        val now = Instant.parse("2026-07-20T15:30:00Z").toEpochMilli()
+        val expected = mapOf(
+            DashboardPeriodFilter.TODAY to LocalDate.of(2026, 7, 20),
+            DashboardPeriodFilter.THIS_WEEK to LocalDate.of(2026, 7, 20),
+            DashboardPeriodFilter.THIS_MONTH to LocalDate.of(2026, 7, 1),
+            DashboardPeriodFilter.THIS_YEAR to LocalDate.of(2026, 1, 1),
+            DashboardPeriodFilter.LAST_7_DAYS to LocalDate.of(2026, 7, 14),
+            DashboardPeriodFilter.LAST_30_DAYS to LocalDate.of(2026, 6, 21),
+            DashboardPeriodFilter.LAST_12_WEEKS to LocalDate.of(2026, 4, 28),
+            DashboardPeriodFilter.LAST_6_MONTHS to LocalDate.of(2026, 1, 20),
+            DashboardPeriodFilter.LAST_1_YEAR to LocalDate.of(2025, 7, 20),
+            DashboardPeriodFilter.LAST_5_YEARS to LocalDate.of(2021, 7, 20)
+        )
+
+        expected.forEach { (period, date) ->
+            val actual = Instant.ofEpochMilli(period.startMillis(now, zone)).atZone(zone).toLocalDate()
+            assertEquals(period.name, date, actual)
+        }
+    }
+
+    @Test
+    fun `filtro por hoy y categoria recalcula resumen grafico y recientes`() = runTest {
+        val fixedNow = Instant.parse("2026-07-20T15:30:00Z").toEpochMilli()
+        val today = Instant.parse("2026-07-20T12:00:00Z").toEpochMilli()
+        val yesterday = Instant.parse("2026-07-19T12:00:00Z").toEpochMilli()
+        val categories = listOf(
+            Category("food", "Alimentación", "restaurant", "#1B873F"),
+            Category("transport", "Transporte", "directions_car", "#C62828")
+        )
+        val viewModel = buildViewModel(
+            listOf(
+                tx("food-today", 1_000L, "EXPENSE", today, "food"),
+                tx("transport-today", 2_000L, "EXPENSE", today, "transport"),
+                tx("food-yesterday", 3_000L, "EXPENSE", yesterday, "food")
+            ),
+            categories
+        )
+        viewModel.nowMillisProvider = { fixedNow }
+        val job = backgroundScope.launch { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.setPeriodFilter(DashboardPeriodFilter.TODAY)
+        viewModel.setCategoryFilter("food")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(DashboardPeriodFilter.TODAY, state.selectedPeriod)
+        assertEquals("food", state.selectedCategoryId)
+        assertEquals(1_000L, state.monthlyExpenses)
+        assertEquals(listOf("food-today"), state.recentTransactions.map { it.id })
+        assertEquals(listOf("food"), state.categorySpending.map { it.category.id })
+        job.cancel()
+    }
+
+    @Test
+    fun `tarjetas predeterminadas se muestran y quitar una se persiste`() = runTest {
+        val preferences = FakeUserProfilePreferences()
+        val viewModel = buildViewModel(emptyList(), preferences = preferences)
+        val job = backgroundScope.launch { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        assertEquals(DashboardCardType.defaultCards, viewModel.uiState.value.selectedCards)
+
+        viewModel.setDashboardCardEnabled(DashboardCardType.EXPENSE_STRUCTURE, false)
+        advanceUntilIdle()
+
+        assertEquals(
+            DashboardCardType.defaultCards - DashboardCardType.EXPENSE_STRUCTURE,
+            viewModel.uiState.value.selectedCards
+        )
+        assertEquals(
+            viewModel.uiState.value.selectedCards.mapTo(mutableSetOf()) { it.storageId },
+            preferences.profile.value.dashboardCardIds
+        )
+        job.cancel()
+    }
+
+    @Test
+    fun `balance total permanece porque contiene el unico acceso a filtros`() = runTest {
+        val viewModel = buildViewModel(emptyList())
+        val job = backgroundScope.launch { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.setDashboardCardEnabled(DashboardCardType.TOTAL_BALANCE, false)
+        advanceUntilIdle()
+
+        assertEquals(true, DashboardCardType.TOTAL_BALANCE in viewModel.uiState.value.selectedCards)
+        job.cancel()
+    }
+
+    @Test
+    fun `refrescar reloj actualiza el filtro hoy al cambiar de dia`() = runTest {
+        var now = Instant.parse("2026-07-20T23:59:00Z").toEpochMilli()
+        val viewModel = buildViewModel(
+            listOf(
+                tx("day-one", 1_000L, "EXPENSE", Instant.parse("2026-07-20T12:00:00Z").toEpochMilli()),
+                tx("day-two", 2_000L, "EXPENSE", Instant.parse("2026-07-21T12:00:00Z").toEpochMilli())
+            )
+        )
+        viewModel.nowMillisProvider = { now }
+        val job = backgroundScope.launch { viewModel.uiState.collect { } }
+        viewModel.setPeriodFilter(DashboardPeriodFilter.TODAY)
+        advanceUntilIdle()
+        assertEquals(listOf("day-one"), viewModel.uiState.value.recentTransactions.map { it.id })
+
+        now = Instant.parse("2026-07-21T23:59:00Z").toEpochMilli()
+        viewModel.refreshTime()
+        advanceUntilIdle()
+
+        assertEquals(listOf("day-two"), viewModel.uiState.value.recentTransactions.map { it.id })
+        job.cancel()
+    }
+
+    @Test
+    fun `categorias predeterminadas eliminadas no se vuelven a sembrar`() = runTest {
+        val deletedIds = DefaultCategories.seeds.mapTo(mutableSetOf()) { it.id }
+        val categories = FakeCategoryRepository(emptyList(), deletedIds)
+        DashboardViewModel(
+            FakeAccountRepository(Account("acc-1", "Cuenta", "BANK", 0L, "DOP")),
+            FakeTransactionRepository(emptyList()),
+            categories,
+            FakeUserProfilePreferences()
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(emptyList<Category>(), categories.activeCategories)
     }
 
     // --- Fakes ---
@@ -174,12 +330,15 @@ class DashboardViewModelTest {
         override fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>> = transactions
         override suspend fun getTransaction(id: String): Transaction? = transactions.value.firstOrNull { it.id == id }
         override suspend fun addTransaction(transaction: Transaction) { transactions.value += transaction }
+        override suspend fun addTransactionWithBalance(transaction: Transaction) { transactions.value += transaction }
         override suspend fun executeTransfer(fromAccountId: String, toAccountId: String, amount: Long, transaction: Transaction): Boolean {
             transactions.value += transaction
             return true
         }
         override suspend fun updateTransaction(transaction: Transaction) { transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it } }
+        override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) { transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it } }
         override suspend fun deleteTransaction(id: String) { transactions.value = transactions.value.filterNot { it.id == id } }
+        override suspend fun deleteTransactionWithBalance(transaction: Transaction) { transactions.value = transactions.value.filterNot { it.id == transaction.id } }
     }
 
     private class FakeUserProfilePreferences : UserProfilePreferences {
@@ -188,13 +347,26 @@ class DashboardViewModelTest {
         override suspend fun setBalancesHidden(hidden: Boolean) {
             profile.value = profile.value.copy(balancesHidden = hidden)
         }
+
+        override suspend fun setDashboardCardIds(cardIds: Set<String>) {
+            profile.value = profile.value.copy(dashboardCardIds = cardIds)
+        }
     }
 
-    private class FakeCategoryRepository(categories: List<Category>) : CategoryRepository {
+    private class FakeCategoryRepository(
+        categories: List<Category>,
+        allKnownIds: Set<String> = categories.mapTo(mutableSetOf()) { it.id }
+    ) : CategoryRepository {
         private val state = MutableStateFlow(categories)
+        private val allIds = allKnownIds.toMutableSet()
+        val activeCategories: List<Category> get() = state.value
         override fun getCategories(): Flow<List<Category>> = state
         override suspend fun getCategory(id: String): Category? = state.value.firstOrNull { it.id == id }
-        override suspend fun addCategory(category: Category) { state.value += category }
+        override suspend fun getAllCategoryIdsIncludingDeleted(): Set<String> = allIds
+        override suspend fun addCategory(category: Category) {
+            allIds += category.id
+            state.value = state.value.filterNot { it.id == category.id } + category
+        }
         override suspend fun deleteCategory(id: String) { state.value = state.value.filterNot { it.id == id } }
     }
 }

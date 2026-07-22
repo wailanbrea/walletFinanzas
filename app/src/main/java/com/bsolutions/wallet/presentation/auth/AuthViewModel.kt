@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bsolutions.wallet.data.preferences.UserPreferencesRepository
 import com.bsolutions.wallet.data.repository.AuthResult
-import com.bsolutions.wallet.data.repository.FirebaseAuthRepository
+import com.bsolutions.wallet.data.repository.WalletAuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,7 +24,7 @@ data class AuthUiState(
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val authRepository: FirebaseAuthRepository,
+    private val authRepository: WalletAuthRepository,
     private val userPreferencesRepository: UserPreferencesRepository
 ) : ViewModel() {
 
@@ -44,12 +44,12 @@ class AuthViewModel @Inject constructor(
         runAuth { authRepository.signIn(email, password) }
     }
 
-    fun register(email: String, password: String) {
-        if (email.isBlank() || password.length < 6) {
-            _uiState.value = _uiState.value.copy(error = "Correo válido y contraseña de al menos 6 caracteres.")
+    fun register(name: String, email: String, password: String) {
+        AuthInputValidator.registrationError(name, email, password)?.let { error ->
+            _uiState.value = _uiState.value.copy(error = error)
             return
         }
-        runAuth { authRepository.signUp(email, password) }
+        runAuth { authRepository.signUp(name, email, password) }
     }
 
     fun recoverPassword(email: String) {
@@ -61,8 +61,10 @@ class AuthViewModel @Inject constructor(
     }
 
     fun logout() {
-        authRepository.signOut()
-        _uiState.value = AuthUiState()
+        viewModelScope.launch {
+            authRepository.signOut()
+            _uiState.value = AuthUiState()
+        }
     }
 
     fun clearError() {

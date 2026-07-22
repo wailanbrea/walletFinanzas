@@ -37,7 +37,7 @@ class TransactionsViewModelTest {
     @Test
     fun `adding an expense decreases account balance and stores transaction`() = runTest {
         val accountRepository = FakeAccountRepository(Account("account-1", "Efectivo", "CASH", 10_000L, "DOP"))
-        val transactionRepository = FakeTransactionRepository()
+        val transactionRepository = FakeTransactionRepository(accountRepository)
         val viewModel = TransactionsViewModel(transactionRepository, accountRepository, FakeCategoryRepository())
 
         viewModel.addTransaction("account-1", 2_500L, "EXPENSE", "food", "Compra")
@@ -51,7 +51,7 @@ class TransactionsViewModelTest {
     @Test
     fun `deleting an expense restores its effect on balance`() = runTest {
         val accountRepository = FakeAccountRepository(Account("account-1", "Efectivo", "CASH", 7_500L, "DOP"))
-        val transactionRepository = FakeTransactionRepository()
+        val transactionRepository = FakeTransactionRepository(accountRepository)
         val transaction = Transaction("tx-1", "account-1", 2_500L, "EXPENSE", "food", 1L, "Compra")
         transactionRepository.addTransaction(transaction)
         val viewModel = TransactionsViewModel(transactionRepository, accountRepository, FakeCategoryRepository())
@@ -66,7 +66,7 @@ class TransactionsViewModelTest {
     @Test
     fun `editing an expense applies only the net balance difference`() = runTest {
         val accountRepository = FakeAccountRepository(Account("account-1", "Efectivo", "CASH", 7_500L, "DOP"))
-        val transactionRepository = FakeTransactionRepository()
+        val transactionRepository = FakeTransactionRepository(accountRepository)
         val original = Transaction("tx-1", "account-1", 2_500L, "EXPENSE", "food", 1L, "Compra")
         transactionRepository.addTransaction(original)
         val viewModel = TransactionsViewModel(transactionRepository, accountRepository, FakeCategoryRepository())
@@ -86,25 +86,49 @@ class TransactionsViewModelTest {
         override suspend fun addAccount(account: Account) { accounts.value += account }
         override suspend fun updateAccount(account: Account) { accounts.value = accounts.value.map { if (it.id == account.id) account else it } }
         override suspend fun deleteAccount(id: String) { accounts.value = accounts.value.filterNot { it.id == id } }
+        /** Simula el ajuste de saldo que el DAO hace dentro de la transacción atómica. */
+        fun adjustBalance(accountId: String, delta: Long) {
+            accounts.value = accounts.value.map { if (it.id == accountId) it.copy(balance = it.balance + delta) else it }
+        }
     }
 
-    private class FakeTransactionRepository : TransactionRepository {
+    private class FakeTransactionRepository(private val accounts: FakeAccountRepository) : TransactionRepository {
         val transactions = MutableStateFlow<List<Transaction>>(emptyList())
         override fun getTransactions(): Flow<List<Transaction>> = transactions
         override fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>> = transactions
         override suspend fun getTransaction(id: String): Transaction? = transactions.value.firstOrNull { it.id == id }
         override suspend fun addTransaction(transaction: Transaction) { transactions.value += transaction }
+        override suspend fun addTransactionWithBalance(transaction: Transaction) {
+            transactions.value += transaction
+            accounts.adjustBalance(transaction.accountId, if (transaction.type == "INCOME") transaction.amount else -transaction.amount)
+        }
         override suspend fun executeTransfer(fromAccountId: String, toAccountId: String, amount: Long, transaction: Transaction): Boolean {
             transactions.value += transaction
             return true
         }
         override suspend fun updateTransaction(transaction: Transaction) { transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it } }
+        override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) {
+            val diff = transaction.amount - oldAmount
+            accounts.adjustBalance(transaction.accountId, if (transaction.type == "INCOME") diff else -diff)
+            transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it }
+        }
         override suspend fun deleteTransaction(id: String) { transactions.value = transactions.value.filterNot { it.id == id } }
+        override suspend fun deleteTransactionWithBalance(transaction: Transaction) {
+            accounts.adjustBalance(transaction.accountId, if (transaction.type == "INCOME") -transaction.amount else transaction.amount)
+            transactions.value = transactions.value.filterNot { it.id == transaction.id }
+        }
     }
 
     private class FakeCategoryRepository : CategoryRepository {
-        override fun getCategories(): Flow<List<Category>> = MutableStateFlow(emptyList())
-        override suspend fun getCategory(id: String): Category? = null
+        private val categories = MutableStateFlow(
+            listOf(
+                Category("food", "Alimentación", "restaurant", "#1B873F"),
+                Category("transport", "Transporte", "directions_car", "#C62828")
+            )
+        )
+        override fun getCategories(): Flow<List<Category>> = categories
+        override suspend fun getCategory(id: String): Category? = categories.value.firstOrNull { it.id == id }
+        override suspend fun getAllCategoryIdsIncludingDeleted(): Set<String> = categories.value.mapTo(mutableSetOf()) { it.id }
         override suspend fun addCategory(category: Category) = Unit
         override suspend fun deleteCategory(id: String) = Unit
     }

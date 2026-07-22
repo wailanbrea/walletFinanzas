@@ -129,35 +129,19 @@ data class AccountEntity(
 @Entity(tableName = "categories")
 data class CategoryEntity(
     @PrimaryKey val id: String,
-    
-    @ColumnInfo(name = "name") val name: String,                      // Ej: "Alimentación"
-    @ColumnInfo(name = "type", index = true) val type: CategoryType,  // FOOD, HOUSING, TRANSPORT, etc.
-    @ColumnInfo(name = "parent_id") val parentId: String?,            // null si root, FK si es subcategoría
-    
-    // Configuración y límites
-    @ColumnInfo(name = "is_default", index = true) val isDefault: Boolean = false,
-    @ColumnInfo(name = "budget_limit_in_cents") val budgetLimitInCents: Long? = null,  // Límite presupuestario
-    
-    // Metadatos
-    @ColumnInfo(name = "icon_name") val iconName: String?,             // Material icon name
-    @ColumnInfo(name = "color_code") val colorCode: String?,          // Hex color código
-    @ColumnInfo(name = "is_active", index = true) val isActive: Boolean = true,
-    
-    @ColumnInfo(name = "created_at", index = true) val createdAt: Long
-) {
-    enum class CategoryType(val value: Int) {
-        FOOD(0),                // Alimentos, restaurantes
-        HOUSING(1),             // Vivienda, utilities
-        TRANSPORT(2),           // Transporte
-        SHOPS(3),               // Compras
-        ENTERTAINMENT(4),       // Entretenimiento
-        HEALTHCARE(5),          // Salud
-        EDUCATION(6),           // Educación
-        TRAVEL(7),              // Viajes
-        PERSONAL(8)             // Personal/Servicios
-    }
-}
+    val name: String,
+    val icon: String,
+    val colorHex: String,
+    val isDeleted: Boolean = false,
+    val needsSync: Boolean = true
+)
 ```
+
+- Room v8 añade `needsSync` a categorías. Room v9 lo extiende a presupuestos, metas, deudas y pagos planificados; las filas existentes migran con valor `true` para su primera subida.
+- Room v9 agrega `ownerId` y clave primaria compuesta a todas las entidades. La migración 8→9 conserva los datos existentes bajo `guest`; el primer login los mueve al propietario autenticado sin mezclarlos con otras cuentas.
+- Laravel guarda un UUID interno y expone `client_id` como `id`, único por usuario. Esto permite que ids predeterminados como `cat_transporte` existan para todos los usuarios sin colisionar.
+- `isDeleted`/`is_deleted` es un tombstone: se sincroniza y evita que categorías borradas reaparezcan en otro dispositivo.
+- El backend limita cada usuario a 200 categorías activas y conserva las eliminadas para propagación multidispositivo.
 
 ### Budget (Presupuesto)
 ```kotlin
@@ -291,7 +275,7 @@ data class PendingOperationEntity(
 ```kotlin
 @Entity(tableName = "user_profiles")
 data class UserProfileEntity(
-    @PrimaryKey val id: String,                    // UUID v4 o Firebase UID
+    @PrimaryKey val id: String,                    // UUID v4 o ID canónico Laravel
     
     // Datos básicos
     @ColumnInfo(name = "display_name", index = true) val displayName: String?,        // Ej: "Juan Pérez"
@@ -310,7 +294,7 @@ data class UserProfileEntity(
     
     // Estado de autenticación local (no guardar credenciales)
     @ColumnInfo(name = "auth_provider") val authProvider: AuthProvider?,               // EMAIL, GOOGLE
-    @ColumnInfo(name = "firebase_uid") val firebaseUid: String?,                      // Solo si hay Firebase
+    @ColumnInfo(name = "remote_user_id") val remoteUserId: String?,                   // Usuario canónico Laravel
     
     @ColumnInfo(name = "created_at", index = true) val createdAt: Long,
     @ColumnInfo(name = "updated_at", index = true) val updatedAt: Long

@@ -3,19 +3,33 @@ package com.bsolutions.wallet
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.bsolutions.wallet.core.email.EmailSyncWorker
 import com.bsolutions.wallet.core.notifications.PlannedPaymentWorker
+import com.bsolutions.wallet.core.sync.SyncWorker
+import com.bsolutions.wallet.core.database.LocalDataIsolation
 import dagger.hilt.android.HiltAndroidApp
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class WalletApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
+
+    @Inject
+    lateinit var localDataIsolation: LocalDataIsolation
+
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -24,7 +38,28 @@ class WalletApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        applicationScope.launch { localDataIsolation.reconcileCurrentSession() }
         schedulePlannedPaymentChecks()
+        scheduleConnectedEmailSync()
+        scheduleBackendSync()
+    }
+
+    /** Sincronización con el backend (push/pull) cada 30 min, solo con conexión. */
+    private fun scheduleBackendSync() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = PeriodicWorkRequestBuilder<SyncWorker>(
+            SyncWorker.REPEAT_INTERVAL_MINUTES,
+            TimeUnit.MINUTES
+        )
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            SyncWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
     }
 
     /** Revisión de pagos planificados cada 12h (límite de 00_REGLAS_COSTO). */
@@ -33,6 +68,25 @@ class WalletApp : Application(), Configuration.Provider {
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             PlannedPaymentWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+    }
+
+    /** Sondeo mínimo permitido por WorkManager para detectar correos nuevos. */
+    private fun scheduleConnectedEmailSync() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = PeriodicWorkRequestBuilder<EmailSyncWorker>(
+            EmailSyncWorker.REPEAT_INTERVAL_MINUTES,
+            TimeUnit.MINUTES
+        )
+            .setConstraints(constraints)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            EmailSyncWorker.WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request
         )

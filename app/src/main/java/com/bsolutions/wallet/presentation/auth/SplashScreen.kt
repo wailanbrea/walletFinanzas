@@ -37,7 +37,7 @@ import kotlinx.coroutines.delay
 /**
  * Splash de marca. El MVP es offline-first sin cuenta obligatoria, así que
  * tras una breve animación entra directo a la app (el login llega en Fase 2
- * con Firebase Auth).
+ * con la sesión cifrada de Wallet/Sanctum).
  */
 @Composable
 fun SplashScreen(

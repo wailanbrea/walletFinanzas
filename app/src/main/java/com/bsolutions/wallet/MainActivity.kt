@@ -1,5 +1,6 @@
 package com.bsolutions.wallet
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -16,6 +17,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
@@ -35,9 +37,12 @@ import com.bsolutions.wallet.presentation.auth.RegisterScreen
 import com.bsolutions.wallet.presentation.auth.SplashScreen
 import com.bsolutions.wallet.presentation.budgets.BudgetsScreen
 import com.bsolutions.wallet.presentation.categories.CategoriesScreen
+import com.bsolutions.wallet.presentation.categoryrules.CategoryRulesScreen
 
 import com.bsolutions.wallet.presentation.dashboard.DashboardScreen
 import com.bsolutions.wallet.presentation.debts.DebtsScreen
+import com.bsolutions.wallet.presentation.emailconnections.EmailConnectionsScreen
+import com.bsolutions.wallet.presentation.emailconnections.EmailOAuthReturnContract
 import com.bsolutions.wallet.presentation.goals.GoalsScreen
 import com.bsolutions.wallet.presentation.importcsv.ImportCsvScreen
 import com.bsolutions.wallet.presentation.plannedpayments.PlannedPaymentsScreen
@@ -48,15 +53,28 @@ import com.bsolutions.wallet.presentation.reports.ReportsScreen
 import com.bsolutions.wallet.presentation.security.SecurityScreen
 import com.bsolutions.wallet.presentation.settings.SettingsScreen
 import com.bsolutions.wallet.presentation.sync_settings.FindBankScreen
-import com.bsolutions.wallet.presentation.sync_settings.SyncSettingsScreen
 import com.bsolutions.wallet.presentation.transactions.TransactionsScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
+    private val emailOAuthReturnNonce = MutableStateFlow(0L)
+
+    private fun recordEmailOAuthReturn(intent: Intent?): Boolean {
+        if (!EmailOAuthReturnContract.matches(intent?.dataString)) return false
+        emailOAuthReturnNonce.value += 1L
+        return true
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        recordEmailOAuthReturn(intent)
+    }
 
     /** Permiso de notificaciones (Android 13+) para los recordatorios de pagos. */
     private val notificationPermission =
@@ -73,6 +91,13 @@ class MainActivity : FragmentActivity() {
 
     /** Estado de desbloqueo del candado biométrico (por proceso, no persistido). */
     private val unlocked = androidx.compose.runtime.mutableStateOf(false)
+
+    override fun onStop() {
+        super.onStop()
+        // Re-bloquear al pasar a segundo plano: en Recents o al volver, el candado
+        // biométrico vuelve a exigir autenticación (antes quedaba abierto hasta matar el proceso).
+        unlocked.value = false
+    }
 
     private fun showBiometricPrompt() {
         val prompt = BiometricPrompt(
@@ -97,6 +122,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val launchedFromEmailOAuth = recordEmailOAuthReturn(intent)
         // Edge-to-edge: en Android 15+ window.statusBarColor se ignora; el contenido
         // (TopAppBar verde del dashboard) se dibuja detrás de la status bar.
         enableEdgeToEdge()
@@ -123,8 +149,15 @@ class MainActivity : FragmentActivity() {
                 }
 
                 val navController = rememberNavController()
+                val oauthReturnNonce by emailOAuthReturnNonce.collectAsState()
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
+
+                LaunchedEffect(oauthReturnNonce, currentRoute) {
+                    if (oauthReturnNonce > 0L && currentRoute != null && currentRoute != "email_connections") {
+                        navController.navigate("email_connections") { launchSingleTop = true }
+                    }
+                }
 
                 // Todas las pantallas tienen header verde (walletTopBarColors) → iconos de
                 // status bar siempre claros. El fondo lo pinta el contenido (edge-to-edge).
@@ -189,7 +222,7 @@ class MainActivity : FragmentActivity() {
                     ) { innerPadding ->
                         NavHost(
                             navController = navController,
-                            startDestination = "splash",
+                            startDestination = if (launchedFromEmailOAuth) "email_connections" else "splash",
                             modifier = Modifier.padding(innerPadding)
                         ) {
                             composable("splash") {
@@ -256,8 +289,9 @@ class MainActivity : FragmentActivity() {
                                     onNavigateToProfile = { navController.navigate("profile") },
                                     onNavigateToAccounts = { navController.navigate("accounts") },
                                     onNavigateToCategories = { navController.navigate("categories") },
+                                    onNavigateToCategoryRules = { navController.navigate("category_rules") },
                                     onNavigateToSecurity = { navController.navigate("security") },
-                                    onNavigateToSyncSettings = { navController.navigate("sync_settings") },
+                                    onNavigateToSyncSettings = { navController.navigate("email_connections") },
                                     onNavigateToImportCsv = { navController.navigate("import_csv") },
 
                                     onNavigateToLogin = { navController.navigate("login") },
@@ -274,9 +308,15 @@ class MainActivity : FragmentActivity() {
                                 SecurityScreen(onNavigateBack = { navController.popBackStack() })
                             }
                             composable("sync_settings") {
-                                SyncSettingsScreen(
+                                EmailConnectionsScreen(
                                     onNavigateBack = { navController.popBackStack() },
-                                    onNavigateToFindBank = { navController.navigate("find_bank") }
+                                    oauthReturnNonce = oauthReturnNonce
+                                )
+                            }
+                            composable("email_connections") {
+                                EmailConnectionsScreen(
+                                    onNavigateBack = { navController.popBackStack() },
+                                    oauthReturnNonce = oauthReturnNonce
                                 )
                             }
                             composable("find_bank") {
@@ -284,6 +324,9 @@ class MainActivity : FragmentActivity() {
                             }
                             composable("categories") {
                                 CategoriesScreen(onNavigateBack = { navController.popBackStack() })
+                            }
+                            composable("category_rules") {
+                                CategoryRulesScreen(onNavigateBack = { navController.popBackStack() })
                             }
                             composable("import_csv") {
                                 ImportCsvScreen(onNavigateBack = { navController.popBackStack() })

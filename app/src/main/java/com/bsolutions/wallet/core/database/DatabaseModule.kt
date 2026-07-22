@@ -40,12 +40,19 @@ object DatabaseModule {
         )
             .openHelperFactory(factory)
             .addMigrations(
+                WalletDatabaseMigrations.MIGRATION_1_4,
                 WalletDatabaseMigrations.MIGRATION_2_3,
+                WalletDatabaseMigrations.MIGRATION_2_4,
                 WalletDatabaseMigrations.MIGRATION_3_4,
                 WalletDatabaseMigrations.MIGRATION_4_5,
-                WalletDatabaseMigrations.MIGRATION_5_6
+                WalletDatabaseMigrations.MIGRATION_5_6,
+                WalletDatabaseMigrations.MIGRATION_6_7,
+                WalletDatabaseMigrations.MIGRATION_7_8,
+                WalletDatabaseMigrations.MIGRATION_8_9
             )
-            .fallbackToDestructiveMigration()
+            // Nunca borrar datos financieros ante un upgrade no cubierto: si faltara una
+            // migración preferimos fallar (y verlo) a perder el dinero del usuario en silencio.
+            // Solo el downgrade (dev que instala una build vieja) recrea la BD.
             .build()
     }
 
@@ -88,4 +95,13 @@ object DatabaseModule {
     fun provideBankConnectionDao(database: WalletDatabase): com.bsolutions.wallet.data.local.dao.BankConnectionDao {
         return database.bankConnectionDao()
     }
+
+    @Provides
+    fun providePendingOperationDao(database: WalletDatabase): com.bsolutions.wallet.data.local.dao.PendingOperationDao {
+        return database.pendingOperationDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideLocalDataIsolation(implementation: RoomLocalDataIsolation): LocalDataIsolation = implementation
 }

@@ -433,7 +433,6 @@ fun AddBudgetDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, Long) -> Unit
 ) {
-    // Standard mock list of categories in case they aren't provided
     var limitStr by remember { mutableStateOf("") }
     var selectedCategoryId by remember { mutableStateOf("") }
 

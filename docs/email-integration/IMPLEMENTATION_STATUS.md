@@ -2,15 +2,18 @@
 
 ## Estado global
 
-- **Fase activa:** 0 — Estabilización y auditoría.
-- **Gate 0:** **BLOQUEADO**.
-- **Backend Laravel:** no creado, conforme al orden obligatorio.
-- **Módulo Android de correo:** no creado, conforme al orden obligatorio.
+- **Fase activa:** conexión OAuth backend-first y administración de cuentas de correo.
+- **Identidad canónica:** Laravel Sanctum, conforme a ADR-003 aprobado el 20/07/2026.
+- **Backend Laravel:** implementado con panel administrativo, auth, recuperación, OAuth Gmail/Microsoft y aislamiento por usuario.
+- **Módulo Android de correo:** implementado con estado, conexión por Custom Tabs, retorno/refresh y desconexión.
+- **Producción:** bloqueada hasta configurar dominio HTTPS, mailer y credenciales OAuth reales. La suite Android instrumentada ya pasa 15/15 en Pixel 9 Pro API 37.
+- **Aislamiento local:** Room v9 y DataStore separan invitado/usuarios mediante propietario activo; el logout cambia de partición sin borrar los datos cifrados del usuario.
+- **Sync MVP:** cuentas, movimientos, categorías, presupuestos, metas, deudas y pagos planificados cuentan con push/pull y aislamiento backend por usuario.
 
 ## Control de versión
 
 - **Commit base recuperable:** `48eef59` — `chore: establish verified Android baseline` (20/07/2026).
-- Credenciales, `local.properties`, `google-services.json`, outputs de build y artefactos de emulador permanecen fuera del commit por `.gitignore`.
+- Credenciales OAuth/Salt Edge, `local.properties`, outputs de build y artefactos de emulador permanecen fuera del commit por `.gitignore`.
 
 ## Cobertura documental por fase
 
@@ -18,15 +21,26 @@
 
 **No creados aún — no se consideran completados:** `ARCHITECTURE.md`, `API.md`, `SECURITY.md`, `OAUTH_SETUP.md`, `DEPLOYMENT.md` y `ROLLBACK.md`. Se crearán y verificarán antes del gate que habilite su respectivo alcance; no bloquean la auditoría documental de Fase 0, pero sí los gates posteriores de arquitectura, backend y despliegue.
 
-## Revisión independiente de Quality — 2026-07-20
+## Estado verificable posterior — 2026-07-20
 
-**Veredicto: BLOQUEADO (Gate 0).** El perfil `quality` confirmó que no se debe iniciar Laravel, OAuth ni el módulo de correo mientras persistan los riesgos de migración, backup y pruebas instrumentadas.
+- Backend: `php artisan test` — 26 pruebas y 166 aserciones; Pint y Vite en verde.
+- Android: `testDebugUnitTest`, `assembleDebug` y `assembleRelease` en verde.
+- Gmail: scope mínimo `gmail.readonly`; identidad mediante Gmail Profile.
+- Microsoft: `Mail.Read` + `User.Read`, necesario para Graph `/me`.
+- Callback: página neutral sin tokens/códigos ni dependencia de cookie web; Android refresca al volver.
+- Firebase Auth, Google Services y sus dependencias fueron retirados.
+- AndroidX Hilt Work/Compiler 1.4.0 se alinea con Dagger/Hilt 2.60.1.
+- Verificación ad hoc del comportamiento modificado: PASS; script temporal eliminado.
 
-Hallazgos que siguen abiertos:
+## Revisión independiente histórica de Gate 0 — 2026-07-20
 
-1. Ejecutar en emulador/dispositivo `WalletDatabaseMigrationTest` y `TransactionDaoTransferTest`; en esta sesión `adb` no estaba disponible en `PATH`.
-2. Añadir cobertura de migraciones 3→4, 4→5, 5→6 y de la cadena soportada antes de eliminar el fallback destructivo.
-3. Definir y validar reglas de backup/data extraction para datos financieros y preferencias sensibles.
+**Veredicto histórico: BLOQUEADO (Gate 0).** Esta revisión corresponde a la instantánea previa a la implementación. Los bloqueos de schemas, fallback destructivo, backup y ejecución instrumentada se resolvieron el 22/07/2026.
+
+Hallazgos de aquella revisión y estado actual:
+
+1. Resuelto: `WalletDatabaseMigrationTest`, `TransactionDaoTransferTest` y el resto de la suite instrumentada pasan 10/10.
+2. Resuelto para las rutas soportadas actuales: migraciones registradas, schema v8 exportado y fallback destructivo retirado.
+3. Resuelto: backup/transferencia desactivados y dominios sensibles excluidos mediante `data_extraction_rules.xml`.
 4. Completar regresión de transferencias, CSV y cuentas/tarjetas.
 
 La clasificación de los artefactos raíz se corrigió antes del commit base mediante `.gitignore`; el árbol de trabajo quedó limpio tras los commits `48eef59` y `bb4ac61`.

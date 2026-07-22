@@ -2,6 +2,7 @@ package com.bsolutions.wallet.presentation.budgets
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bsolutions.wallet.core.common.CategoryPlaceholders
 import com.bsolutions.wallet.domain.model.Budget
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.repository.BudgetRepository
@@ -62,8 +63,9 @@ class BudgetsViewModel @Inject constructor(
             .groupBy { it.categoryId }
             .mapValues { entry -> entry.value.sumOf { it.amount } }
 
-        val items = budgets.mapNotNull { budget ->
-            val cat = categoryMap[budget.categoryId] ?: return@mapNotNull null
+        val items = budgets.map { budget ->
+            val cat = categoryMap[budget.categoryId]
+                ?: CategoryPlaceholders.deleted(budget.categoryId)
             val spent = spentByCategory[budget.categoryId] ?: 0L
             BudgetCategoryItem(
                 budgetId = budget.id,

@@ -24,11 +24,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import com.bsolutions.wallet.R
 import com.bsolutions.wallet.presentation.common.walletTopBarColors
 import com.bsolutions.wallet.core.common.MoneyFormat
@@ -278,7 +280,11 @@ private fun ImportPreviewView(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            stringResource(R.string.import_include_duplicates, dupCount),
+                            pluralStringResource(
+                                R.plurals.import_include_duplicates,
+                                dupCount,
+                                dupCount
+                            ),
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Switch(
@@ -340,7 +346,10 @@ private fun ImportPreviewView(
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Text(stringResource(R.string.import_action, validCount), fontWeight = FontWeight.Bold)
+                        Text(
+                            pluralStringResource(R.plurals.import_action, validCount, validCount),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -404,7 +413,7 @@ private fun ColumnSelector(
 
 @Composable
 private fun PreviewRowItem(row: PreviewRow) {
-    val dateStr = row.date?.let { SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(it)) } ?: "¿fecha?"
+    val dateStr = row.date?.let { SimpleDateFormat("dd MMM yyyy", LocalConfiguration.current.locales[0]).format(Date(it)) } ?: "¿fecha?"
 
     Card(
         modifier = Modifier.fillMaxWidth(),

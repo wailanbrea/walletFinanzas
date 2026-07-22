@@ -1,6 +1,7 @@
 package com.bsolutions.wallet.core.database
 
 import android.content.Context
+import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.security.SecureRandom
@@ -34,7 +35,7 @@ object DatabaseKeyProvider {
         val bytes = ByteArray(32)
         SecureRandom().nextBytes(bytes)
         val encoded = String(bytes, Charsets.ISO_8859_1)
-        prefs.edit().putString(KEY_DB_PASSPHRASE, encoded).apply()
+        prefs.edit { putString(KEY_DB_PASSPHRASE, encoded) }
         return bytes
     }
 
@@ -47,7 +48,7 @@ object DatabaseKeyProvider {
         val prefs = securePrefs(context)
         if (!prefs.getBoolean(KEY_DB_ENCRYPTED, false)) {
             context.deleteDatabase(databaseName)
-            prefs.edit().putBoolean(KEY_DB_ENCRYPTED, true).apply()
+            prefs.edit { putBoolean(KEY_DB_ENCRYPTED, true) }
         }
     }
 }

@@ -14,18 +14,15 @@
     <string name="nav_reports">Reportes</string>
 
     <!-- Drawer -->
-    <string name="drawer_premium">Obtener Premium</string>
-    <string name="drawer_bank_sync">Sincronización bancaria</string>
+    <string name="drawer_email_sync">Sincronizar correo</string>
     <string name="drawer_imports">Importaciones</string>
     <string name="drawer_home">Inicio</string>
     <string name="drawer_records">Registros</string>
-    <string name="drawer_investments">Inversiones</string>
     <string name="drawer_statistics">Estadísticas</string>
     <string name="drawer_planned_payments">Pagos planificados</string>
     <string name="drawer_budgets">Presupuestos</string>
     <string name="drawer_debts">Deudas</string>
     <string name="drawer_goals">Metas</string>
-    <string name="drawer_badge_new">Nuevo</string>
     <string name="drawer_expand">Expandir</string>
     <string name="drawer_collapse">Contraer</string>
 
@@ -40,7 +37,7 @@
     <string name="bank_sync_empty">Aún no hay bancos conectados. Toca «Conectar banco» para vincular una cuenta.</string>
     <string name="bank_sync_unavailable">La sincronización bancaria estará disponible próximamente.</string>
     <string name="bank_sync_sandbox_note">Modo de prueba: los bancos disponibles son proveedores simulados de Salt Edge. Ninguna credencial bancaria real es necesaria.</string>
-    <string name="bank_sync_result">Sincronizado: %1$d conexión(es), %2$d cuenta(s), %3$d movimiento(s) importados.</string>
+    <string name="bank_sync_result">Sincronizado · conexiones: %1$d · cuentas: %2$d · movimientos importados: %3$d.</string>
 
     <string name="dashboard_other_currencies">Además: %1$s</string>
     <string name="privacy_hide_amounts">Ocultar montos</string>
@@ -67,6 +64,26 @@
     <string name="common_notifications">Notificaciones</string>
     <string name="common_account">Cuenta</string>
     <string name="common_category">Categoría</string>
+    <string name="category_none_auto">Sin categoría (automática)</string>
+
+    <!-- Reglas de categorías (palabras clave del usuario) -->
+    <string name="category_rules_title">Reglas de categorías</string>
+    <string name="category_rules_sub">Palabras que clasifican tus gastos automáticamente</string>
+    <string name="category_rules_desc">Cuando la nota de un movimiento contenga una de estas palabras, se le asignará la categoría elegida. Tus reglas tienen prioridad sobre las integradas.</string>
+    <string name="category_rules_keyword">Palabra clave (ej.: colmado López)</string>
+    <string name="category_rules_pick_category">Elige la categoría</string>
+    <string name="category_rules_add">Agregar regla</string>
+    <string name="category_rules_empty">Aún no has creado reglas. Las integradas (supermercado, uber, farmacia…) siguen funcionando.</string>
+    <string name="category_rules_goes_to">→ %1$s</string>
+
+    <!-- Sincronización con el backend (offline-first) -->
+    <string name="settings_cloud_sync">Sincronizar con la nube</string>
+    <string name="settings_cloud_sync_sub">Respalda tus cuentas y movimientos en el servidor</string>
+    <string name="settings_cloud_sync_running">Sincronizando…</string>
+    <plurals name="settings_cloud_sync_pending">
+        <item quantity="one">%1$d cambio sin sincronizar. Toca para subirlo.</item>
+        <item quantity="other">%1$d cambios sin sincronizar. Toca para subirlos.</item>
+    </plurals>
     <string name="common_note_optional">Nota (opcional)</string>
     <string name="common_select_account">Seleccionar Cuenta</string>
     <string name="common_coming_soon">Próximamente</string>
@@ -77,11 +94,47 @@
     <string name="dashboard_income">Ingresos</string>
     <string name="dashboard_expenses">Gastos</string>
     <string name="dashboard_expenses_by_category">Gastos por Categoría</string>
-    <string name="dashboard_no_expenses_month">Sin gastos este mes</string>
     <string name="dashboard_recent_transactions">Transacciones Recientes</string>
     <string name="dashboard_see_all">Ver todas</string>
     <string name="dashboard_trend_vs_last_month">%1$s%2$d%% gasto vs mes anterior</string>
     <string name="dashboard_add_transaction">Agregar movimiento</string>
+    <string name="dashboard_filter_action">Filtrar movimientos</string>
+    <string name="dashboard_filter_title">Filtrar Inicio</string>
+    <string name="dashboard_filter_period">Período</string>
+    <string name="dashboard_filter_category">Categoría</string>
+    <string name="dashboard_filter_all_categories">Todas las categorías</string>
+    <string name="dashboard_filter_apply">Aplicar</string>
+    <string name="dashboard_filter_clear">Limpiar</string>
+    <string name="dashboard_filter_cancel">Cancelar</string>
+    <string name="dashboard_filter_today">Hoy</string>
+    <string name="dashboard_filter_this_week">Esta semana</string>
+    <string name="dashboard_filter_this_month">Este mes</string>
+    <string name="dashboard_filter_this_year">Este año</string>
+    <string name="dashboard_filter_last_7_days">7 días</string>
+    <string name="dashboard_filter_last_30_days">30 días</string>
+    <string name="dashboard_filter_last_12_weeks">12 semanas</string>
+    <string name="dashboard_filter_last_6_months">6 meses</string>
+    <string name="dashboard_filter_last_1_year">1 año</string>
+    <string name="dashboard_filter_last_5_years">5 años</string>
+    <string name="dashboard_no_expenses_filter">Sin gastos para este filtro</string>
+    <string name="dashboard_card_selector_title">Selector de tarjetas del panel</string>
+    <string name="dashboard_card_tab_all">Todas</string>
+    <string name="dashboard_card_tab_balance">Saldo</string>
+    <string name="dashboard_card_tab_cash_flow">Flujo</string>
+    <string name="dashboard_card_tab_expenses">Gastos</string>
+    <string name="dashboard_card_add_to_panel">Agregar tarjeta al panel</string>
+    <string name="dashboard_card_remove_from_panel">Quitar del panel</string>
+    <string name="dashboard_card_always_on_panel">Siempre en el panel</string>
+    <string name="dashboard_card_add_more">Agregar más tarjetas</string>
+    <string name="dashboard_card_cash_flow">Flujo de caja</string>
+    <string name="dashboard_card_cash_flow_question">¿Estoy gastando menos de lo que ingreso?</string>
+    <string name="dashboard_card_expense_structure">Estructura de gastos</string>
+    <string name="dashboard_card_expense_question">¿En qué categorías estoy gastando?</string>
+    <string name="dashboard_card_recent_question">Mis movimientos más recientes</string>
+    <string name="dashboard_card_no_recent">No hay movimientos para este filtro.</string>
+    <string name="dashboard_card_account_balances">Saldo por cuentas</string>
+    <string name="dashboard_card_accounts_question">¿En qué cuentas está mi dinero?</string>
+    <string name="dashboard_card_no_accounts">No hay cuentas registradas.</string>
 
     <!-- Pestañas del dashboard -->
     <string name="dashboard_tab_accounts">Cuentas</string>
@@ -114,10 +167,6 @@
     <string name="transfer_action">Transferir</string>
 
     <!-- Placeholder -->
-    <string name="placeholder_premium_title">Obtener Premium</string>
-    <string name="placeholder_premium_desc">Desbloquea sincronización bancaria ilimitada, reportes avanzados y más.</string>
-    <string name="placeholder_investments_title">Inversiones</string>
-    <string name="placeholder_investments_desc">Sigue el rendimiento de tus inversiones y tu portafolio.</string>
 
     <!-- Metas -->
     <string name="goals_title">Metas</string>
@@ -159,7 +208,6 @@
     <string name="debts_payment_to">Abono a \"%1$s\"</string>
     <string name="debts_payment_amount">Monto del abono (%1$s)</string>
     <string name="debts_payment_action">Registrar Abono</string>
-    <string name="debts_delete_confirm">Se eliminará \"%1$s\". ¿Continuar?</string>
 
     <!-- Pagos planificados -->
     <string name="planned_title">Pagos planificados</string>
@@ -179,7 +227,7 @@
     <string name="freq_weekly">Semanal</string>
     <string name="freq_biweekly">Quincenal</string>
     <string name="freq_monthly">Mensual</string>
-    <string name="freq_yearly">Anual</string>
+    <string name="freq_yearly">Cada año</string>
     <string name="freq_once">Una vez</string>
 
     <!-- Categorías -->
@@ -205,11 +253,16 @@
     <string name="import_col_date">Fecha</string>
     <string name="import_col_description">Descripción</string>
     <string name="import_col_amount">Monto</string>
-    <string name="import_col_unassigned">— sin asignar —</string>
     <string name="import_target_account">Cuenta destino</string>
-    <string name="import_include_duplicates">Incluir %1$d duplicadas</string>
+    <plurals name="import_include_duplicates">
+        <item quantity="one">Incluir %1$d duplicada</item>
+        <item quantity="other">Incluir %1$d duplicadas</item>
+    </plurals>
     <string name="import_preview">Previsualización</string>
-    <string name="import_action">Importar %1$d movimientos</string>
+    <plurals name="import_action">
+        <item quantity="one">Importar %1$d movimiento</item>
+        <item quantity="other">Importar %1$d movimientos</item>
+    </plurals>
     <string name="import_done_title">Importación completada</string>
     <string name="import_another">Importar otro archivo</string>
     <string name="import_done">Listo</string>
@@ -278,7 +331,6 @@
     <string name="budgets_delete_confirm">Se eliminará el presupuesto de \"%1$s\". ¿Continuar?</string>
 
     <!-- Reportes -->
-    <string name="reports_header">Reportes Analíticos</string>
     <string name="reports_subtitle">Resumen de tu actividad financiera</string>
     <string name="reports_no_expenses">Sin gastos aún</string>
     <string name="reports_total">Total</string>
@@ -291,7 +343,6 @@
     <string name="profile_email">Correo electrónico</string>
     <string name="profile_wallet_name">Nombre de tu wallet</string>
     <string name="profile_financial_country">País financiero predeterminado</string>
-    <string name="profile_country_do">República Dominicana</string>
     <string name="profile_save">Guardar cambios</string>
     <string name="profile_saved">Guardado ✓</string>
 
@@ -299,12 +350,11 @@
     <string name="settings_title">Más opciones</string>
     <string name="settings_no_session">Sin sesión iniciada</string>
     <string name="settings_edit_profile">Editar Perfil</string>
-    <string name="settings_profile_sub">Datos personales y preferencias</string>
     <string name="settings_accounts_sub">Gestiona tus bancos y tarjetas</string>
     <string name="settings_categories_sub">Personaliza tus gastos</string>
     <string name="settings_security_sub">Biometría y contraseñas</string>
-    <string name="settings_sync">Sincronización</string>
-    <string name="settings_sync_sub">Conexión con la nube</string>
+    <string name="settings_sync">Sincronizar correo</string>
+    <string name="settings_sync_sub">Inicia sesión en Gmail, Hotmail u Outlook</string>
     <string name="settings_import">Importar movimientos (CSV)</string>
     <string name="settings_import_sub">Trae el estado de cuenta de tu banco</string>
     <string name="settings_export">Exportar datos (CSV)</string>
@@ -334,6 +384,7 @@
 
     <!-- Autenticación -->
     <string name="auth_tagline">Control total, precisión absoluta.</string>
+    <string name="auth_name_hint">Tu nombre completo</string>
     <string name="auth_email">Correo Electrónico</string>
     <string name="auth_email_hint">tu@email.com</string>
     <string name="auth_password">Contraseña</string>
@@ -352,13 +403,6 @@
     <string name="recover_back_to_login">Volver al Login</string>
 
     <!-- Sincronización -->
-    <string name="sync_auto_title">Sincronización automática</string>
-    <string name="sync_auto_desc">Sincronizar datos automáticamente cuando haya conexión a internet</string>
-    <string name="sync_freq_title">Frecuencia de sincronización</string>
-    <string name="sync_freq_desc">Intervalo entre sincronizaciones automáticas (mínimo 12 horas en plan Free)</string>
-    <string name="sync_now">Sincronizar ahora</string>
-    <string name="sync_last_title">Última sincronización</string>
-    <string name="sync_never">Nunca se ha sincronizado con el servidor</string>
 
     <!-- Notificaciones -->
     <string name="notif_channel_name">Pagos planificados</string>
@@ -368,4 +412,49 @@
     <string name="notif_payment_amount">Monto: %1$s · toca para abrir Wallet</string>
     <string name="notif_budget_exceeded">Presupuesto excedido: %1$s</string>
     <string name="notif_budget_over_by">Te pasaste por %1$s este mes</string>
+
+    <!-- Conexiones de correo -->
+    <string name="email_connections_title">Sincronizar correo</string>
+    <string name="email_connections_description">Inicia sesión en Gmail, Hotmail u Outlook para detectar recibos y movimientos financieros.</string>
+    <string name="email_connections_empty">No hay cuentas conectadas. Elige un proveedor para comenzar.</string>
+    <string name="email_provider_gmail">Gmail</string>
+    <string name="email_provider_microsoft">Hotmail / Outlook</string>
+    <string name="email_no_account">Sin cuenta conectada</string>
+    <string name="email_status_connected">Conectado</string>
+    <string name="email_status_disconnected">No conectado</string>
+    <string name="email_status_error">Error</string>
+    <string name="email_status_configuration">Configuración requerida</string>
+    <string name="email_configuration_required">Este proveedor debe configurarse en el servidor antes de poder conectarlo.</string>
+    <string name="email_connect">Iniciar sesión</string>
+    <string name="email_reconnect">Volver a conectar</string>
+    <string name="email_disconnect_action">Desconectar</string>
+    <string name="email_disconnect_title">Desconectar cuenta</string>
+    <string name="email_disconnect_confirm">Wallet dejará de sincronizar mensajes de %1$s. ¿Deseas continuar?</string>
+    <string name="email_not_available">No disponible</string>
+    <string name="email_retry">Reintentar</string>
+    <string name="email_refresh">Actualizar conexiones de correo</string>
+    <string name="email_privacy_note">La autorización se realiza en el sitio seguro del proveedor. Wallet no almacena tu contraseña ni los tokens del proveedor en el dispositivo.</string>
+    <string name="email_settings_entry">Cuentas de correo</string>
+    <string name="email_settings_entry_description">Conecta Gmail, Hotmail u Outlook</string>
+    <string name="email_sync">Sincronizar correos</string>
+    <string name="email_syncing">Sincronizando…</string>
+    <string name="email_sync_summary">Revisados: %1$d · nuevos: %2$d · movimientos detectados: %3$d · conversiones actualizadas: %4$d</string>
+    <string name="email_candidates_title">Movimientos detectados</string>
+    <string name="email_candidates_empty">No se detectaron movimientos financieros nuevos en los correos revisados.</string>
+    <string name="email_candidate_pending">Pendiente de revisión</string>
+    <string name="email_candidate_confidence">Confianza: %1$d%%</string>
+    <string name="email_candidate_unknown_merchant">Comercio no identificado</string>
+    <string name="email_candidate_uncategorized">Sin categoría sugerida</string>
+    <string name="email_candidates_provider_title">Detectados en %1$s</string>
+    <string name="email_candidate_converted">Equivalente histórico estimado: %1$s</string>
+    <string name="email_candidate_rate">1 USD = %1$s DOP · tasa del %2$s · fuente abierta</string>
+    <string name="email_candidate_received_at">Fecha del correo: %1$s</string>
+    <string name="email_candidate_conversion_unavailable">Conversión a DOP no disponible. Se conserva el importe original en USD.</string>
+    <string name="email_candidate_classify">Clasificar</string>
+    <string name="email_candidate_not_movement">No es movimiento</string>
+    <string name="email_candidate_classify_title">Clasificar movimiento</string>
+    <string name="email_candidate_category_label">Categoría</string>
+    <string name="email_candidate_classify_help">La categoría se aprenderá para futuros recibos del mismo remitente.</string>
+    <string name="email_candidate_dismiss_title">Descartar correo</string>
+    <string name="email_candidate_dismiss_confirm">Este correo no se tratará como movimiento y Wallet aprenderá esta plantilla de asunto. Los recibos reales con otros asuntos no se bloquearán.</string>
 </resources>

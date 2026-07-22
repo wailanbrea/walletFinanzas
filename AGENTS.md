@@ -12,7 +12,7 @@ Aplicación Android offline-first de finanzas personales: cuentas, movimientos, 
 | Arquitectura | Capas `presentation`, `domain`, `data`, `core`; Hilt + ViewModels + Flows |
 | Datos locales | Room v6 con SQLCipher; DAOs y migraciones propias |
 | Seguridad | Keystore/EncryptedPreferences, biometría, `FLAG_SECURE` configurable |
-| Red | Retrofit/OkHttp y Salt Edge sandbox; Firebase Auth |
+| Red/Auth | Retrofit/OkHttp; Laravel Sanctum; OAuth de correo backend-first |
 | Trabajo diferido | WorkManager para pagos planificados |
 
 ## Arquitectura real
@@ -39,10 +39,10 @@ Aplicación Android offline-first de finanzas personales: cuentas, movimientos, 
 - No modificar cuentas o transacciones importadas sin definir explícitamente qué sistema es autoritativo y cómo se resuelve el conflicto.
 
 ## Seguridad y privacidad
-- `local.properties`, `google-services.json`, credenciales Salt Edge, tokens, keystores, capturas con información financiera y bases de datos jamás se versionan ni se incluyen en logs.
+- `local.properties`, credenciales OAuth/Salt Edge, tokens, keystores, capturas con información financiera y bases de datos jamás se versionan ni se incluyen en logs.
 - Salt Edge está configurado como sandbox; las credenciales se inyectan desde `local.properties` en `BuildConfig`. No mover secretos a código o recursos.
 - Mantener bloqueo biométrico, protección de captura y cifrado de base; cambios deben considerar recuperación ante fallo de Keystore.
-- Los flujos de inicio no obligan login en el MVP actual; no asumir que Firebase Auth protege datos locales sin verificar el flujo concreto.
+- Laravel Sanctum es la identidad canónica para recursos remotos; los datos Room locales siguen disponibles offline sin atribuirlos automáticamente a una sesión remota.
 
 ## Calidad
 ```bash

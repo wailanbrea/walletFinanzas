@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.bsolutions.wallet.data.repository
 
 import com.bsolutions.wallet.data.local.dao.AccountDao
@@ -14,6 +16,7 @@ import com.bsolutions.wallet.data.local.entity.DebtEntity
 import com.bsolutions.wallet.data.local.entity.GoalEntity
 import com.bsolutions.wallet.data.local.entity.PlannedPaymentEntity
 import com.bsolutions.wallet.data.local.entity.TransactionEntity
+import com.bsolutions.wallet.core.database.WalletOwnerScope
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Budget
 import com.bsolutions.wallet.domain.model.Category
@@ -28,171 +31,210 @@ import com.bsolutions.wallet.domain.repository.DebtRepository
 import com.bsolutions.wallet.domain.repository.GoalRepository
 import com.bsolutions.wallet.domain.repository.PlannedPaymentRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flatMapLatest
 import javax.inject.Inject
 
 // Mappers
 fun AccountEntity.toDomain() = Account(id, name, type, balance, currency, countryCode, institutionName, cardLastFour)
-fun Account.toEntity() = AccountEntity(id, name, type, balance, currency, countryCode, institutionName, cardLastFour)
+fun Account.toEntity(ownerId: String) =
+    AccountEntity(id, name, type, balance, currency, countryCode, institutionName, cardLastFour, ownerId = ownerId)
 
 fun TransactionEntity.toDomain() = Transaction(id, accountId, amount, type, categoryId, date, note, currency)
-fun Transaction.toEntity() = TransactionEntity(id, accountId, amount, type, categoryId, date, note, currency)
+fun Transaction.toEntity(ownerId: String) =
+    TransactionEntity(id, accountId, amount, type, categoryId, date, note, currency, ownerId = ownerId)
 
 fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex)
-fun Category.toEntity() = CategoryEntity(id, name, icon, colorHex)
+fun Category.toEntity(ownerId: String) = CategoryEntity(id, name, icon, colorHex, ownerId = ownerId)
 
 fun BudgetEntity.toDomain() = Budget(id, categoryId, limitAmount, spentAmount, period)
-fun Budget.toEntity() = BudgetEntity(id, categoryId, limitAmount, spentAmount, period)
+fun Budget.toEntity(ownerId: String) = BudgetEntity(id, categoryId, limitAmount, spentAmount, period, ownerId = ownerId)
 
 fun GoalEntity.toDomain() = Goal(id, name, icon, targetAmount, savedAmount, targetDate, isCompleted)
-fun Goal.toEntity() = GoalEntity(id, name, icon, targetAmount, savedAmount, targetDate, isCompleted)
+fun Goal.toEntity(ownerId: String) =
+    GoalEntity(id, name, icon, targetAmount, savedAmount, targetDate, isCompleted, ownerId = ownerId)
 
 fun PlannedPaymentEntity.toDomain() =
     PlannedPayment(id, name, accountId, categoryId, amount, type, frequency, nextDueDate, isActive)
-fun PlannedPayment.toEntity() =
-    PlannedPaymentEntity(id, name, accountId, categoryId, amount, type, frequency, nextDueDate, isActive)
+fun PlannedPayment.toEntity(ownerId: String) =
+    PlannedPaymentEntity(id, name, accountId, categoryId, amount, type, frequency, nextDueDate, isActive, ownerId = ownerId)
 
 fun DebtEntity.toDomain() = Debt(id, name, description, direction, totalAmount, paidAmount, dueDate, isClosed)
-fun Debt.toEntity() = DebtEntity(id, name, description, direction, totalAmount, paidAmount, dueDate, isClosed)
+fun Debt.toEntity(ownerId: String) =
+    DebtEntity(id, name, description, direction, totalAmount, paidAmount, dueDate, isClosed, ownerId = ownerId)
 
 
 class AccountRepositoryImpl @Inject constructor(
-    private val dao: AccountDao
+    private val dao: AccountDao,
+    private val gson: Gson,
+    private val ownerScope: WalletOwnerScope
 ) : AccountRepository {
     override fun getAccounts(): Flow<List<Account>> =
-        dao.getAllAccounts().map { list -> list.map { it.toDomain() } }
+        ownerScope.ownerId.flatMapLatest { dao.getAllAccounts(it) }.map { list -> list.map { it.toDomain() } }
 
     override suspend fun getAccount(id: String): Account? =
-        dao.getAccountById(id)?.toDomain()
+        dao.getAccountById(ownerScope.currentOwnerId(), id)?.toDomain()
 
-    override suspend fun addAccount(account: Account) =
-        dao.insertAccount(account.toEntity())
+    override suspend fun addAccount(account: Account) {
+        // Inserta la cuenta y encola su subida al backend en la misma transacción.
+        val entity = account.toEntity(ownerScope.currentOwnerId())
+        dao.insertWithOp(entity, SyncRepository.accountOp(gson, entity))
+    }
 
     override suspend fun updateAccount(account: Account) =
-        dao.updateAccount(account.toEntity())
+        dao.updateAccount(account.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun deleteAccount(id: String) =
-        dao.softDeleteAccount(id)
+        dao.softDeleteAccount(ownerScope.currentOwnerId(), id)
 }
 
 class TransactionRepositoryImpl @Inject constructor(
-    private val dao: TransactionDao
+    private val dao: TransactionDao,
+    private val gson: Gson,
+    private val ownerScope: WalletOwnerScope
 ) : TransactionRepository {
     override fun getTransactions(): Flow<List<Transaction>> =
-        dao.getAllTransactions().map { list -> list.map { it.toDomain() } }
+        ownerScope.ownerId.flatMapLatest { dao.getAllTransactions(it) }.map { list -> list.map { it.toDomain() } }
 
     override fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>> =
-        dao.getTransactionsByAccount(accountId).map { list -> list.map { it.toDomain() } }
+        ownerScope.ownerId.flatMapLatest { dao.getTransactionsByAccount(it, accountId) }
+            .map { list -> list.map { it.toDomain() } }
 
     override suspend fun getTransaction(id: String): Transaction? =
-        dao.getTransactionById(id)?.toDomain()
+        dao.getTransactionById(ownerScope.currentOwnerId(), id)?.toDomain()
 
     override suspend fun addTransaction(transaction: Transaction) =
-        dao.insertTransaction(transaction.toEntity())
+        dao.insertTransaction(transaction.toEntity(ownerScope.currentOwnerId()))
+
+    override suspend fun addTransactionWithBalance(transaction: Transaction) {
+        // Inserta movimiento + ajusta saldo + encola la subida, todo atómico.
+        val entity = transaction.toEntity(ownerScope.currentOwnerId())
+        dao.insertWithBalanceAndOp(entity, SyncRepository.transactionOp(gson, entity))
+    }
 
     override suspend fun executeTransfer(
         fromAccountId: String,
         toAccountId: String,
         amount: Long,
         transaction: Transaction
-    ): Boolean = dao.executeTransfer(fromAccountId, toAccountId, amount, transaction.toEntity())
+    ): Boolean = dao.executeTransfer(
+        fromAccountId,
+        toAccountId,
+        amount,
+        transaction.toEntity(ownerScope.currentOwnerId())
+    )
 
     override suspend fun updateTransaction(transaction: Transaction) =
-        dao.updateTransaction(transaction.toEntity())
+        dao.updateTransaction(transaction.toEntity(ownerScope.currentOwnerId()))
+
+    override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) =
+        dao.updateWithBalance(transaction.toEntity(ownerScope.currentOwnerId()), oldAmount)
 
     override suspend fun deleteTransaction(id: String) =
-        dao.softDeleteTransaction(id)
+        dao.softDeleteTransaction(ownerScope.currentOwnerId(), id)
+
+    override suspend fun deleteTransactionWithBalance(transaction: Transaction) =
+        dao.softDeleteWithBalance(transaction.toEntity(ownerScope.currentOwnerId()))
 }
 
 class CategoryRepositoryImpl @Inject constructor(
-    private val dao: CategoryDao
+    private val dao: CategoryDao,
+    private val ownerScope: WalletOwnerScope
 ) : CategoryRepository {
     override fun getCategories(): Flow<List<Category>> =
-        dao.getAllCategories().map { list -> list.map { it.toDomain() } }
+        ownerScope.ownerId.flatMapLatest { dao.getAllCategories(it) }.map { list -> list.map { it.toDomain() } }
 
     override suspend fun getCategory(id: String): Category? =
-        dao.getCategoryById(id)?.toDomain()
+        dao.getCategoryById(ownerScope.currentOwnerId(), id)?.toDomain()
+
+    override suspend fun getAllCategoryIdsIncludingDeleted(): Set<String> =
+        dao.getAllCategoryIdsIncludingDeleted(ownerScope.currentOwnerId()).toSet()
 
     override suspend fun addCategory(category: Category) =
-        dao.insertCategory(category.toEntity())
+        dao.insertCategory(category.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun deleteCategory(id: String) =
-        dao.softDeleteCategory(id)
+        dao.softDeleteCategory(ownerScope.currentOwnerId(), id)
 }
 
 class BudgetRepositoryImpl @Inject constructor(
-    private val dao: BudgetDao
+    private val dao: BudgetDao,
+    private val ownerScope: WalletOwnerScope
 ) : BudgetRepository {
     override fun getBudgets(): Flow<List<Budget>> =
-        dao.getAllBudgets().map { list -> list.map { it.toDomain() } }
+        ownerScope.ownerId.flatMapLatest { dao.getAllBudgets(it) }.map { list -> list.map { it.toDomain() } }
 
     override suspend fun getBudgetByCategory(categoryId: String): Budget? =
-        dao.getBudgetByCategory(categoryId)?.toDomain()
+        dao.getBudgetByCategory(ownerScope.currentOwnerId(), categoryId)?.toDomain()
 
     override suspend fun addBudget(budget: Budget) =
-        dao.insertBudget(budget.toEntity())
+        dao.insertBudget(budget.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun updateBudget(budget: Budget) =
-        dao.updateBudget(budget.toEntity())
+        dao.updateBudget(budget.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun deleteBudget(id: String) =
-        dao.softDeleteBudget(id)
+        dao.softDeleteBudget(ownerScope.currentOwnerId(), id)
 }
 
 class GoalRepositoryImpl @Inject constructor(
-    private val dao: GoalDao
+    private val dao: GoalDao,
+    private val ownerScope: WalletOwnerScope
 ) : GoalRepository {
     override fun getGoals(): Flow<List<Goal>> =
-        dao.getAllGoals().map { list -> list.map { it.toDomain() } }
+        ownerScope.ownerId.flatMapLatest { dao.getAllGoals(it) }.map { list -> list.map { it.toDomain() } }
 
     override suspend fun getGoal(id: String): Goal? =
-        dao.getGoalById(id)?.toDomain()
+        dao.getGoalById(ownerScope.currentOwnerId(), id)?.toDomain()
 
     override suspend fun addGoal(goal: Goal) =
-        dao.insertGoal(goal.toEntity())
+        dao.insertGoal(goal.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun updateGoal(goal: Goal) =
-        dao.updateGoal(goal.toEntity())
+        dao.updateGoal(goal.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun deleteGoal(id: String) =
-        dao.softDeleteGoal(id)
+        dao.softDeleteGoal(ownerScope.currentOwnerId(), id)
 }
 
 class PlannedPaymentRepositoryImpl @Inject constructor(
-    private val dao: PlannedPaymentDao
+    private val dao: PlannedPaymentDao,
+    private val ownerScope: WalletOwnerScope
 ) : PlannedPaymentRepository {
     override fun getPlannedPayments(): Flow<List<PlannedPayment>> =
-        dao.getAllPlannedPayments().map { list -> list.map { it.toDomain() } }
+        ownerScope.ownerId.flatMapLatest { dao.getAllPlannedPayments(it) }.map { list -> list.map { it.toDomain() } }
 
     override suspend fun getPlannedPayment(id: String): PlannedPayment? =
-        dao.getPlannedPaymentById(id)?.toDomain()
+        dao.getPlannedPaymentById(ownerScope.currentOwnerId(), id)?.toDomain()
 
     override suspend fun addPlannedPayment(payment: PlannedPayment) =
-        dao.insertPlannedPayment(payment.toEntity())
+        dao.insertPlannedPayment(payment.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun updatePlannedPayment(payment: PlannedPayment) =
-        dao.updatePlannedPayment(payment.toEntity())
+        dao.updatePlannedPayment(payment.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun deletePlannedPayment(id: String) =
-        dao.softDeletePlannedPayment(id)
+        dao.softDeletePlannedPayment(ownerScope.currentOwnerId(), id)
 }
 
 class DebtRepositoryImpl @Inject constructor(
-    private val dao: DebtDao
+    private val dao: DebtDao,
+    private val ownerScope: WalletOwnerScope
 ) : DebtRepository {
     override fun getDebts(): Flow<List<Debt>> =
-        dao.getAllDebts().map { list -> list.map { it.toDomain() } }
+        ownerScope.ownerId.flatMapLatest { dao.getAllDebts(it) }.map { list -> list.map { it.toDomain() } }
 
     override suspend fun getDebt(id: String): Debt? =
-        dao.getDebtById(id)?.toDomain()
+        dao.getDebtById(ownerScope.currentOwnerId(), id)?.toDomain()
 
     override suspend fun addDebt(debt: Debt) =
-        dao.insertDebt(debt.toEntity())
+        dao.insertDebt(debt.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun updateDebt(debt: Debt) =
-        dao.updateDebt(debt.toEntity())
+        dao.updateDebt(debt.toEntity(ownerScope.currentOwnerId()))
 
     override suspend fun deleteDebt(id: String) =
-        dao.softDeleteDebt(id)
+        dao.softDeleteDebt(ownerScope.currentOwnerId(), id)
 }

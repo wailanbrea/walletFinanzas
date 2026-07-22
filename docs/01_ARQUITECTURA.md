@@ -150,13 +150,8 @@ dependencies {
     // WorkManager (Sync)
     implementation 'androidx.work:work-runtime-ktx:2.9.0'
     
-    // Firebase BOM
-    val firebaseBom = platform('com.google.firebase:firebase-bom:32.7.0')
-    implementation firebaseBom
-    implementation 'com.google.firebase:firebase-auth-ktx'
-    implementation 'com.google.firebase:firebase-messaging-ktx'
-    implementation 'com.google.firebase:firebase-crashlytics-ktx'
-    implementation 'com.google.firebase:firebase-appcheck-playintegrity'
+    // Identidad remota: Retrofit/OkHttp contra Laravel Sanctum.
+    // El token se almacena cifrado y nunca se envía a hosts de terceros.
     
     // Retrofit + OkHttp
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
@@ -288,6 +283,12 @@ class LocalCreateExpenseUseCaseImpl @Inject constructor(
 
 ## 5. Sincronización Offline-First
 
+### Estado implementado (22/07/2026)
+
+`SyncRepository` ejecuta el ciclo en este orden: categorías locales pendientes → cola de cuentas/movimientos → presupuestos, metas, deudas y pagos planificados pendientes → pull de categorías → cuentas → movimientos → planificación financiera. El orden evita que una referencia llegue a Laravel antes que su cuenta o categoría. Room sigue siendo la fuente local; Laravel aplica aislamiento por usuario, upsert idempotente, cursor pagination y tombstones.
+
+Room v9 agrega `ownerId` a todas las tablas y usa claves primarias compuestas `(ownerId, id)`. `WalletOwnerScope` selecciona dinámicamente la partición invitado o `user:<id>`; `RoomLocalDataIsolation` reclama los datos invitados en una transacción al autenticarse. DataStore aplica el mismo propietario a perfil, seguridad, país financiero, dashboard, Salt Edge y reglas personalizadas.
+
 ### Flow de Sync
 ```kotlin
 class SyncManager @Inject constructor(
@@ -378,8 +379,8 @@ data class BudgetEntity(
 ## 7. Seguridad Móvil
 
 ### No Guardar Secretos en APK
-- ✅ Firebase App Check para verificar app legítima
-- ✅ Token de autenticación solo en memoria (no SharedPreferences)
+- ✅ Tokens Sanctum con capacidad, expiración y rotación por dispositivo
+- ✅ Token Sanctum en preferencias cifradas mediante Android Keystore
 - ✅ Encriptar datos sensibles con Android Keystore
 
 ### Logs Seguros

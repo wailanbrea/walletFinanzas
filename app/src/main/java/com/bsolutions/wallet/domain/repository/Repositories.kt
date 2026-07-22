@@ -22,14 +22,21 @@ interface TransactionRepository {
     fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>>
     suspend fun getTransaction(id: String): Transaction?
     suspend fun addTransaction(transaction: Transaction)
+    /** Inserta el movimiento y ajusta el saldo de la cuenta atómicamente (income/gasto). */
+    suspend fun addTransactionWithBalance(transaction: Transaction)
     suspend fun executeTransfer(fromAccountId: String, toAccountId: String, amount: Long, transaction: Transaction): Boolean
     suspend fun updateTransaction(transaction: Transaction)
+    /** Actualiza el movimiento ajustando el saldo por la diferencia de monto, atómicamente. */
+    suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long)
     suspend fun deleteTransaction(id: String)
+    /** Revierte el efecto del movimiento en el saldo y lo borra, atómicamente. */
+    suspend fun deleteTransactionWithBalance(transaction: Transaction)
 }
 
 interface CategoryRepository {
     fun getCategories(): Flow<List<Category>>
     suspend fun getCategory(id: String): Category?
+    suspend fun getAllCategoryIdsIncludingDeleted(): Set<String>
     suspend fun addCategory(category: Category)
     suspend fun deleteCategory(id: String)
 }

@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.toColorInt
 import androidx.compose.foundation.Canvas
 
 /** Segmento del gráfico de dona: valor absoluto + color. */
@@ -112,7 +113,7 @@ fun animatedProgress(target: Float): Float {
 /** Convierte un hex tipo "#RRGGBB" en Color de forma segura. */
 fun parseHexColor(hex: String, fallback: Color): Color =
     try {
-        Color(android.graphics.Color.parseColor(hex))
+        Color(hex.toColorInt())
     } catch (_: IllegalArgumentException) {
         fallback
     }

@@ -15,14 +15,14 @@ Una tarea solo se marca `[x]` si el código existe, compila, sus pruebas aplicab
 ## Estado inicial auditado
 
 - [x] Proyecto Android localizado en `WalletFinanzasPersonales/`.
-- [x] Arquitectura Android existente identificada: Compose, MVVM, Hilt, Room, Retrofit, WorkManager, Firebase Auth y DataStore.
+- [x] Arquitectura Android vigente identificada: Compose, MVVM, Hilt, Room, Retrofit, WorkManager, Laravel Sanctum y DataStore.
 - [x] Módulo financiero local identificado: cuentas, transacciones, categorías, presupuestos, metas, deudas y pagos planificados.
 - [x] Backend Laravel inexistente en el workspace al 20/07/2026.
 - [x] Módulo de correo inexistente al 20/07/2026.
 - [x] APK debug ensamblada en auditoría del 20/07/2026.
 - [!] Suite unitaria bloqueada: `DashboardViewModelTest` no proporciona `UserPreferencesRepository`.
 - [!] Repositorio Git sin commit inicial; todos los archivos aparecen sin seguimiento.
-- [!] Room usa `fallbackToDestructiveMigration()` y `exportSchema=false`.
+- [x] Room exporta schema v8 y no usa fallback destructivo — 22/07/2026.
 
 ---
 
@@ -31,8 +31,8 @@ Una tarea solo se marca `[x]` si el código existe, compila, sus pruebas aplicab
 ### 0.1 Línea base recuperable
 
 - [x] Revisar `git status` y separar artefactos de pruebas/emulador del código fuente. Evidencia 20/07/2026: se identificaron XML/PNG de emulador en raíz y se excluyeron mediante `.gitignore`, sin borrar archivos.
-- [x] Completar `.gitignore` para Gradle, IDE, APK, archivos locales, credenciales y capturas temporales. Evidencia 20/07/2026: reglas verificadas para `local.properties`, Firebase, APK, salida Graphify y artefactos UI/emulador.
-- [x] Verificar que `local.properties`, secretos y credenciales Firebase privadas no queden versionados. Evidencia 20/07/2026: `git check-ignore -v` confirma `local.properties` y `app/google-services.json`.
+- [x] Completar `.gitignore` para Gradle, IDE, APK, archivos locales, credenciales y capturas temporales. Evidencia 20/07/2026: reglas verificadas para `local.properties`, APK, salida Graphify y artefactos UI/emulador.
+- [x] Verificar que `local.properties`, secretos OAuth/Salt Edge y keystores no queden versionados.
 - [x] Crear un commit base intencional antes del módulo de correo. Evidencia 20/07/2026: commit raíz `48eef59` (`chore: establish verified Android baseline`).
 - [x] Registrar hash del commit base en `IMPLEMENTATION_STATUS.md`. Evidencia: sección de control de versión agregada 20/07/2026.
 
@@ -41,17 +41,17 @@ Una tarea solo se marca `[x]` si el código existe, compila, sus pruebas aplicab
 - [x] Corregir `DashboardViewModelTest` para la dependencia `UserPreferencesRepository`. Evidencia 20/07/2026: contrato `UserProfilePreferences` + fake determinista; prueba focal y suite pasan.
 - [x] Ejecutar `gradlew testDebugUnitTest` y registrar cantidad real de pruebas. Evidencia 20/07/2026: 24 pruebas, 0 failures, 0 errors, 0 skipped.
 - [x] Ejecutar `gradlew assembleDebug`. Evidencia 20/07/2026: `BUILD SUCCESSFUL` después de la corrección.
-- [ ] Ejecutar pruebas instrumentadas de DAO/migración en emulador.
+- [x] Ejecutar pruebas instrumentadas de DAO/migración en emulador. Evidencia 22/07/2026: 10/10 en Pixel 9 Pro API 37.
 - [ ] Confirmar que transferencias, importación CSV y tarjetas siguen funcionando.
 - [ ] Corregir `docs/99_TODO.md` si contradice los resultados reales.
 
 ### 0.3 Persistencia y seguridad Android
 
-- [ ] Activar `exportSchema=true` y configurar directorio de schemas Room.
-- [ ] Versionar schemas Room existentes o reconstruirlos de manera verificable.
+- [x] Activar `exportSchema=true` y configurar directorio de schemas Room — plugin Room + `app/schemas`, 22/07/2026.
+- [x] Versionar schemas Room existentes o reconstruirlos de manera verificable — schema v8 generado, 22/07/2026.
 - [ ] Crear pruebas completas para migraciones soportadas.
-- [ ] Eliminar `fallbackToDestructiveMigration()` cuando todas las rutas estén cubiertas.
-- [ ] Definir reglas de backup/data extraction para excluir BD, claves y preferencias sensibles.
+- [x] Eliminar fallback destructivo; los downgrades incompatibles fallan sin borrar datos — 22/07/2026.
+- [x] Definir reglas de backup/data extraction para excluir BD, claves y preferencias sensibles — 22/07/2026.
 - [ ] Verificar que release no incluya secretos de Salt Edge ni logging sensible.
 - [ ] Documentar la decisión sobre el código Salt Edge oculto.
 
@@ -82,7 +82,7 @@ No iniciar Fase 1 hasta completar Gate 0.
 
 - [ ] ADR-001: fuentes de verdad — MySQL para correo/candidatos y Room para libro local durante MVP.
 - [ ] ADR-002: protocolo saga Android→Room→ACK e idempotencia.
-- [ ] ADR-003: Firebase Auth como identidad única del backend.
+- [x] ADR-003: Laravel Sanctum como identidad canónica; Firebase Auth retirado. Evidencia: `ADR-003-sanctum-identity.md`, decisión del product owner 20/07/2026.
 - [ ] ADR-004: OAuth backend-first, state, PKCE, callbacks y deep link.
 - [ ] ADR-005: Docker Compose con MySQL 8 y Redis para desarrollo.
 - [ ] ADR-006: cifrado de tokens y rotación de claves.
@@ -151,38 +151,35 @@ No iniciar Fase 1 hasta completar Gate 0.
 
 ---
 
-## Fase 3 — Firebase Auth y autorización backend
+## Fase 3 — Laravel Sanctum y autorización backend
 
 ### 3.1 Android
 
-- [ ] Crear proveedor de Firebase ID token renovable.
-- [ ] Crear interceptor OkHttp que agregue Bearer token solo al backend propio.
+- [x] Crear almacenamiento cifrado y proveedor de token Sanctum.
+- [x] Crear interceptor OkHttp que agregue Bearer token solo al backend propio.
 - [ ] No enviar token a hosts de terceros.
 - [ ] Manejar usuario no autenticado y token renovado.
 - [ ] Mapear 401/403 a estados de dominio claros.
 
 ### 3.2 Laravel
 
-- [ ] Integrar verificación server-side de Firebase ID tokens.
-- [ ] Crear/migrar usuario por `firebase_uid` único.
-- [ ] Validar audiencia, emisor, firma y expiración.
-- [ ] Definir estrategia de revocación/caché de claves.
-- [ ] Crear middleware de autenticación.
-- [ ] Crear Policy base de ownership.
-- [ ] Prohibir confiar en `user_id` del request.
+- [x] Integrar registro/login/logout y recuperación Laravel.
+- [x] Emitir tokens Sanctum con capacidad `wallet`, TTL y rotación por dispositivo.
+- [x] Crear middleware de autenticación Sanctum.
+- [x] Resolver ownership desde el usuario autenticado.
+- [x] Prohibir confiar en `user_id` del request.
 
 ### 3.3 Pruebas
 
-- [ ] Token válido autentica.
-- [ ] Token ausente devuelve 401.
-- [ ] Token expirado devuelve 401 sanitizado.
-- [ ] Token de otro proyecto falla.
-- [ ] Usuario A no accede a recursos de B.
+- [x] Token válido autentica.
+- [x] Token ausente devuelve 401.
+- [x] Token expirado limpia la sesión Android.
+- [x] Usuario A no accede a recursos de B.
 - [ ] Rate limit funciona.
 
 ### Gate 3
 
-- [ ] Toda ruta privada exige Firebase válido.
+- [x] Toda ruta privada exige Sanctum válido.
 - [ ] Ownership se prueba en cada recurso inicial.
 - [ ] Android maneja sesión ausente/expirada.
 
@@ -192,7 +189,7 @@ No iniciar Fase 1 hasta completar Gate 0.
 
 ### 4.1 Migraciones
 
-- [ ] `users` con `firebase_uid` único.
+- [x] `users` Laravel como identidad canónica, sin `firebase_uid`.
 - [ ] `connected_email_accounts`.
 - [ ] `email_oauth_states`.
 - [ ] `email_messages`.

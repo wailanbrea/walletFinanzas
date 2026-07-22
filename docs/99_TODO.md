@@ -1,8 +1,8 @@
 # Plan de desarrollo — Wallet Finanzas Personales
 
-> Actualizado: 16 de julio de 2026.
+> Actualizado: 22 de julio de 2026.
 > Referencia visual: app "Wallet by BudgetBakers" (drawer verde, tarjetas, píldora azul de selección).
-> Regla de oro: features con costo (Firebase/Supabase/Salt Edge) siempre detrás de feature flag (ver 00_REGLAS_COSTO).
+> Regla de oro: servicios con costo (hosting Laravel, correo, OAuth, Salt Edge) siempre requieren presupuesto/configuración explícita (ver 00_REGLAS_COSTO).
 
 ---
 
@@ -36,17 +36,20 @@ Objetivo: app 100% funcional offline con la estética Wallet, sin datos falsos.
 - [x] CRUD completo de categorías (pantalla real con selector de icono y color; antes era un stub vacío; `categoryIcons` ampliado a 12 iconos) — 16/07/2026
 - [x] Formato de moneda centralizado en `core/common/MoneyFormat` (eliminados todos los `RD$`/`DOP $` hardcodeados de las pantallas); multi-moneda pendiente para cuando CurrencyCode esté por cuenta — 16/07/2026
 - [x] Mover textos a `strings.xml` — **COMPLETO 16/07/2026**: ~220 strings extraídos de TODAS las pantallas (navegación, drawer, splash, dashboard, alta rápida, transferencias, Metas, Deudas, Pagos planificados, Categorías, Importar CSV, Cuentas, Registros, Presupuestos, Reportes, Perfil, Ajustes, Seguridad, LockScreen y prompt biométrico). Formatos parametrizados `%1$s`; la pantalla de Movimientos pasó a titularse "Registros" (consistente con drawer y bottom bar). Base lista para `values-en/`
-- [x] Arranque offline-first: splash de marca con degradado verde y auto-navegación directa al Dashboard; el login deja de ser obligatorio (queda para Fase 2 con Firebase Auth) — 16/07/2026
+- [x] Arranque offline-first: splash de marca con degradado verde y auto-navegación directa al Dashboard; Laravel Sanctum protege únicamente recursos remotos — actualizado 20/07/2026.
 - [x] Perfil local real: nombre, correo y nombre del wallet en DataStore (`UserPreferencesRepository`), editables desde Perfil; el drawer los lee vía `MainViewModel` (ya no hay nombre hardcodeado) — 16/07/2026
 
 **Criterio de salida**: gestionar cuentas, registros, presupuestos, metas y deudas sin conexión y sin ningún dato simulado en pantalla.
 
 ## Fase 2 — Cuenta y sincronización (v1.1)
 
-- [x] Firebase Auth email/password con sesión persistente — 16/07/2026. Proyecto "WalletFinanzas" (`walletfinanzas-51756`, plan Spark, sin Analytics ni Gemini), app Android `com.bsolutions.wallet` registrada, `google-services.json` en `app/`, proveedor email/contraseña habilitado. `FirebaseAuthRepository` + `AuthViewModel` reales conectados a Login/Registro/Recuperar (errores en español). El login sigue siendo opcional (offline-first). Ajustes muestra el estado de sesión con "Iniciar sesión"/"Cerrar sesión" reales (logout con confirmación; los datos locales se conservan) y el perfil real de DataStore. Componente `GradientSummaryCard` (degradado de marca + monto animado) aplicado a Dashboard, Metas y Pagos planificados. Pendiente: Google Sign-In
-- [ ] **Sync con Firestore** (decisión 16/07/2026: sustituye a Supabase + SyncManager artesanal — ver 00_REGLAS_COSTO §1). Room sigue como fuente de verdad; Firestore con persistencia offline nativa del SDK; reglas de seguridad por `auth.uid`; colección `users/{uid}/...`. **Pospuesto hasta validar con usuarios beta reales** — el backup CSV cubre el caso de migración de dispositivo mientras tanto
+- [x] **Decisión reemplazada 20/07/2026:** Firebase Auth fue retirado. Registro, login, recuperación, sesión cifrada y logout usan Laravel Sanctum conforme a ADR-003; los datos locales offline se conservan.
+- [x] Sincronización multidispositivo del dominio MVP: cuentas, movimientos, categorías, presupuestos, metas, deudas y pagos planificados tienen contrato Laravel/Room autenticado, idempotencia por ID de cliente, aislamiento por usuario y tombstones — 22/07/2026. Falta únicamente la validación operativa final con dos dispositivos físicos antes de publicar.
 - ~~Supabase: tablas + RLS + sync incremental~~ — eliminado del stack
-- ~~SyncManager con WorkManager~~ — innecesario con la persistencia offline de Firestore
+- [x] Núcleo sync Android↔Laravel idempotente para cuentas, movimientos y categorías; Room continúa como fuente local. Categorías se suben antes que movimientos y propagan tombstones entre dispositivos — 22/07/2026.
+- [x] **Aislamiento local por usuario (Room v9):** todas las tablas usan clave compuesta `(ownerId, id)`; invitado y usuarios autenticados tienen particiones independientes. Perfil, preferencias y reglas de categorización también se separan por propietario. Los datos existentes se conservan como invitado y se reclaman transaccionalmente al primer login — 22/07/2026.
+- [x] **Sync de planificación financiera:** presupuestos, metas, deudas y pagos planificados se suben y descargan con ownership Laravel, cursor pagination, validación de cuenta/categoría, actualizaciones idempotentes y tombstones — 22/07/2026.
+- [ ] Validación manual final: mismo usuario en dos dispositivos físicos, edición alternada y propagación de tombstones sin duplicados.
 - [x] Importación CSV completa: selector SAF, parser tolerante (separador `,`/`;`, comillas, fechas dd/MM/yyyy·yyyy-MM-dd·dd-MM-yyyy, montos con coma/punto/paréntesis contable), auto-detección y mapeo manual de columnas, previsualización con estados (válida/duplicada/inválida), deduplicación por firma fecha+monto+descripción, cuenta destino y ajuste de balance en un solo paso — 16/07/2026. Estrategia documentada en 10_OBTENCION_DATOS.md
 - [x] Backup manual: "Exportar datos (CSV)" en Ajustes con SAF (fecha, descripción, monto con signo, tipo, cuenta y categoría; escape RFC 4180) — verificado end-to-end en emulador 16/07/2026. El restore es el importador CSV ya existente
 - [x] Pulido visual global: donut con barrido animado, barras de progreso animadas (Metas/Deudas/Presupuestos), `GradientSummaryCard` también en Cuentas — 16/07/2026
@@ -89,9 +92,21 @@ Objetivo: app 100% funcional offline con la estética Wallet, sin datos falsos.
 - [x] **Toggle protegido con biometría** (17/07/2026): al tocar el ojo se pide autenticación (huella/rostro con respaldo a PIN del dispositivo) antes de cambiar la visibilidad — helper `presentation/common/authenticateBiometric` (BiometricPrompt, BIOMETRIC_WEAK ‖ DEVICE_CREDENTIAL). Si el dispositivo no tiene ninguna seguridad configurada, no bloquea la acción. Verificado en emulador (PIN de prueba): tocar ojo → prompt del sistema → PIN correcto → revela; se aplica en ambos sentidos
 - [x] ~~**Etapa B — Piloto Banreservas real**~~ **DESCARTADO (17/07/2026)**: Salt Edge informó que **no da soporte a República Dominicana** (Banreservas aparecía en el widget pero no es utilizable). Ningún agregador cubre RD (Belvo=MX/BR/CO, Plaid=EE.UU., Tink/TrueLayer=Europa; RD sin open banking). **Camino adoptado: entrada manual + importación de CSV**. El código Salt Edge (Etapa A) se **deja en el repo pero oculto**: la entrada "Sincronización bancaria" del drawer ahora se inserta condicionalmente solo si `SaltEdgeConfig.isAvailable` (DEBUG + credenciales), así el usuario final de producción no la ve, pero sigue disponible para pruebas en desarrollo. Verificado en emulador (debug la muestra; producción la oculta). Ver **11_AISP_INTEGRACION.md**
 
+### Corrección transversal de categorías (22/07/2026)
+
+- [x] Motor único de autocategorización con IDs deterministas (`cat_*`), independiente del nombre visible; renombrar una categoría predeterminada ya no rompe las reglas integradas.
+- [x] Alta completa y edición de movimientos permiten "Sin categoría (automática)". Las reglas personalizadas válidas tienen prioridad y las referencias eliminadas se ignoran de forma segura.
+- [x] CSV, sincronización bancaria, pagos planificados y revisión de candidatos de correo usan el catálogo real y el mismo criterio de categorización; correo ya no acepta categorías de texto libre.
+- [x] Borrado coherente: las reglas personalizadas asociadas se eliminan, los tombstones impiden que categorías predeterminadas borradas reaparezcan al reiniciar y las reglas huérfanas históricas se limpian al abrir su pantalla.
+- [x] Dashboard y Reportes agrupan movimientos vacíos/huérfanos en "Sin categoría" sin perder montos; Presupuestos conserva visibles los asociados a una "Categoría eliminada", incluso en alertas.
+- [x] Sync Android↔Laravel valida IDs recibidos/enviados para no crear referencias locales huérfanas.
+- [x] Validación: `assembleDebug`, 78 pruebas unitarias (0 fallos; 1 omitida), 15 pruebas instrumentadas en Pixel 9 Pro API 37 y `lintDebug` con **0 advertencias / 0 errores**. Smoke/UI adicional en BlueStacks Pie 64: instalación, arranque, drawer, Más opciones y Categorías sin crash — 22/07/2026.
+- [x] **Catálogo remoto de categorías:** API Laravel autenticada con `client_id` aislado por usuario, cursor pagination, límite de 200 activas, tombstones y validación de referencias en transacciones. Android Room v8 marca el catálogo existente para la primera subida y sincroniza cambios antes de los movimientos — 22/07/2026.
+
 ## Fase 4 — Calidad y lanzamiento
 
-- [x] Tests unitarios — **24/24 en verde** (`testDebugUnitTest`, 16/07/2026): `MoneyParser` (5: formatos RD/EU, contable, HALF_UP, overflow, heurística de comas), `CsvParser` (8: separadores, comillas escapadas, 3 formatos de fecha equivalentes, inválidos), `TransactionsViewModel` (3, owner), `DashboardViewModel` (5: mes en curso, tendencia ±%, sin tendencia sin base, %% por categoría, recientes ordenadas y limitadas a 5) y `BudgetsViewModel` (3: gasto solo del mes, categorías disponibles, editar/eliminar). Corregida coordenada rota `junit:junit:1.2.1`→4.13.2. **Los tests cazaron 2 bugs reales de re-seed**: borrar el último presupuesto re-sembraba los de ejemplo (seed eliminado; la pantalla ya tiene empty state) y borrar todas las categorías las re-sembraba en caliente (ahora chequeo único con `first()` al arrancar)
+- [x] Tests automatizados — **78 unitarios ejecutados, 0 fallos y 1 omitido** (`testDebugUnitTest`, 22/07/2026), incluyendo regresiones del motor de categorías, aislamiento por propietario y tombstones; **15/15 instrumentados** en Pixel 9 Pro API 37; **62 pruebas Laravel / 401 aserciones**; `lintDebug` en **0 advertencias / 0 errores**, `assembleDebug` y Laravel Pint en verde. La prueba de integración Android→Laravel también pasa cuando se habilita con `WALLET_API_INTEGRATION_URL`.
+- [ ] Configurar el endpoint HTTPS definitivo en `wallet.releaseApiBaseUrl` antes del build firmado. El build debug usa el backend local mediante `10.0.2.2:8001`; release falla de forma segura contra un dominio inválido mientras no exista una URL de producción explícita.
 - [x] Accesibilidad — 16/07/2026: auditoría completa de `contentDescription` (interactivos con recurso traducible como "Mostrar u ocultar contraseña"; decorativos a `null` para no ensuciar TalkBack) y **objetivos táctiles ≥48dp** vía `minimumInteractiveComponentSize()` en los 5 text-buttons pequeños ("Ver todas", "Aportar", "Registrar abono", "Pagar ahora", "¿Olvidé mi contraseña?"). Contraste ya cubierto por el tema M3 (blanco sobre verde #2E7D46 ≈ 5.9:1). **Iniciado 16/07/2026**: pruebas de `MoneyParser`, `CsvParser` y efectos de saldo en `TransactionsViewModel`; falta cubrir Dashboard, Budgets, repositorios Room e importación end-to-end.
 - [ ] Tests de UI de flujos críticos (alta de gasto, transferencia)
 - [ ] Crashlytics + analítica básica

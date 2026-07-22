@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -178,7 +179,7 @@ fun TransactionsScreen(
                         // For simplicity in the MVP, we display a reactive scroll list.
                         items(uiState.transactions) { tx ->
                             val category = uiState.categories.find { it.id == tx.categoryId }
-                            val dateStr = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(tx.date))
+                            val dateStr = SimpleDateFormat("dd MMM, hh:mm a", LocalConfiguration.current.locales[0]).format(Date(tx.date))
 
                             TransactionItem(
                                 title = tx.note.ifEmpty { category?.name ?: "Otros" },
@@ -187,6 +188,7 @@ fun TransactionsScreen(
                                 type = tx.type,
                                 icon = getIconForName(category?.icon ?: "shopping_cart"),
                                 currency = tx.currency,
+                                categoryName = category?.name,
                                 onClick = { selectedTransaction = tx }
                             )
                         }
@@ -210,11 +212,13 @@ fun TransactionDetailSheet(
     var isEditing by remember { mutableStateOf(false) }
     var amountStr by remember { mutableStateOf(String.format(Locale.US, "%.2f", transaction.amount / 100.0)) }
     var note by remember { mutableStateOf(transaction.note) }
-    var selectedCategoryId by remember { mutableStateOf(transaction.categoryId) }
+    var selectedCategoryId by remember(transaction.id, categories) {
+        mutableStateOf(transaction.categoryId.takeIf { id -> categories.any { it.id == id } }.orEmpty())
+    }
     var confirmDelete by remember { mutableStateOf(false) }
 
     val category = categories.find { it.id == transaction.categoryId }
-    val dateStr = SimpleDateFormat("dd MMMM yyyy, hh:mm a", Locale.getDefault()).format(Date(transaction.date))
+    val dateStr = SimpleDateFormat("dd MMMM yyyy, hh:mm a", LocalConfiguration.current.locales[0]).format(Date(transaction.date))
     val typeLabel = stringResource(
         when (transaction.type) {
             "INCOME" -> R.string.quick_income
@@ -272,9 +276,16 @@ fun TransactionDetailSheet(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (categories.isNotEmpty()) {
-                    Text(stringResource(R.string.common_category), style = MaterialTheme.typography.labelLarge)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.common_category), style = MaterialTheme.typography.labelLarge)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        FilterChip(
+                            selected = selectedCategoryId.isBlank(),
+                            onClick = { selectedCategoryId = "" },
+                            label = { Text(stringResource(R.string.category_none_auto)) }
+                        )
+                    }
+                    if (categories.isNotEmpty()) {
                         items(categories) { cat ->
                             FilterChip(
                                 selected = selectedCategoryId == cat.id,
@@ -372,7 +383,7 @@ fun AddTransactionView(
     var amountStr by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("EXPENSE") }
     var selectedAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: "") }
-    var selectedCategoryId by remember { mutableStateOf(categories.firstOrNull()?.id ?: "") }
+    var selectedCategoryId by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
 
     Scaffold(
@@ -507,6 +518,13 @@ fun AddTransactionView(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    item {
+                        FilterChip(
+                            selected = selectedCategoryId.isBlank(),
+                            onClick = { selectedCategoryId = "" },
+                            label = { Text(stringResource(R.string.category_none_auto)) }
+                        )
+                    }
                     items(categories) { cat ->
                         val selected = selectedCategoryId == cat.id
                         FilterChip(

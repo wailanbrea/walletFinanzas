@@ -2,6 +2,7 @@ package com.bsolutions.wallet.presentation.categories
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bsolutions.wallet.core.common.CategoryRuleRepository
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.repository.CategoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,7 +20,8 @@ data class CategoriesUiState(
 
 @HiltViewModel
 class CategoriesViewModel @Inject constructor(
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    private val categoryRules: CategoryRuleRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<CategoriesUiState> = categoryRepository.getCategories()
@@ -55,6 +57,10 @@ class CategoriesViewModel @Inject constructor(
     }
 
     fun deleteCategory(id: String) {
-        viewModelScope.launch { categoryRepository.deleteCategory(id) }
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            categoryRepository.deleteCategory(id)
+            categoryRules.removeByCategory(id)
+        }
     }
 }

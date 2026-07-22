@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,7 @@ import com.bsolutions.wallet.presentation.common.walletTopBarColors
 import com.bsolutions.wallet.core.common.MoneyFormat
 import com.bsolutions.wallet.core.common.MoneyParser
 import com.bsolutions.wallet.domain.model.Account
+import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.PlannedPayment
 import com.bsolutions.wallet.presentation.common.GradientSummaryCard
 import java.text.SimpleDateFormat
@@ -91,9 +93,10 @@ fun PlannedPaymentsScreen(
     if (showCreateSheet) {
         CreatePlannedPaymentSheet(
             accounts = uiState.accounts,
+            categories = uiState.categories,
             onDismiss = { showCreateSheet = false },
-            onSave = { name, accountId, amount, frequency ->
-                viewModel.addPayment(name, accountId, amount, frequency, System.currentTimeMillis())
+            onSave = { name, accountId, categoryId, amount, frequency ->
+                viewModel.addPayment(name, accountId, categoryId, amount, frequency, System.currentTimeMillis())
                 showCreateSheet = false
             }
         )
@@ -193,7 +196,7 @@ private fun PlannedPaymentCard(
     onPayNow: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val dateStr = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(payment.nextDueDate))
+    val dateStr = SimpleDateFormat("dd MMM yyyy", LocalConfiguration.current.locales[0]).format(Date(payment.nextDueDate))
     val overdue = payment.isActive && payment.nextDueDate < System.currentTimeMillis()
 
     Card(
@@ -282,13 +285,15 @@ private fun PlannedPaymentCard(
 @Composable
 private fun CreatePlannedPaymentSheet(
     accounts: List<Account>,
+    categories: List<Category>,
     onDismiss: () -> Unit,
-    onSave: (name: String, accountId: String, amount: Long, frequency: String) -> Unit
+    onSave: (name: String, accountId: String, categoryId: String, amount: Long, frequency: String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var amountStr by remember { mutableStateOf("") }
     var frequency by remember { mutableStateOf("MONTHLY") }
     var selectedAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: "") }
+    var selectedCategoryId by remember { mutableStateOf("") }
     var expandedAcc by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -331,6 +336,24 @@ private fun CreatePlannedPaymentSheet(
                 }
             }
 
+            Text(stringResource(R.string.common_category), style = MaterialTheme.typography.labelLarge)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    FilterChip(
+                        selected = selectedCategoryId.isBlank(),
+                        onClick = { selectedCategoryId = "" },
+                        label = { Text(stringResource(R.string.category_none_auto)) }
+                    )
+                }
+                items(categories, key = { it.id }) { category ->
+                    FilterChip(
+                        selected = selectedCategoryId == category.id,
+                        onClick = { selectedCategoryId = category.id },
+                        label = { Text(category.name) }
+                    )
+                }
+            }
+
             Text(stringResource(R.string.common_account), style = MaterialTheme.typography.labelLarge)
             val selectedAccount = accounts.find { it.id == selectedAccountId }
             Box {
@@ -369,7 +392,7 @@ private fun CreatePlannedPaymentSheet(
                 onClick = {
                     val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
                     if (name.isNotBlank() && amount > 0L && selectedAccountId.isNotEmpty()) {
-                        onSave(name, selectedAccountId, amount, frequency)
+                        onSave(name, selectedAccountId, selectedCategoryId, amount, frequency)
                     }
                 },
                 enabled = name.isNotBlank() &&

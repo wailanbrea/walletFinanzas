@@ -28,7 +28,7 @@
     Ideal para construir todo el flujo sin tocar bancos reales ni pagar.
   - **Live**: requiere aprobación/KYC y contrato de pago. Fuera del MVP.
 - Flujo técnico típico (API Account Information):
-  1. La app crea un `customer` (nuestro uid de Firebase).
+  1. El backend crea un `customer` asociado al usuario Laravel autenticado.
   2. Se pide una **Connect Session** → Salt Edge devuelve una URL.
   3. El usuario abre esa URL (Chrome Custom Tab) y se autentica **directamente con su banco**
      — las credenciales nunca pasan por nuestra app ni backend.

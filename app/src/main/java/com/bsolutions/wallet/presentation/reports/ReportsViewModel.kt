@@ -2,6 +2,7 @@ package com.bsolutions.wallet.presentation.reports
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bsolutions.wallet.core.common.CategoryPlaceholders
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
@@ -48,10 +49,12 @@ class ReportsViewModel @Inject constructor(
         val totalExp = expenses.sumOf { it.amount }
 
         // Spent per category
-        val spentMap = expenses.groupBy { it.categoryId }.mapValues { it.value.sumOf { it.amount } }
+        val spentMap = expenses
+            .groupBy { CategoryPlaceholders.aggregateId(it.categoryId, categoryMap) }
+            .mapValues { it.value.sumOf { transaction -> transaction.amount } }
 
-        val categoryReportList = spentMap.mapNotNull { (catId, amount) ->
-            val cat = categoryMap[catId] ?: return@mapNotNull null
+        val categoryReportList = spentMap.map { (catId, amount) ->
+            val cat = categoryMap[catId] ?: CategoryPlaceholders.uncategorized()
             val pct = if (totalExp > 0) ((amount.toDouble() / totalExp.toDouble()) * 100).toInt() else 0
             CategoryReportItem(cat, amount, pct)
         }.sortedByDescending { it.amount }

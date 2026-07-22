@@ -2,16 +2,21 @@ package com.bsolutions.wallet.presentation.plannedpayments
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bsolutions.wallet.core.common.CategoryRuleRepository
+import com.bsolutions.wallet.core.common.ExpenseCategorizer
 import com.bsolutions.wallet.domain.model.Account
+import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.PlannedPayment
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
+import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.PlannedPaymentRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -21,6 +26,7 @@ import javax.inject.Inject
 data class PlannedPaymentsUiState(
     val payments: List<PlannedPayment> = emptyList(),
     val accounts: List<Account> = emptyList(),
+    val categories: List<Category> = emptyList(),
     val monthlyTotal: Long = 0L
 )
 
@@ -28,16 +34,20 @@ data class PlannedPaymentsUiState(
 class PlannedPaymentsViewModel @Inject constructor(
     private val plannedPaymentRepository: PlannedPaymentRepository,
     private val accountRepository: AccountRepository,
-    private val transactionRepository: TransactionRepository
+    private val transactionRepository: TransactionRepository,
+    private val categoryRepository: CategoryRepository,
+    private val categoryRules: CategoryRuleRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<PlannedPaymentsUiState> = combine(
         plannedPaymentRepository.getPlannedPayments(),
-        accountRepository.getAccounts()
-    ) { payments, accounts ->
+        accountRepository.getAccounts(),
+        categoryRepository.getCategories()
+    ) { payments, accounts, categories ->
         PlannedPaymentsUiState(
             payments = payments,
             accounts = accounts,
+            categories = categories,
             monthlyTotal = payments
                 .filter { it.isActive && it.type == "EXPENSE" && it.frequency == "MONTHLY" }
                 .sumOf { it.amount }
@@ -48,15 +58,23 @@ class PlannedPaymentsViewModel @Inject constructor(
         initialValue = PlannedPaymentsUiState()
     )
 
-    fun addPayment(name: String, accountId: String, amount: Long, frequency: String, firstDueDate: Long) {
+    fun addPayment(
+        name: String,
+        accountId: String,
+        categoryId: String,
+        amount: Long,
+        frequency: String,
+        firstDueDate: Long
+    ) {
         if (name.isBlank() || accountId.isBlank() || amount <= 0L) return
         viewModelScope.launch {
+            val finalCategoryId = resolveCategoryId(categoryId, name)
             plannedPaymentRepository.addPlannedPayment(
                 PlannedPayment(
                     id = UUID.randomUUID().toString(),
                     name = name.trim(),
                     accountId = accountId,
-                    categoryId = "",
+                    categoryId = finalCategoryId,
                     amount = amount,
                     type = "EXPENSE",
                     frequency = frequency,
@@ -70,15 +88,20 @@ class PlannedPaymentsViewModel @Inject constructor(
     /** Registra la transacción del pago y avanza la fecha del próximo vencimiento. */
     fun payNow(payment: PlannedPayment) {
         viewModelScope.launch {
-            transactionRepository.addTransaction(
+            // Antes no se ajustaba el saldo (descuadre). Ahora: saldo + movimiento
+            // atómicos, con la divisa de la cuenta del pago.
+            val account = accountRepository.getAccount(payment.accountId) ?: return@launch
+            val finalCategoryId = resolveCategoryId(payment.categoryId, payment.name)
+            transactionRepository.addTransactionWithBalance(
                 Transaction(
                     id = UUID.randomUUID().toString(),
                     accountId = payment.accountId,
                     amount = payment.amount,
                     type = payment.type,
-                    categoryId = payment.categoryId,
+                    categoryId = finalCategoryId,
                     date = System.currentTimeMillis(),
-                    note = payment.name
+                    note = payment.name,
+                    currency = account.currency
                 )
             )
             if (payment.frequency == "ONCE") {
@@ -93,6 +116,16 @@ class PlannedPaymentsViewModel @Inject constructor(
 
     fun deletePayment(id: String) {
         viewModelScope.launch { plannedPaymentRepository.deletePlannedPayment(id) }
+    }
+
+    private suspend fun resolveCategoryId(selectedId: String, text: String): String {
+        val categories = categoryRepository.getCategories().first()
+        if (categories.any { it.id == selectedId }) return selectedId
+        return ExpenseCategorizer.categoryIdFor(
+            text = text,
+            categories = categories,
+            customRules = categoryRules.rules.first()
+        ).orEmpty()
     }
 
     private fun nextDate(from: Long, frequency: String): Long {

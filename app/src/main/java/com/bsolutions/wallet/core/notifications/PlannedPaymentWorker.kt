@@ -1,5 +1,6 @@
 package com.bsolutions.wallet.core.notifications
 
+import com.bsolutions.wallet.core.common.CategoryPlaceholders
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -123,7 +124,8 @@ class PlannedPaymentWorker @AssistedInject constructor(
         return budgets.mapNotNull { budget ->
             val spent = spentByCategory[budget.categoryId] ?: 0L
             if (spent > budget.limitAmount) {
-                val name = categories[budget.categoryId]?.name ?: return@mapNotNull null
+                val name = categories[budget.categoryId]?.name
+                    ?: CategoryPlaceholders.deleted(budget.categoryId).name
                 name to (spent - budget.limitAmount)
             } else null
         }
@@ -142,17 +144,15 @@ class PlannedPaymentWorker @AssistedInject constructor(
     }
 
     private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                applicationContext.getString(R.string.notif_channel_name),
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = applicationContext.getString(R.string.notif_channel_desc)
-            }
-            val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            applicationContext.getString(R.string.notif_channel_name),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = applicationContext.getString(R.string.notif_channel_desc)
         }
+        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(channel)
     }
 
     companion object {

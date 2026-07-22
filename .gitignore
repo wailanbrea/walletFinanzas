@@ -15,6 +15,11 @@ key.properties
 # Firebase and service credentials
 google-services.json
 
+# Local OAuth provider credential exports
+/client_secret_*.json
+/microsoft-secret.txt
+/secreto del cliente.txt
+
 # Android Studio / IntelliJ
 .idea/
 *.iml

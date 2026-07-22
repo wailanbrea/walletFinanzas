@@ -1,6 +1,5 @@
 package com.bsolutions.wallet.presentation.sync_settings
 
-import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -19,11 +18,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.core.net.toUri
 import com.bsolutions.wallet.R
 import com.bsolutions.wallet.core.network.SaltEdgeConfig
 import com.bsolutions.wallet.data.local.entity.BankConnectionEntity
@@ -96,6 +97,7 @@ class BankSyncViewModel @Inject constructor(
 fun SyncSettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToFindBank: () -> Unit = {},
+    onNavigateToEmailConnections: () -> Unit = {},
     viewModel: BankSyncViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -106,7 +108,7 @@ fun SyncSettingsScreen(
     LaunchedEffect(uiState.connectUrl) {
         uiState.connectUrl?.let { url ->
             viewModel.consumeConnectUrl()
-            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+            CustomTabsIntent.Builder().build().launchUrl(context, url.toUri())
         }
     }
 
@@ -146,6 +148,8 @@ fun SyncSettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
+                Spacer(modifier = Modifier.height(24.dp))
+                EmailConnectionsEntry(onClick = onNavigateToEmailConnections)
             }
             return@Scaffold
         }
@@ -159,6 +163,10 @@ fun SyncSettingsScreen(
         ) {
             item {
                 Spacer(modifier = Modifier.height(8.dp))
+                EmailConnectionsEntry(onClick = onNavigateToEmailConnections)
+            }
+
+            item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)),
@@ -284,7 +292,7 @@ fun SyncSettingsScreen(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 val syncedAt = if (connection.lastSyncAt > 0) {
-                                    SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
+                                    SimpleDateFormat("dd MMM, hh:mm a", LocalConfiguration.current.locales[0])
                                         .format(Date(connection.lastSyncAt))
                                 } else "—"
                                 Text(
@@ -300,5 +308,26 @@ fun SyncSettingsScreen(
 
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
+    }
+}
+
+@Composable
+private fun EmailConnectionsEntry(onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().height(56.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Icon(Icons.Default.Email, contentDescription = null)
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+            Text(stringResource(R.string.email_settings_entry), fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.email_settings_entry_description),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(Icons.Default.ChevronRight, contentDescription = null)
     }
 }

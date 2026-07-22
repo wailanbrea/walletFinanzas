@@ -3,6 +3,11 @@ package com.bsolutions.wallet.presentation.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bsolutions.wallet.core.common.AccountBalances
+import com.bsolutions.wallet.core.common.CategoryRuleRepository
+import com.bsolutions.wallet.core.common.CategoryPlaceholders
+import com.bsolutions.wallet.core.common.DefaultCategories
+import com.bsolutions.wallet.core.common.EmptyCategoryRules
+import com.bsolutions.wallet.core.common.ExpenseCategorizer
 import com.bsolutions.wallet.core.common.MoneyFormat
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
@@ -14,18 +19,74 @@ import com.bsolutions.wallet.domain.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.UUID
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 import javax.inject.Inject
 
 data class CategorySpend(
     val category: Category,
     val amount: Long,
     val percentage: Int
+)
+
+enum class DashboardCardType(val storageId: String) {
+    TOTAL_BALANCE("total_balance"),
+    CASH_FLOW("cash_flow"),
+    EXPENSE_STRUCTURE("expense_structure"),
+    RECENT_TRANSACTIONS("recent_transactions"),
+    ACCOUNT_BALANCES("account_balances");
+
+    companion object {
+        val defaultCards: Set<DashboardCardType> = entries.take(4).toSet()
+
+        fun fromStorageIds(ids: Set<String>): Set<DashboardCardType> =
+            entries.filterTo(linkedSetOf()) { it.storageId in ids }
+                .apply { add(TOTAL_BALANCE) }
+    }
+}
+
+enum class DashboardPeriodFilter {
+    TODAY,
+    THIS_WEEK,
+    THIS_MONTH,
+    THIS_YEAR,
+    LAST_7_DAYS,
+    LAST_30_DAYS,
+    LAST_12_WEEKS,
+    LAST_6_MONTHS,
+    LAST_1_YEAR,
+    LAST_5_YEARS;
+
+    fun startMillis(nowMillis: Long, zoneId: ZoneId = ZoneId.systemDefault()): Long {
+        val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+        val startDate = when (this) {
+            TODAY -> today
+            THIS_WEEK -> today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            THIS_MONTH -> today.withDayOfMonth(1)
+            THIS_YEAR -> today.withDayOfYear(1)
+            LAST_7_DAYS -> today.minusDays(6)
+            LAST_30_DAYS -> today.minusDays(29)
+            LAST_12_WEEKS -> today.minusDays(83)
+            LAST_6_MONTHS -> today.minusMonths(6)
+            LAST_1_YEAR -> today.minusYears(1)
+            LAST_5_YEARS -> today.minusYears(5)
+        }
+        return startDate.atStartOfDay(zoneId).toInstant().toEpochMilli()
+    }
+}
+
+private data class DashboardFilters(
+    val period: DashboardPeriodFilter = DashboardPeriodFilter.THIS_MONTH,
+    val categoryId: String? = null
 )
 
 data class DashboardUiState(
@@ -40,6 +101,9 @@ data class DashboardUiState(
     val recentTransactions: List<Transaction> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val categories: Map<String, Category> = emptyMap(),
+    val selectedPeriod: DashboardPeriodFilter = DashboardPeriodFilter.THIS_MONTH,
+    val selectedCategoryId: String? = null,
+    val selectedCards: Set<DashboardCardType> = DashboardCardType.defaultCards,
     /** Modo privacidad: si está activo, la UI ofusca los montos. */
     val balancesHidden: Boolean = false
 )
@@ -49,8 +113,32 @@ class DashboardViewModel @Inject constructor(
     private val accountRepository: AccountRepository,
     private val transactionRepository: TransactionRepository,
     private val categoryRepository: CategoryRepository,
-    private val userPreferencesRepository: UserProfilePreferences
+    private val userPreferencesRepository: UserProfilePreferences,
+    // Default para tests: Hilt inyecta la implementación real de todos modos.
+    private val categoryRules: CategoryRuleRepository = EmptyCategoryRules
 ) : ViewModel() {
+
+    init {
+        // Asegura que existan las categorías por defecto (aditivo por id): siembra las que
+        // falten, así también aparecen categorías nuevas del set en instalaciones existentes.
+        viewModelScope.launch {
+            // Incluye tombstones: una categoría eliminada por el usuario no debe
+            // reaparecer en el siguiente arranque por efecto del seed.
+            val existingIds = categoryRepository.getAllCategoryIdsIncludingDeleted()
+            DefaultCategories.asCategories()
+                .filter { it.id !in existingIds }
+                .forEach { categoryRepository.addCategory(it) }
+        }
+    }
+
+    private val selectedPeriod = MutableStateFlow(DashboardPeriodFilter.THIS_MONTH)
+    private val selectedCategoryId = MutableStateFlow<String?>(null)
+    private val filters = combine(selectedPeriod, selectedCategoryId) { period, categoryId ->
+        DashboardFilters(period, categoryId)
+    }
+    private val refreshTick = MutableStateFlow(0L)
+    private val filtersWithRefresh = combine(filters, refreshTick) { activeFilters, _ -> activeFilters }
+    internal var nowMillisProvider: () -> Long = System::currentTimeMillis
 
     fun toggleBalancesHidden() {
         viewModelScope.launch {
@@ -59,13 +147,24 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    init {
+    fun setPeriodFilter(period: DashboardPeriodFilter) {
+        selectedPeriod.value = period
+    }
+
+    fun setCategoryFilter(categoryId: String?) {
+        selectedCategoryId.value = categoryId?.takeIf { it.isNotBlank() }
+    }
+
+    fun refreshTime() {
+        refreshTick.value += 1L
+    }
+
+    fun setDashboardCardEnabled(card: DashboardCardType, enabled: Boolean) {
+        if (card == DashboardCardType.TOTAL_BALANCE && !enabled) return
         viewModelScope.launch {
-            // Seed solo en el primer arranque (chequeo único, no colector permanente:
-            // si el usuario borra sus categorías no deben re-sembrarse en caliente)
-            if (categoryRepository.getCategories().first().isEmpty()) {
-                seedInitialData()
-            }
+            val cardIds = userPreferencesRepository.profile.first().dashboardCardIds.toMutableSet()
+            if (enabled) cardIds += card.storageId else cardIds -= card.storageId
+            userPreferencesRepository.setDashboardCardIds(cardIds)
         }
     }
 
@@ -73,17 +172,17 @@ class DashboardViewModel @Inject constructor(
         accountRepository.getAccounts(),
         transactionRepository.getTransactions(),
         categoryRepository.getCategories(),
-        userPreferencesRepository.profile
-    ) { accounts, transactions, categories, profile ->
+        userPreferencesRepository.profile,
+        filtersWithRefresh
+    ) { accounts, transactions, categories, profile, activeFilters ->
         // Balance principal solo en RD$; otras divisas van como subtotales aparte
         val balance = AccountBalances.primaryTotal(accounts)
         val foreignSubtitle = AccountBalances.foreignSubtitle(accounts)
         val categoryMap = categories.associateBy { it.id }
+        val effectiveCategoryId = activeFilters.categoryId?.takeIf(categoryMap::containsKey)
 
-        // Solo el mes en curso (antes sumaba el histórico completo)
-        val now = Calendar.getInstance()
-        val currentMonth = now.get(Calendar.MONTH)
-        val currentYear = now.get(Calendar.YEAR)
+        val nowMillis = nowMillisProvider()
+        val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
         val prev = (now.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
 
         fun inMonth(dateMillis: Long, month: Int, year: Int): Boolean {
@@ -91,10 +190,13 @@ class DashboardViewModel @Inject constructor(
             return cal.get(Calendar.MONTH) == month && cal.get(Calendar.YEAR) == year
         }
 
-        // Ingresos/Gastos del mes: solo movimientos en RD$ (no se mezclan divisas).
+        // Ingresos/Gastos del filtro: solo movimientos en RD$ (no se mezclan divisas).
         // Los importados en €, US$, etc. se excluyen de estos totales base.
-        val thisMonthTx = transactions
-            .filter { inMonth(it.date, currentMonth, currentYear) }
+        val startMillis = activeFilters.period.startMillis(nowMillis)
+        val filteredTransactions = transactions
+            .filter { it.date in startMillis..nowMillis }
+            .filter { effectiveCategoryId == null || it.categoryId == effectiveCategoryId }
+        val thisMonthTx = filteredTransactions
             .filter { it.currency == MoneyFormat.DEFAULT_CURRENCY }
         val income = thisMonthTx.filter { it.type == "INCOME" }.sumOf { it.amount }
         val expenses = thisMonthTx.filter { it.type == "EXPENSE" }.sumOf { it.amount }
@@ -102,19 +204,20 @@ class DashboardViewModel @Inject constructor(
         // Tendencia real: gasto de este mes vs el mes anterior
         val prevExpenses = transactions
             .filter { inMonth(it.date, prev.get(Calendar.MONTH), prev.get(Calendar.YEAR)) }
+            .filter { effectiveCategoryId == null || it.categoryId == effectiveCategoryId }
             .filter { it.currency == MoneyFormat.DEFAULT_CURRENCY }
             .filter { it.type == "EXPENSE" }
             .sumOf { it.amount }
-        val trend = if (prevExpenses > 0) {
+        val trend = if (activeFilters.period == DashboardPeriodFilter.THIS_MONTH && prevExpenses > 0) {
             (((expenses - prevExpenses).toDouble() / prevExpenses) * 100).toInt()
         } else null
 
-        // Gasto del mes por categoría (para el donut del dashboard)
+        // Gasto filtrado por categoría (para el donut del dashboard)
         val spending = thisMonthTx
             .filter { it.type == "EXPENSE" }
-            .groupBy { it.categoryId }
-            .mapNotNull { (catId, txs) ->
-                val cat = categoryMap[catId] ?: return@mapNotNull null
+            .groupBy { CategoryPlaceholders.aggregateId(it.categoryId, categoryMap) }
+            .map { (catId, txs) ->
+                val cat = categoryMap[catId] ?: CategoryPlaceholders.uncategorized()
                 val amount = txs.sumOf { it.amount }
                 CategorySpend(
                     category = cat,
@@ -131,9 +234,12 @@ class DashboardViewModel @Inject constructor(
             monthlyExpenses = expenses,
             expenseTrendPercent = trend,
             categorySpending = spending,
-            recentTransactions = transactions.sortedByDescending { it.date }.take(5),
+            recentTransactions = filteredTransactions.sortedByDescending { it.date }.take(5),
             accounts = accounts.toList(),
             categories = categoryMap,
+            selectedPeriod = activeFilters.period,
+            selectedCategoryId = effectiveCategoryId,
+            selectedCards = DashboardCardType.fromStorageIds(profile.dashboardCardIds),
             balancesHidden = profile.balancesHidden
         )
     }.stateIn(
@@ -145,22 +251,28 @@ class DashboardViewModel @Inject constructor(
     fun addTransaction(accountId: String, amount: Long, type: String, categoryId: String, note: String) {
         if (amount <= 0L || accountId.isBlank()) return
         viewModelScope.launch {
-            transactionRepository.addTransaction(
+            // Divisa heredada de la cuenta; saldo + movimiento en una sola transacción atómica.
+            val account = accountRepository.getAccount(accountId) ?: return@launch
+            // Sin categoría elegida: se infiere de la nota (reglas del usuario primero).
+            val finalCategoryId = categoryId.ifBlank {
+                ExpenseCategorizer.categoryIdFor(
+                    text = note,
+                    categories = categoryRepository.getCategories().first(),
+                    customRules = categoryRules.rules.first()
+                ).orEmpty()
+            }
+            transactionRepository.addTransactionWithBalance(
                 Transaction(
                     id = UUID.randomUUID().toString(),
                     accountId = accountId,
                     amount = amount,
                     type = type,
-                    categoryId = categoryId.ifBlank { "" },
+                    categoryId = finalCategoryId,
                     date = System.currentTimeMillis(),
-                    note = note
+                    note = note,
+                    currency = account.currency
                 )
             )
-            // Reflejar el movimiento en el balance de la cuenta
-            accountRepository.getAccount(accountId)?.let { account ->
-                val delta = if (type == "INCOME") amount else -amount
-                accountRepository.updateAccount(account.copy(balance = account.balance + delta))
-            }
         }
     }
 
@@ -190,40 +302,4 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private suspend fun seedInitialData() {
-        val catViviendaId = UUID.randomUUID().toString()
-        val catComidaId = UUID.randomUUID().toString()
-        val catTransporteId = UUID.randomUUID().toString()
-
-        categoryRepository.addCategory(Category(catViviendaId, "Vivienda", "home", "#000666"))
-        categoryRepository.addCategory(Category(catComidaId, "Alimentación", "restaurant", "#1B6D24"))
-        categoryRepository.addCategory(Category(catTransporteId, "Transporte", "directions_car", "#BA1A1A"))
-
-        val accId = UUID.randomUUID().toString()
-        accountRepository.addAccount(Account(accId, "Cuenta Principal", "BANK", 11090000L, "DOP"))
-
-        // Add some transactions
-        transactionRepository.addTransaction(
-            Transaction(
-                id = UUID.randomUUID().toString(),
-                accountId = accId,
-                amount = 8500000L,
-                type = "INCOME",
-                categoryId = "",
-                date = System.currentTimeMillis() - 86400000, // Yesterday
-                note = "Salario Mensual"
-            )
-        )
-        transactionRepository.addTransaction(
-            Transaction(
-                id = UUID.randomUUID().toString(),
-                accountId = accId,
-                amount = 325000L,
-                type = "EXPENSE",
-                categoryId = catComidaId,
-                date = System.currentTimeMillis(), // Today
-                note = "Supermercado Nacional"
-            )
-        )
-    }
 }

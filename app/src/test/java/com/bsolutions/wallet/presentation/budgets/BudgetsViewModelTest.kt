@@ -113,6 +113,23 @@ class BudgetsViewModelTest {
         assertEquals(0, budgets.budgets.value.size)
     }
 
+    @Test
+    fun `presupuesto de categoria eliminada sigue visible y cuenta en totales`() = runTest {
+        val budgets = FakeBudgetRepository(listOf(Budget("b1", "deleted", 20_000L, 0L, "MONTHLY")))
+        val transactions = FakeTransactionRepository(
+            listOf(Transaction("1", "acc", 5_000L, "EXPENSE", "deleted", thisMonth(), ""))
+        )
+        val viewModel = BudgetsViewModel(budgets, FakeCategoryRepository(emptyList()), transactions)
+
+        val state = awaitState(viewModel)
+
+        assertEquals(1, state.budgetItems.size)
+        assertEquals("deleted", state.budgetItems.single().category.id)
+        assertEquals("Categoría eliminada", state.budgetItems.single().category.name)
+        assertEquals(20_000L, state.totalLimit)
+        assertEquals(5_000L, state.totalSpent)
+    }
+
     // --- Fakes ---
 
     private class FakeBudgetRepository(initial: List<Budget>) : BudgetRepository {
@@ -138,18 +155,22 @@ class BudgetsViewModelTest {
         override fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>> = transactions
         override suspend fun getTransaction(id: String): Transaction? = transactions.value.firstOrNull { it.id == id }
         override suspend fun addTransaction(transaction: Transaction) { transactions.value += transaction }
+        override suspend fun addTransactionWithBalance(transaction: Transaction) { transactions.value += transaction }
         override suspend fun executeTransfer(fromAccountId: String, toAccountId: String, amount: Long, transaction: Transaction): Boolean {
             transactions.value += transaction
             return true
         }
         override suspend fun updateTransaction(transaction: Transaction) { transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it } }
+        override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) { transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it } }
         override suspend fun deleteTransaction(id: String) { transactions.value = transactions.value.filterNot { it.id == id } }
+        override suspend fun deleteTransactionWithBalance(transaction: Transaction) { transactions.value = transactions.value.filterNot { it.id == transaction.id } }
     }
 
     private class FakeCategoryRepository(categories: List<Category>) : CategoryRepository {
         private val state = MutableStateFlow(categories)
         override fun getCategories(): Flow<List<Category>> = state
         override suspend fun getCategory(id: String): Category? = state.value.firstOrNull { it.id == id }
+        override suspend fun getAllCategoryIdsIncludingDeleted(): Set<String> = state.value.mapTo(mutableSetOf()) { it.id }
         override suspend fun addCategory(category: Category) { state.value += category }
         override suspend fun deleteCategory(id: String) { state.value = state.value.filterNot { it.id == id } }
     }
