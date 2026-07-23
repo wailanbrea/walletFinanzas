@@ -1,0 +1,4 @@
+## Android SDK location is machine-specific and must remain in local.properties.
+## The API URLs are safe to commit because they contain no credentials.
+wallet.apiBaseUrl=https://apiwallet.bsolutions.dev/api/v1/
+wallet.releaseApiBaseUrl=https://apiwallet.bsolutions.dev/api/v1/
