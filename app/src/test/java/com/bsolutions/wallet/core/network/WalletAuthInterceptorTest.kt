@@ -44,6 +44,32 @@ class WalletAuthInterceptorTest {
     }
 
     @Test
+    fun `never sends a stale token to public auth endpoints`() {
+        val session = TestSessionStore("stale-token")
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+
+        OkHttpClient.Builder()
+            .addInterceptor(WalletAuthInterceptor(session))
+            .build()
+            .newCall(Request.Builder().url(server.url("/api/v1/auth/login")).build())
+            .execute()
+            .close()
+
+        // Un token viejo no debe interferir con el login (evita el falso "sesión venció").
+        assertNull(server.takeRequest().headers["Authorization"])
+        assertEquals("stale-token", session.token)
+    }
+
+    @Test
+    fun `delayed unauthorized response does not clear a newer token`() {
+        val session = TestSessionStore("new-token")
+
+        handleWalletResponse(401, "old-token", session)
+
+        assertEquals("new-token", session.token)
+    }
+
+    @Test
     fun `does not add authorization header without session`() {
         server.enqueue(MockResponse().setBody("{}"))
 
@@ -60,6 +86,13 @@ class WalletAuthInterceptorTest {
 
 private class TestSessionStore(override var token: String?) : WalletSessionStore {
     override var user: AuthUser? = null
-    override fun save(token: String, user: AuthUser) = Unit
-    override fun clear() = Unit
+    override fun save(token: String, user: AuthUser) {
+        this.token = token
+        this.user = user
+    }
+
+    override fun clear() {
+        token = null
+        user = null
+    }
 }
