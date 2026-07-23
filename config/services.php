@@ -28,6 +28,19 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'google_oauth' => [
+        'client_id' => env('GOOGLE_OAUTH_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_OAUTH_CLIENT_SECRET'),
+        'redirect_uri' => env('GOOGLE_OAUTH_REDIRECT_URI'),
+    ],
+
+    'microsoft_oauth' => [
+        'client_id' => env('MICROSOFT_OAUTH_CLIENT_ID'),
+        'client_secret' => env('MICROSOFT_OAUTH_CLIENT_SECRET'),
+        'tenant_id' => env('MICROSOFT_OAUTH_TENANT_ID', 'common'),
+        'redirect_uri' => env('MICROSOFT_OAUTH_REDIRECT_URI'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

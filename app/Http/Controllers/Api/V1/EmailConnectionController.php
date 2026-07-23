@@ -3,93 +3,89 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Api\V1\EmailConnectionResource;
+use App\Http\Resources\Api\V1\EmailSyncRunResource;
+use App\Jobs\SyncEmailConnection;
+use App\Models\EmailConnection;
+use App\Models\EmailOAuthState;
+use App\Models\EmailSyncRun;
+use App\Services\EmailOAuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use RuntimeException;
 
 class EmailConnectionController extends Controller
 {
-    public function index(): JsonResponse
+    public function __construct(private EmailOAuthService $oauth) {}
+
+    public function index(Request $request): JsonResponse
     {
-        return response()->json([
-            'data' => [
-                $this->connection('gmail', 'Gmail'),
-                $this->connection('microsoft', 'Microsoft'),
-            ],
+        $connections = $request->user()->emailConnections->keyBy('provider');
+        $data = collect(EmailOAuthService::PROVIDERS)->map(function (string $provider) use ($connections) {
+            $connection = $connections->get($provider) ?? new EmailConnection([
+                'provider' => $provider,
+                'status' => 'disconnected',
+            ]);
+            $connection->configuration_ready = $this->oauth->isReady($provider);
+
+            return (new EmailConnectionResource($connection))->resolve();
+        });
+
+        return response()->json(['data' => $data]);
+    }
+
+    public function authorizationUrl(Request $request, string $provider): JsonResponse
+    {
+        $this->oauth->ensureProvider($provider);
+        try {
+            $url = $this->oauth->authorizationUrl($request->user(), $provider);
+        } catch (RuntimeException $exception) {
+            return response()->json([
+                'message' => 'La autorizacion OAuth para este proveedor no esta configurada.',
+                'code' => $exception->getMessage(),
+            ], 503);
+        }
+
+        return response()->json(['data' => ['authorization_url' => $url]]);
+    }
+
+    public function sync(Request $request, string $provider): JsonResponse
+    {
+        $this->oauth->ensureProvider($provider);
+        $connection = $request->user()->emailConnections()->where('provider', $provider)->where('status', 'connected')->first();
+        if (! $connection) {
+            return response()->json(['message' => 'No hay una conexion de correo autorizada para este proveedor.', 'code' => 'email_connection_not_found'], 409);
+        }
+        $run = EmailSyncRun::query()->create([
+            'user_id' => $request->user()->id,
+            'email_connection_id' => $connection->id,
+            'provider' => $provider,
+            'status' => 'queued',
         ]);
+        SyncEmailConnection::dispatch($run->id);
+        $run->refresh();
+
+        return (new EmailSyncRunResource($run))->response()->setStatusCode(202);
     }
 
-    public function authorizationUrl(string $provider): JsonResponse
+    public function syncRun(Request $request, string $provider, int $run): JsonResponse|EmailSyncRunResource
     {
-        $this->provider($provider);
+        $this->oauth->ensureProvider($provider);
+        $syncRun = $request->user()->emailSyncRuns()->where('provider', $provider)->find($run);
+        if (! $syncRun) {
+            return response()->json(['message' => 'La ejecucion de sincronizacion no existe.', 'code' => 'email_sync_run_not_found'], 404);
+        }
 
-        return response()->json([
-            'message' => 'La autorizacion OAuth para este proveedor aun no esta configurada.',
-            'code' => 'email_oauth_not_configured',
-        ], 503);
+        return new EmailSyncRunResource($syncRun);
     }
 
-    public function sync(string $provider): JsonResponse
+    public function destroy(Request $request, string $provider): Response
     {
-        $this->provider($provider);
-
-        return response()->json([
-            'message' => 'No hay una conexion de correo autorizada para este proveedor.',
-            'code' => 'email_connection_not_found',
-        ], 409);
-    }
-
-    public function syncRun(string $provider, int $run): JsonResponse
-    {
-        $this->provider($provider);
-
-        return response()->json([
-            'message' => 'La ejecucion de sincronizacion no existe.',
-            'code' => 'email_sync_run_not_found',
-        ], 404);
-    }
-
-    public function destroy(string $provider): Response
-    {
-        $this->provider($provider);
+        $this->oauth->ensureProvider($provider);
+        $request->user()->emailConnections()->where('provider', $provider)->delete();
+        EmailOAuthState::query()->where('user_id', $request->user()->id)->where('provider', $provider)->delete();
 
         return response()->noContent();
-    }
-
-    public function candidates(): JsonResponse
-    {
-        return response()->json(['data' => []]);
-    }
-
-    public function reviewCandidate(Request $request, string $candidate): JsonResponse
-    {
-        $request->validate([
-            'action' => ['required', 'in:categorize,dismiss'],
-            'category' => ['nullable', 'string', 'max:120'],
-            'learn' => ['sometimes', 'boolean'],
-        ]);
-
-        return response()->json([
-            'message' => 'El candidato de correo no existe.',
-            'code' => 'email_candidate_not_found',
-        ], 404);
-    }
-
-    private function connection(string $provider, string $displayName): array
-    {
-        return [
-            'provider' => $provider,
-            'display_name' => $displayName,
-            'status' => 'disconnected',
-            'email' => null,
-            'configuration_ready' => false,
-            'connected_at' => null,
-            'expires_at' => null,
-        ];
-    }
-
-    private function provider(string $provider): void
-    {
-        abort_unless(in_array($provider, ['gmail', 'microsoft'], true), 422, 'Proveedor de correo no soportado.');
     }
 }
