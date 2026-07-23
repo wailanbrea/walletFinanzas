@@ -16,3 +16,6 @@ DNS must contain an `A` record from `apiwallet.bsolutions.dev` to `62.171.174.19
 6. When queued work is enabled, run `php artisan queue:work --tries=3 --timeout=120` under systemd or Supervisor.
 
 The Android project uses this API URL by default. A local `local.properties` can override it for development without changing versioned configuration.
+
+For the missing Gmail/Microsoft OAuth backend routes and the required provider
+configuration, follow [EMAIL_OAUTH_SETUP.md](EMAIL_OAUTH_SETUP.md).
