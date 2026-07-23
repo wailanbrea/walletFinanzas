@@ -18,6 +18,15 @@ interface TransactionDao {
 
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND id = :id")
     suspend fun getTransactionByIdIncludingDeleted(ownerId: String, id: String): TransactionEntity?
+
+    @Query("SELECT currency FROM accounts WHERE ownerId = :ownerId AND id = :accountId AND isDeleted = 0")
+    suspend fun getAccountCurrency(ownerId: String, accountId: String): String?
+
+    @Query("SELECT balance FROM accounts WHERE ownerId = :ownerId AND id = :accountId AND isDeleted = 0")
+    suspend fun getAccountBalance(ownerId: String, accountId: String): Long?
+
+    @Query("SELECT COUNT(*) > 0 FROM categories WHERE ownerId = :ownerId AND id = :categoryId AND isDeleted = 0")
+    suspend fun categoryExists(ownerId: String, categoryId: String): Boolean
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: TransactionEntity)
@@ -39,12 +48,31 @@ interface TransactionDao {
      * con [executeTransfer].
      */
     @Transaction
-    suspend fun insertWithBalance(transaction: TransactionEntity) {
-        insertTransaction(transaction)
+    suspend fun insertWithBalance(transaction: TransactionEntity): Boolean {
+        require(transaction.amount > 0L) { "El monto debe ser mayor que cero" }
+        require(transaction.type == "INCOME" || transaction.type == "EXPENSE") { "Tipo de movimiento inválido" }
+        val existing = getTransactionByIdIncludingDeleted(transaction.ownerId, transaction.id)
+        check(existing?.isDeleted != true) { "El movimiento ya fue eliminado" }
+        if (existing != null) return false
+        check(getAccountCurrency(transaction.ownerId, transaction.accountId) == transaction.currency) {
+            "La cuenta ya no existe o cambió de moneda"
+        }
+        if (transaction.categoryId.isNotBlank()) {
+            check(categoryExists(transaction.ownerId, transaction.categoryId)) { "La categoría ya no existe" }
+        }
+        val balance = checkNotNull(getAccountBalance(transaction.ownerId, transaction.accountId))
         when (transaction.type) {
+            "INCOME" -> Math.addExact(balance, transaction.amount)
+            "EXPENSE" -> Math.subtractExact(balance, transaction.amount)
+        }
+        insertTransaction(transaction)
+        val updated = when (transaction.type) {
             "INCOME" -> creditAccount(transaction.ownerId, transaction.accountId, transaction.amount)
             "EXPENSE" -> subtractFromAccount(transaction.ownerId, transaction.accountId, transaction.amount)
+            else -> 0
         }
+        check(updated == 1) { "No se pudo actualizar el saldo de la cuenta" }
+        return true
     }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -56,8 +84,7 @@ interface TransactionDao {
      */
     @Transaction
     suspend fun insertWithBalanceAndOp(transaction: TransactionEntity, op: PendingOperationEntity?) {
-        insertWithBalance(transaction)
-        op?.let { insertPendingOp(it) }
+        if (insertWithBalance(transaction)) op?.let { insertPendingOp(it) }
     }
 
     /** Actualiza ambos saldos y registra el movimiento en una sola transacción SQLite. */
@@ -75,7 +102,7 @@ interface TransactionDao {
     }
     
     @Update
-    suspend fun updateTransaction(transaction: TransactionEntity)
+    suspend fun updateTransaction(transaction: TransactionEntity): Int
 
     /**
      * Actualiza un movimiento ajustando el saldo por la diferencia de monto, atómicamente.
@@ -83,24 +110,56 @@ interface TransactionDao {
      */
     @Transaction
     suspend fun updateWithBalance(updated: TransactionEntity, oldAmount: Long) {
-        val diff = updated.amount - oldAmount
-        when (updated.type) {
-            "INCOME" -> creditAccount(updated.ownerId, updated.accountId, diff)      // diff negativo resta
-            "EXPENSE" -> subtractFromAccount(updated.ownerId, updated.accountId, diff)
+        require(updated.amount > 0L) { "El monto debe ser mayor que cero" }
+        val original = checkNotNull(getTransactionById(updated.ownerId, updated.id))
+        check(original.amount == oldAmount) { "El movimiento cambió durante la edición" }
+        check(original.accountId == updated.accountId && original.type == updated.type) {
+            "No se puede cambiar la cuenta o el tipo del movimiento"
         }
-        updateTransaction(updated)
+        check(getAccountCurrency(updated.ownerId, updated.accountId) == updated.currency) {
+            "La cuenta ya no existe o cambió de moneda"
+        }
+        if (updated.categoryId.isNotBlank()) {
+            check(categoryExists(updated.ownerId, updated.categoryId)) { "La categoría ya no existe" }
+        }
+        val balance = checkNotNull(getAccountBalance(updated.ownerId, updated.accountId))
+        val diff = Math.subtractExact(updated.amount, original.amount)
+        when (updated.type) {
+            "INCOME" -> Math.addExact(balance, diff)
+            "EXPENSE" -> Math.subtractExact(balance, diff)
+            else -> error("Tipo de movimiento inválido")
+        }
+        val balanceUpdated = when (updated.type) {
+            "INCOME" -> creditAccount(updated.ownerId, updated.accountId, diff)
+            "EXPENSE" -> subtractFromAccount(updated.ownerId, updated.accountId, diff)
+            else -> 0
+        }
+        check(balanceUpdated == 1) { "No se pudo actualizar el saldo de la cuenta" }
+        check(updateTransaction(updated) == 1) { "No se pudo actualizar el movimiento" }
     }
 
     @Query("UPDATE transactions SET isDeleted = 1 WHERE ownerId = :ownerId AND id = :id")
-    suspend fun softDeleteTransaction(ownerId: String, id: String)
+    suspend fun softDeleteTransaction(ownerId: String, id: String): Int
 
     /** Revierte el efecto del movimiento en el saldo y lo borra (soft) en una sola transacción. */
     @Transaction
     suspend fun softDeleteWithBalance(transaction: TransactionEntity) {
-        when (transaction.type) {
-            "INCOME" -> subtractFromAccount(transaction.ownerId, transaction.accountId, transaction.amount)
-            "EXPENSE" -> creditAccount(transaction.ownerId, transaction.accountId, transaction.amount)
+        val current = getTransactionById(transaction.ownerId, transaction.id) ?: return
+        check(getAccountCurrency(current.ownerId, current.accountId) == current.currency) {
+            "La cuenta ya no existe o cambió de moneda"
         }
-        softDeleteTransaction(transaction.ownerId, transaction.id)
+        val balance = checkNotNull(getAccountBalance(current.ownerId, current.accountId))
+        when (current.type) {
+            "INCOME" -> Math.subtractExact(balance, current.amount)
+            "EXPENSE" -> Math.addExact(balance, current.amount)
+            else -> error("Tipo de movimiento inválido")
+        }
+        val balanceUpdated = when (current.type) {
+            "INCOME" -> subtractFromAccount(current.ownerId, current.accountId, current.amount)
+            "EXPENSE" -> creditAccount(current.ownerId, current.accountId, current.amount)
+            else -> 0
+        }
+        check(balanceUpdated == 1) { "No se pudo revertir el saldo de la cuenta" }
+        check(softDeleteTransaction(current.ownerId, current.id) == 1) { "No se pudo eliminar el movimiento" }
     }
 }

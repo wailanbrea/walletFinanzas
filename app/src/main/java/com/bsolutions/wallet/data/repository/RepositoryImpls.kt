@@ -127,14 +127,16 @@ class TransactionRepositoryImpl @Inject constructor(
         transaction.toEntity(ownerScope.currentOwnerId())
     )
 
-    override suspend fun updateTransaction(transaction: Transaction) =
+    override suspend fun updateTransaction(transaction: Transaction) {
         dao.updateTransaction(transaction.toEntity(ownerScope.currentOwnerId()))
+    }
 
     override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) =
         dao.updateWithBalance(transaction.toEntity(ownerScope.currentOwnerId()), oldAmount)
 
-    override suspend fun deleteTransaction(id: String) =
+    override suspend fun deleteTransaction(id: String) {
         dao.softDeleteTransaction(ownerScope.currentOwnerId(), id)
+    }
 
     override suspend fun deleteTransactionWithBalance(transaction: Transaction) =
         dao.softDeleteWithBalance(transaction.toEntity(ownerScope.currentOwnerId()))

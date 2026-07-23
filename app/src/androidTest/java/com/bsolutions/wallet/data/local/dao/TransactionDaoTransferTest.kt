@@ -9,6 +9,7 @@ import com.bsolutions.wallet.data.local.entity.TransactionEntity
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -54,6 +55,64 @@ class TransactionDaoTransferTest {
 
             assertEquals(7_500L, accounts.getAccountById("guest", "a")!!.balance)
             assertEquals("t1", transactions.getTransactionById("guest", "t1")!!.id)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun insertWithBalance_sameIdDoesNotApplyBalanceTwice() = runBlocking {
+        val database = newDb()
+        try {
+            val accounts = database.accountDao()
+            val transactions = database.transactionDao()
+            accounts.insertAccount(AccountEntity("a", "Efectivo", "CASH", 10_000L, "DOP"))
+            val transaction = TransactionEntity("email_candidate", "a", 2_500L, "EXPENSE", "", 1L, "Compra")
+
+            transactions.insertWithBalance(transaction)
+            transactions.insertWithBalance(transaction)
+
+            assertEquals(7_500L, accounts.getAccountById("guest", "a")!!.balance)
+            transactions.softDeleteWithBalance(transaction)
+            val retry = runCatching { transactions.insertWithBalance(transaction) }
+
+            assertTrue(retry.isFailure)
+            assertEquals(10_000L, accounts.getAccountById("guest", "a")!!.balance)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun insertWithBalance_missingAccountRollsBackLedgerEntry() = runBlocking {
+        val database = newDb()
+        try {
+            val transactions = database.transactionDao()
+            val transaction = TransactionEntity("orphan", "missing", 2_500L, "EXPENSE", "", 1L, "Compra")
+
+            val result = runCatching { transactions.insertWithBalance(transaction) }
+
+            assertTrue(result.isFailure)
+            assertEquals(null, transactions.getTransactionByIdIncludingDeleted("guest", "orphan"))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun insertWithBalance_overflowRollsBackLedgerEntry() = runBlocking {
+        val database = newDb()
+        try {
+            val accounts = database.accountDao()
+            val transactions = database.transactionDao()
+            accounts.insertAccount(AccountEntity("a", "Cuenta", "BANK", Long.MAX_VALUE, "DOP"))
+            val transaction = TransactionEntity("overflow", "a", 1L, "INCOME", "", 1L, "Abono")
+
+            val result = runCatching { transactions.insertWithBalance(transaction) }
+
+            assertTrue(result.isFailure)
+            assertEquals(Long.MAX_VALUE, accounts.getAccountById("guest", "a")!!.balance)
+            assertEquals(null, transactions.getTransactionByIdIncludingDeleted("guest", "overflow"))
         } finally {
             database.close()
         }

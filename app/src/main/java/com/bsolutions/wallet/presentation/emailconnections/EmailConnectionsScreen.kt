@@ -126,9 +126,16 @@ fun EmailConnectionsScreen(
     }
 
     classifyCandidate?.let { candidate ->
-        var categoryId by remember(candidate.id, state.categories) {
+        val bookedTransaction = state.bookedCandidates[candidate.id]
+        var accountId by remember(candidate.id, state.accounts, bookedTransaction) {
             mutableStateOf(
-                state.categories.firstOrNull {
+                bookedTransaction?.accountId
+                    ?: state.accounts.firstOrNull { candidateAmountForAccount(candidate, it) != null }?.id.orEmpty()
+            )
+        }
+        var categoryId by remember(candidate.id, state.categories, bookedTransaction) {
+            mutableStateOf(
+                bookedTransaction?.categoryId ?: state.categories.firstOrNull {
                     it.name.equals(candidate.categorySuggestion, ignoreCase = true)
                 }?.id.orEmpty()
             )
@@ -139,6 +146,27 @@ fun EmailConnectionsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
+                        text = stringResource(R.string.email_candidate_account_label),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(state.accounts, key = { it.id }) { account ->
+                            FilterChip(
+                                selected = accountId == account.id,
+                                onClick = { accountId = account.id },
+                                enabled = bookedTransaction == null && candidateAmountForAccount(candidate, account) != null,
+                                label = { Text("${account.name} (${account.currency})") }
+                            )
+                        }
+                    }
+                    if (state.accounts.none { candidateAmountForAccount(candidate, it) != null }) {
+                        Text(
+                            stringResource(R.string.email_candidate_no_compatible_account),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Text(
                         text = stringResource(R.string.email_candidate_category_label),
                         style = MaterialTheme.typography.labelLarge
                     )
@@ -147,12 +175,16 @@ fun EmailConnectionsScreen(
                             FilterChip(
                                 selected = categoryId == category.id,
                                 onClick = { categoryId = category.id },
+                                enabled = bookedTransaction == null,
                                 label = { Text(category.name) }
                             )
                         }
                     }
                     Text(
-                        stringResource(R.string.email_candidate_classify_help),
+                        stringResource(
+                            if (bookedTransaction == null) R.string.email_candidate_classify_help
+                            else R.string.email_candidate_pending_confirmation_help
+                        ),
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -161,12 +193,10 @@ fun EmailConnectionsScreen(
                 TextButton(
                     onClick = {
                         classifyCandidate = null
-                        val categoryName = state.categories.firstOrNull { it.id == categoryId }?.name
-                            ?: return@TextButton
-                        viewModel.classify(candidate.id, categoryName)
+                        viewModel.classify(candidate.id, accountId, categoryId)
                     },
-                    enabled = categoryId.isNotBlank()
-                ) { Text(stringResource(R.string.email_candidate_classify)) }
+                    enabled = accountId.isNotBlank() && (categoryId.isNotBlank() || bookedTransaction != null)
+                ) { Text(stringResource(R.string.email_candidate_add_movement)) }
             },
             dismissButton = {
                 TextButton(onClick = { classifyCandidate = null }) {
@@ -209,7 +239,8 @@ fun EmailConnectionsScreen(
                 actions = {
                     IconButton(
                         onClick = viewModel::refresh,
-                        enabled = state.phase != EmailConnectionsPhase.LOADING
+                        enabled = state.phase != EmailConnectionsPhase.LOADING &&
+                            state.actionProvider == null && state.reviewCandidateId == null
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.email_refresh))
                     }
@@ -270,7 +301,7 @@ fun EmailConnectionsScreen(
                         provider = EmailProvider.GMAIL,
                         connection = state.connections.firstOrNull { it.provider == EmailProvider.GMAIL },
                         isWorking = state.actionProvider == EmailProvider.GMAIL,
-                        actionsEnabled = state.actionProvider == null,
+                        actionsEnabled = state.actionProvider == null && state.reviewCandidateId == null,
                         onConnect = { viewModel.connect(EmailProvider.GMAIL) },
                         onSync = { viewModel.sync(EmailProvider.GMAIL) },
                         onDisconnect = { disconnectCandidate = EmailProvider.GMAIL }
@@ -281,7 +312,7 @@ fun EmailConnectionsScreen(
                         provider = EmailProvider.MICROSOFT,
                         connection = state.connections.firstOrNull { it.provider == EmailProvider.MICROSOFT },
                         isWorking = state.actionProvider == EmailProvider.MICROSOFT,
-                        actionsEnabled = state.actionProvider == null,
+                        actionsEnabled = state.actionProvider == null && state.reviewCandidateId == null,
                         onConnect = { viewModel.connect(EmailProvider.MICROSOFT) },
                         onSync = { viewModel.sync(EmailProvider.MICROSOFT) },
                         onDisconnect = { disconnectCandidate = EmailProvider.MICROSOFT }
@@ -330,7 +361,7 @@ fun EmailConnectionsScreen(
                             items(providerCandidates, key = { it.id }) { candidate ->
                                 CandidateCard(
                                     candidate = candidate,
-                                    isReviewing = state.reviewCandidateId == candidate.id,
+                                    isReviewing = state.reviewCandidateId != null || state.actionProvider != null,
                                     onClassify = { classifyCandidate = candidate },
                                     onDismiss = { dismissCandidate = candidate }
                                 )

@@ -6,8 +6,12 @@ import com.bsolutions.wallet.data.repository.EmailConnectionsRepository
 import com.bsolutions.wallet.data.repository.EmailCandidate
 import com.bsolutions.wallet.data.repository.EmailProvider
 import com.bsolutions.wallet.data.repository.EmailSyncResult
+import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
+import com.bsolutions.wallet.domain.model.Transaction
+import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.repository.CategoryRepository
+import com.bsolutions.wallet.domain.repository.TransactionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -130,14 +134,137 @@ class EmailConnectionsViewModelTest {
         val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
             candidates = listOf(financialCandidate())
         }
-        val viewModel = createViewModel(repository)
+        val transactions = FakeTransactionRepository()
+        val viewModel = createViewModel(repository, transactionRepository = transactions)
         advanceUntilIdle()
 
-        viewModel.classify("candidate-1", "Compras en línea")
+        viewModel.classify("candidate-1", "account-1", "cat_alimentacion")
         advanceUntilIdle()
 
-        assertEquals(Triple("candidate-1", "categorize", "Compras en línea"), repository.reviews.single())
+        assertEquals(Triple("candidate-1", "categorize", "Alimentación"), repository.reviews.single())
+        assertEquals(
+            Transaction(
+                id = "email_candidate-1",
+                accountId = "account-1",
+                amount = 325000,
+                type = "EXPENSE",
+                categoryId = "cat_alimentacion",
+                date = 1784557800000,
+                note = "Supermercado Nacional",
+                currency = "DOP"
+            ),
+            transactions.added.single()
+        )
         assertEquals(emptyList<EmailCandidate>(), viewModel.uiState.value.candidates)
+    }
+
+    @Test
+    fun `retry after backend failure does not duplicate local movement`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected()), reviewError = true).apply {
+            candidates = listOf(financialCandidate())
+        }
+        val transactions = FakeTransactionRepository()
+        val viewModel = createViewModel(repository, transactionRepository = transactions)
+        advanceUntilIdle()
+
+        viewModel.classify("candidate-1", "account-1", "cat_alimentacion")
+        advanceUntilIdle()
+        assertEquals(
+            "El movimiento ya fue agregado, pero no se pudo confirmar el correo. Reintenta para finalizar.",
+            viewModel.uiState.value.message
+        )
+        repository.reviewError = false
+        viewModel.classify("candidate-1", "account-1", "cat_alimentacion")
+        advanceUntilIdle()
+
+        assertEquals(1, transactions.added.size)
+        assertEquals(emptyList<EmailCandidate>(), viewModel.uiState.value.candidates)
+    }
+
+    @Test
+    fun `retry preserves the original account even if another account is supplied`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected()), reviewError = true).apply {
+            candidates = listOf(financialCandidate())
+        }
+        val transactions = FakeTransactionRepository()
+        val viewModel = createViewModel(repository, transactionRepository = transactions)
+        advanceUntilIdle()
+
+        viewModel.classify("candidate-1", "account-1", "cat_alimentacion")
+        advanceUntilIdle()
+        repository.reviewError = false
+        viewModel.classify("candidate-1", "account-2", "cat_alimentacion")
+        advanceUntilIdle()
+
+        assertEquals(1, transactions.added.size)
+        assertEquals("account-1", transactions.added.single().accountId)
+        assertEquals(Triple("candidate-1", "categorize", "Alimentación"), repository.reviews.single())
+        assertEquals(emptyList<EmailCandidate>(), viewModel.uiState.value.candidates)
+    }
+
+    @Test
+    fun `restart restores booked account and category from local transaction`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
+            candidates = listOf(financialCandidate())
+        }
+        val existing = Transaction(
+            id = "email_candidate-1",
+            accountId = "account-2",
+            amount = 325000,
+            type = "EXPENSE",
+            categoryId = "cat_alimentacion",
+            date = 1784557800000,
+            note = "Supermercado Nacional",
+            currency = "DOP"
+        )
+        val transactions = FakeTransactionRepository(listOf(existing))
+
+        val viewModel = createViewModel(repository, transactionRepository = transactions)
+        advanceUntilIdle()
+
+        assertEquals(existing, viewModel.uiState.value.bookedCandidates["candidate-1"])
+        viewModel.classify("candidate-1", "account-2", "cat_alimentacion")
+        advanceUntilIdle()
+        assertEquals(emptyList<Transaction>(), transactions.added)
+        assertEquals(emptyList<EmailCandidate>(), viewModel.uiState.value.candidates)
+    }
+
+    @Test
+    fun `candidate with committed movement cannot be dismissed after review failure`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected()), reviewError = true).apply {
+            candidates = listOf(financialCandidate())
+        }
+        val transactions = FakeTransactionRepository()
+        val viewModel = createViewModel(repository, transactionRepository = transactions)
+        advanceUntilIdle()
+
+        viewModel.classify("candidate-1", "account-1", "cat_alimentacion")
+        advanceUntilIdle()
+        viewModel.dismiss("candidate-1")
+        advanceUntilIdle()
+
+        assertEquals(emptyList<Triple<String, String, String?>>(), repository.reviews)
+        assertEquals(
+            "Este movimiento ya fue agregado. Clasifícalo para completar la confirmación.",
+            viewModel.uiState.value.message
+        )
+    }
+
+    @Test
+    fun `converted amount is required when account currency differs`() {
+        val account = Account("account-1", "Cuenta", "BANK", 0, "DOP")
+
+        assertNull(candidateAmountForAccount(financialCandidate().copy(currency = "USD"), account))
+        assertEquals(
+            18_500L,
+            candidateAmountForAccount(
+                financialCandidate().copy(currency = "USD", convertedAmount = 18_500, convertedCurrency = "DOP"),
+                account
+            )
+        )
+        assertNull(candidateAmountForAccount(financialCandidate().copy(amount = 0), account))
+        assertNull(candidateAmountForAccount(financialCandidate().copy(amount = Long.MIN_VALUE), account))
+        assertNull(candidateOccurredAtMillis("not-a-date"))
     }
 
     private fun gmailConnected() = EmailConnection(
@@ -150,8 +277,11 @@ class EmailConnectionsViewModelTest {
         expiresAt = null
     )
 
-    private fun createViewModel(repository: EmailConnectionsRepository) =
-        EmailConnectionsViewModel(repository, FakeCategoryRepository())
+    private fun createViewModel(
+        repository: EmailConnectionsRepository,
+        accountRepository: AccountRepository = FakeAccountRepository(),
+        transactionRepository: TransactionRepository = FakeTransactionRepository()
+    ) = EmailConnectionsViewModel(repository, FakeCategoryRepository(), accountRepository, transactionRepository)
 
     private fun financialCandidate(
         id: String = "candidate-1",
@@ -173,7 +303,8 @@ class EmailConnectionsViewModelTest {
     private class FakeRepository(
         var connections: List<EmailConnection> = emptyList(),
         private val authorizationUrl: String = "https://example.test/oauth",
-        private val loadError: Boolean = false
+        private val loadError: Boolean = false,
+        var reviewError: Boolean = false
     ) : EmailConnectionsRepository {
         var loadCount = 0
         val disconnected = mutableListOf<EmailProvider>()
@@ -197,6 +328,7 @@ class EmailConnectionsViewModelTest {
         }
 
         override suspend fun reviewCandidate(id: String, action: String, category: String?): EmailCandidate {
+            if (reviewError) error("network")
             reviews += Triple(id, action, category)
             val current = candidates.first { it.id == id }
             val reviewed = current.copy(
@@ -211,6 +343,55 @@ class EmailConnectionsViewModelTest {
             disconnected += provider
             connections = connections.filterNot { it.provider == provider }
         }
+    }
+
+    private class FakeAccountRepository : AccountRepository {
+        private val accounts = MutableStateFlow(
+            listOf(
+                Account("account-1", "Cuenta principal", "BANK", 500_000, "DOP"),
+                Account("account-2", "Cuenta secundaria", "BANK", 200_000, "DOP")
+            )
+        )
+
+        override fun getAccounts(): Flow<List<Account>> = accounts
+        override suspend fun getAccount(id: String): Account? = accounts.value.firstOrNull { it.id == id }
+        override suspend fun addAccount(account: Account) {
+            accounts.value += account
+        }
+        override suspend fun updateAccount(account: Account) {
+            accounts.value = accounts.value.filterNot { it.id == account.id } + account
+        }
+        override suspend fun deleteAccount(id: String) {
+            accounts.value = accounts.value.filterNot { it.id == id }
+        }
+    }
+
+    private class FakeTransactionRepository(initial: List<Transaction> = emptyList()) : TransactionRepository {
+        private val transactions = MutableStateFlow(initial)
+        val added = mutableListOf<Transaction>()
+
+        override fun getTransactions(): Flow<List<Transaction>> = transactions
+        override fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>> = transactions
+        override suspend fun getTransaction(id: String): Transaction? = transactions.value.firstOrNull { it.id == id }
+        override suspend fun addTransaction(transaction: Transaction) {
+            transactions.value += transaction
+        }
+        override suspend fun addTransactionWithBalance(transaction: Transaction) {
+            if (transactions.value.none { it.id == transaction.id }) {
+                transactions.value += transaction
+                added += transaction
+            }
+        }
+        override suspend fun executeTransfer(
+            fromAccountId: String,
+            toAccountId: String,
+            amount: Long,
+            transaction: Transaction
+        ) = false
+        override suspend fun updateTransaction(transaction: Transaction) = Unit
+        override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) = Unit
+        override suspend fun deleteTransaction(id: String) = Unit
+        override suspend fun deleteTransactionWithBalance(transaction: Transaction) = Unit
     }
 
     private class FakeCategoryRepository : CategoryRepository {

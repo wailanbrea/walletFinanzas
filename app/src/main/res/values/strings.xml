@@ -453,8 +453,12 @@
     <string name="email_candidate_classify">Clasificar</string>
     <string name="email_candidate_not_movement">No es movimiento</string>
     <string name="email_candidate_classify_title">Clasificar movimiento</string>
+    <string name="email_candidate_account_label">Cargar en cuenta</string>
+    <string name="email_candidate_no_compatible_account">No tienes una cuenta en la moneda del movimiento ni en su moneda convertida.</string>
     <string name="email_candidate_category_label">Categoría</string>
-    <string name="email_candidate_classify_help">La categoría se aprenderá para futuros recibos del mismo remitente.</string>
+    <string name="email_candidate_classify_help">Se creará el movimiento en la cuenta elegida y la categoría se aprenderá para futuros recibos.</string>
+    <string name="email_candidate_pending_confirmation_help">El movimiento ya existe en esta cuenta. Reintenta para completar la confirmación del correo.</string>
+    <string name="email_candidate_add_movement">Agregar movimiento</string>
     <string name="email_candidate_dismiss_title">Descartar correo</string>
     <string name="email_candidate_dismiss_confirm">Este correo no se tratará como movimiento y Wallet aprenderá esta plantilla de asunto. Los recibos reales con otros asuntos no se bloquearán.</string>
 </resources>
