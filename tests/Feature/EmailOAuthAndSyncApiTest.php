@@ -105,6 +105,7 @@ class EmailOAuthAndSyncApiTest extends TestCase
 
     public function test_gmail_sync_is_idempotent_and_extracts_integer_minor_units_without_transactions(): void
     {
+        config(['email_sync.max_messages_per_run' => 1]);
         $user = User::factory()->create();
         $this->connection($user, 'gmail');
         Sanctum::actingAs($user);
@@ -125,12 +126,26 @@ class EmailOAuthAndSyncApiTest extends TestCase
 
         $first = $this->postJson('/api/v1/email-connections/gmail/sync')->assertStatus(202);
         $first->assertJsonPath('data.status', 'completed')->assertJsonPath('data.candidates_created', 1);
+        $gmailConnection = EmailConnection::firstOrFail();
+        $staleCandidate = $this->budgetCandidate($user, $gmailConnection, 'stale-budget-alert');
+        $categorizedCandidate = $this->budgetCandidate($user, $gmailConnection, 'categorized-budget-alert', 'categorized');
+        $microsoftCandidate = $this->budgetCandidate($user, $this->connection($user, 'microsoft'), 'microsoft-budget-alert');
+        $other = User::factory()->create();
+        $otherCandidate = $this->budgetCandidate($other, $this->connection($other, 'gmail'), 'other-user-budget-alert');
         $this->postJson('/api/v1/email-connections/gmail/sync')
             ->assertStatus(202)
             ->assertJsonPath('data.messages_created', 0)
             ->assertJsonPath('data.candidates_created', 0);
-        $this->assertDatabaseCount('provider_messages', 1);
-        $this->assertDatabaseCount('email_candidates', 1);
+        $this->postJson('/api/v1/email-connections/gmail/sync')
+            ->assertStatus(202)
+            ->assertJsonPath('data.messages_created', 0)
+            ->assertJsonPath('data.candidates_created', 0);
+        $this->assertDatabaseCount('provider_messages', 5);
+        $this->assertDatabaseCount('email_candidates', 4);
+        $this->assertDatabaseMissing('email_candidates', ['id' => $staleCandidate->id]);
+        $this->assertDatabaseHas('email_candidates', ['id' => $categorizedCandidate->id]);
+        $this->assertDatabaseHas('email_candidates', ['id' => $microsoftCandidate->id]);
+        $this->assertDatabaseHas('email_candidates', ['id' => $otherCandidate->id]);
         $this->assertDatabaseHas('email_candidates', ['amount' => 12345, 'currency' => 'USD', 'direction' => 'expense']);
         $this->assertDatabaseCount('transactions', 0);
     }
@@ -214,6 +229,31 @@ class EmailOAuthAndSyncApiTest extends TestCase
             'refresh_token' => 'synthetic-refresh-token',
             'token_expires_at' => $expiresAt ?? now()->addHour(),
             'connected_at' => now(),
+        ]);
+    }
+
+    private function budgetCandidate(User $user, EmailConnection $connection, string $messageId, string $status = 'pending'): EmailCandidate
+    {
+        $message = ProviderMessage::create([
+            'user_id' => $user->id,
+            'email_connection_id' => $connection->id,
+            'provider' => $connection->provider,
+            'provider_message_id' => $messageId,
+            'subject' => '150% of budget reached',
+            'snippet' => 'Payment USD 3.60',
+            'occurred_at' => now(),
+        ]);
+
+        return EmailCandidate::create([
+            'user_id' => $user->id,
+            'provider_message_id' => $message->id,
+            'provider' => $connection->provider,
+            'amount' => 360,
+            'currency' => 'USD',
+            'direction' => 'expense',
+            'occurred_at' => now(),
+            'confidence' => 80,
+            'status' => $status,
         ]);
     }
 }

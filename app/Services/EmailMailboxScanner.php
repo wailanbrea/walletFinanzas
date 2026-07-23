@@ -22,6 +22,26 @@ class EmailMailboxScanner
         $created = 0;
         $candidates = 0;
 
+        // Rotate reviewed candidates so bounded cleanup batches eventually cover every pending item.
+        EmailCandidate::query()
+            ->where('user_id', $connection->user_id)
+            ->where('provider', $connection->provider)
+            ->where('status', 'pending')
+            ->with('message')
+            ->oldest('updated_at')
+            ->orderBy('id')
+            ->limit($this->messageLimit())
+            ->get()
+            ->each(function (EmailCandidate $candidate): void {
+                if ($candidate->message && $this->extractor->isDefiniteNonTransaction($candidate->message->subject, $candidate->message->snippet)) {
+                    EmailCandidate::query()->whereKey($candidate->id)->where('status', 'pending')->delete();
+
+                    return;
+                }
+
+                EmailCandidate::query()->whereKey($candidate->id)->where('status', 'pending')->update(['updated_at' => now()->addSecond()]);
+            });
+
         foreach ($messages as $item) {
             $message = ProviderMessage::query()->firstOrCreate(
                 ['user_id' => $connection->user_id, 'provider' => $connection->provider, 'provider_message_id' => $item['id']],
