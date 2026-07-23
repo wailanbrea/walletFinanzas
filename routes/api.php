@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AccountController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BankConnectionController;
+use App\Http\Controllers\Api\V1\EmailConnectionController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use Illuminate\Support\Facades\Route;
 
@@ -25,5 +26,12 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/transactions', [TransactionController::class, 'index']);
         Route::post('/transactions', [TransactionController::class, 'store']);
         Route::get('/bank-connections', [BankConnectionController::class, 'index']);
+        Route::get('/email-connections', [EmailConnectionController::class, 'index']);
+        Route::post('/email-connections/{provider}/authorization-url', [EmailConnectionController::class, 'authorizationUrl']);
+        Route::post('/email-connections/{provider}/sync', [EmailConnectionController::class, 'sync']);
+        Route::get('/email-connections/{provider}/sync-runs/{run}', [EmailConnectionController::class, 'syncRun']);
+        Route::delete('/email-connections/{provider}', [EmailConnectionController::class, 'destroy']);
+        Route::get('/email-candidates', [EmailConnectionController::class, 'candidates']);
+        Route::patch('/email-candidates/{candidate}', [EmailConnectionController::class, 'reviewCandidate']);
     });
 });
