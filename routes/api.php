@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\EmailCandidateController;
 use App\Http\Controllers\Api\V1\EmailConnectionController;
 use App\Http\Controllers\Api\V1\EmailOAuthCallbackController;
 use App\Http\Controllers\Api\V1\TransactionController;
+use App\Http\Controllers\Api\V1\WalletSyncResourceController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -31,6 +32,16 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/accounts', [AccountController::class, 'store']);
         Route::get('/transactions', [TransactionController::class, 'index']);
         Route::post('/transactions', [TransactionController::class, 'store']);
+        Route::get('/categories', [WalletSyncResourceController::class, 'categories']);
+        Route::post('/categories', [WalletSyncResourceController::class, 'storeCategory']);
+        Route::get('/budgets', [WalletSyncResourceController::class, 'budgets']);
+        Route::post('/budgets', [WalletSyncResourceController::class, 'storeBudget']);
+        Route::get('/goals', [WalletSyncResourceController::class, 'goals']);
+        Route::post('/goals', [WalletSyncResourceController::class, 'storeGoal']);
+        Route::get('/debts', [WalletSyncResourceController::class, 'debts']);
+        Route::post('/debts', [WalletSyncResourceController::class, 'storeDebt']);
+        Route::get('/planned-payments', [WalletSyncResourceController::class, 'plannedPayments']);
+        Route::post('/planned-payments', [WalletSyncResourceController::class, 'storePlannedPayment']);
         Route::get('/bank-connections', [BankConnectionController::class, 'index']);
         Route::get('/email-connections', [EmailConnectionController::class, 'index']);
         Route::post('/email-connections/{provider}/authorization-url', [EmailConnectionController::class, 'authorizationUrl']);

@@ -507,17 +507,17 @@ private fun CandidateCard(
                     )
                 }
                 Text(
-                    text = formatMinorAmount(candidate.amount, candidate.currency),
+                    text = formatCandidateAmount(candidate.amount, candidate.currency, candidate.direction),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (candidate.amount < 0) MaterialTheme.colorScheme.error else Color(0xFF1B873F)
+                    color = if (candidate.direction == "expense") MaterialTheme.colorScheme.error else Color(0xFF1B873F)
                 )
             }
             candidate.convertedAmount?.let { convertedAmount ->
                 Text(
                     text = stringResource(
                         R.string.email_candidate_converted,
-                        formatMinorAmount(convertedAmount, candidate.convertedCurrency ?: "DOP")
+                        formatCandidateAmount(convertedAmount, candidate.convertedCurrency ?: "DOP", candidate.direction)
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
@@ -597,6 +597,11 @@ private fun formatMinorAmount(amount: Long, currency: String): String {
     }
 
     return (if (amount < 0) "-" else "+") + symbol + formatted
+}
+
+private fun formatCandidateAmount(amount: Long, currency: String, direction: String): String {
+    val absoluteAmount = if (amount == Long.MIN_VALUE) Long.MAX_VALUE else kotlin.math.abs(amount)
+    return formatMinorAmount(if (direction == "expense") -absoluteAmount else absoluteAmount, currency)
 }
 
 private fun formatExchangeRate(rateMicros: Long): String =

@@ -7,35 +7,55 @@ use App\Http\Requests\Api\V1\StoreTransactionRequest;
 use App\Http\Resources\Api\V1\TransactionResource;
 use App\Models\Account;
 use App\Models\Transaction;
+use App\Models\WalletSyncResource;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class TransactionController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'account_id' => ['required', 'uuid'],
+            'account_id' => ['nullable', 'string', 'max:255'],
+            'updated_since' => ['nullable', 'date'],
+            'cursor' => ['nullable', 'string'],
+            'per_page' => ['nullable', 'integer', 'between:1,200'],
         ]);
+        if (isset($validated['account_id'])) {
+            $request->user()->accounts()->whereKey($validated['account_id'])->firstOrFail();
+        }
+        $transactions = Transaction::query()
+            ->where('user_id', $request->user()->id)
+            ->when($validated['account_id'] ?? null, fn ($query, string $accountId) => $query->where('account_id', $accountId))
+            ->when($validated['updated_since'] ?? null, fn ($query, string $date) => $query->where('updated_at', '>', $date))
+            ->orderBy('id')
+            ->cursorPaginate($validated['per_page'] ?? 200, ['*'], 'cursor', $validated['cursor'] ?? null);
 
-        $account = $request->user()
-            ->accounts()
-            ->whereKey($validated['account_id'])
-            ->firstOrFail();
-
-        return TransactionResource::collection(
-            $account->transactions()->latest('occurred_at')->get()
-        );
+        return response()->json([
+            'data' => TransactionResource::collection($transactions->items())->resolve($request),
+            'meta' => ['next_cursor' => $transactions->nextCursor()?->encode()],
+        ]);
     }
 
     public function store(StoreTransactionRequest $request): JsonResponse
     {
         $validated = $request->validated();
+        if (isset($validated['category_id'])) {
+            $categoryExists = (new WalletSyncResource)->setTable('categories')->newQuery()
+                ->where('user_id', $request->user()->id)
+                ->whereKey($validated['category_id'])
+                ->where('is_deleted', false)
+                ->exists();
+            if (! $categoryExists) {
+                throw ValidationException::withMessages([
+                    'category_id' => ['La categoría no pertenece al usuario o fue eliminada.'],
+                ]);
+            }
+        }
 
         try {
             [$transaction, $created] = DB::transaction(function () use ($request, $validated): array {

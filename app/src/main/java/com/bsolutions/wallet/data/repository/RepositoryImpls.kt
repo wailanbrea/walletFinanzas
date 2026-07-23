@@ -105,6 +105,7 @@ class TransactionRepositoryImpl @Inject constructor(
     override suspend fun getTransaction(id: String): Transaction? =
         dao.getTransactionById(ownerScope.currentOwnerId(), id)?.toDomain()
 
+    // Las importaciones de proveedores bancarios permanecen solo locales.
     override suspend fun addTransaction(transaction: Transaction) =
         dao.insertTransaction(transaction.toEntity(ownerScope.currentOwnerId()))
 

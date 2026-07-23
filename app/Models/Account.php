@@ -13,6 +13,7 @@ class Account extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
+        'id',
         'user_id',
         'name',
         'balance',

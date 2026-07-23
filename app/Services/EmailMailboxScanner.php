@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\EmailCandidate;
+use App\Models\EmailCategorizationRule;
 use App\Models\EmailConnection;
 use App\Models\ProviderMessage;
 use Carbon\CarbonImmutable;
@@ -32,16 +33,33 @@ class EmailMailboxScanner
                 ]
             );
             $created += (int) $message->wasRecentlyCreated;
-            if (! $message->candidate()->exists()) {
-                $candidate = $this->extractor->extract($message->subject, $message->snippet, $message->occurred_at);
-                if ($candidate) {
-                    EmailCandidate::query()->create($candidate + [
-                        'user_id' => $connection->user_id,
-                        'provider_message_id' => $message->id,
-                        'provider' => $connection->provider,
-                    ]);
-                    $candidates++;
+            $existingCandidate = $message->candidate()->first();
+            $candidate = $this->extractor->extract($message->subject, $message->snippet, $message->occurred_at);
+            if (! $candidate) {
+                if ($existingCandidate?->status === 'pending' && $this->extractor->isDefiniteNonTransaction($message->subject, $message->snippet)) {
+                    $existingCandidate->delete();
                 }
+
+                continue;
+            }
+            if ($candidate['merchant']) {
+                $learnedCategory = EmailCategorizationRule::query()
+                    ->where('user_id', $connection->user_id)
+                    ->where('merchant', $candidate['merchant'])
+                    ->value('category');
+                $candidate['category_suggestion'] = $learnedCategory ?: $candidate['category_suggestion'];
+            }
+            if ($existingCandidate) {
+                if ($existingCandidate->status === 'pending') {
+                    $existingCandidate->update($candidate);
+                }
+            } else {
+                EmailCandidate::query()->create($candidate + [
+                    'user_id' => $connection->user_id,
+                    'provider_message_id' => $message->id,
+                    'provider' => $connection->provider,
+                ]);
+                $candidates++;
             }
         }
         $connection->update(['last_synced_at' => now(), 'status' => 'connected']);

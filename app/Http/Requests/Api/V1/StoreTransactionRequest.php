@@ -45,12 +45,12 @@ class StoreTransactionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'account_id' => ['required', 'uuid'],
-            'idempotency_key' => ['required', 'uuid'],
+            'account_id' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9._:-]+$/'],
+            'idempotency_key' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9._:-]+$/'],
             'amount' => ['required', 'integer', 'not_in:0', 'between:-9000000000000000,9000000000000000'],
             'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'description' => ['nullable', 'string', 'max:500'],
-            'category_id' => ['nullable', 'uuid'],
+            'category_id' => ['nullable', 'string', 'max:100'],
             'timestamp' => ['required', 'date'],
             'status' => ['required', Rule::in(['pending', 'completed', 'cancelled'])],
         ];

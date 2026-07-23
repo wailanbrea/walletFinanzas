@@ -22,6 +22,7 @@ class StoreAccountRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'id' => ['sometimes', 'string', 'max:255', 'regex:/^[A-Za-z0-9._:-]+$/'],
             'name' => ['required', 'string', 'max:120'],
             'balance' => ['required', 'integer', 'between:-9000000000000000,9000000000000000'],
             'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],

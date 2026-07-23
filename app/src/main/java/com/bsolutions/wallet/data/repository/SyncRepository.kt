@@ -252,8 +252,9 @@ class SyncRepository @Inject constructor(
         do {
             val page = api.pullAccounts(updatedSince = null, cursor = cursor)
             for (dto in page.data) {
-                // No pisar cuentas con operaciones locales sin subir (se resolverá al re-sincronizar).
-                accountDao.insertAccount(
+                // Room sigue siendo autoritativo: una fila local, incluso eliminada,
+                // nunca se pisa ni se resucita durante el pull.
+                if (accountDao.getAccountByIdIncludingDeleted(ownerId, dto.id) == null) accountDao.insertAccount(
                     AccountEntity(
                         id = dto.id,
                         name = dto.name,
@@ -280,7 +281,7 @@ class SyncRepository @Inject constructor(
                 val validCategoryId = dto.categoryId?.takeIf { id ->
                     categoryDao.getCategoryById(ownerId, id) != null
                 }.orEmpty()
-                transactionDao.insertTransaction(
+                if (transactionDao.getTransactionByIdIncludingDeleted(ownerId, dto.idempotencyKey ?: dto.id) == null) transactionDao.insertTransaction(
                     TransactionEntity(
                         id = dto.idempotencyKey ?: dto.id,
                         accountId = dto.accountId,

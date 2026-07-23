@@ -15,6 +15,9 @@ interface TransactionDao {
     
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND id = :id AND isDeleted = 0")
     suspend fun getTransactionById(ownerId: String, id: String): TransactionEntity?
+
+    @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND id = :id")
+    suspend fun getTransactionByIdIncludingDeleted(ownerId: String, id: String): TransactionEntity?
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: TransactionEntity)
