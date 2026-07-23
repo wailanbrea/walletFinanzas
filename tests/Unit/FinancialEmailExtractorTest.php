@@ -64,5 +64,6 @@ class FinancialEmailExtractorTest extends TestCase
 
         $this->assertNull($this->extractor->extract('Compra declinada USD 20.00', null, null));
         $this->assertNull($this->extractor->extract('Payment rejected USD 10.00', null, null));
+        $this->assertNull($this->extractor->extract('150% of budget reached', 'Payment USD 3.60', null));
     }
 }

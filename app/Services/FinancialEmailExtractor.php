@@ -50,7 +50,7 @@ class FinancialEmailExtractor
     {
         $text = trim(($subject ?? '').' '.($snippet ?? ''));
 
-        return preg_match('/\b(preaprob(?:ad[ao]|ación)|l[ií]mite disponible|recordatorio de pago|pago m[ií]nimo|payment due|saldo pendiente|declinad[ao]|rechazad[ao]|cancelad[ao]|pending|declined|rejected)\b/iu', $text) === 1;
+        return preg_match('/\b(preaprob(?:ad[ao]|ación)|l[ií]mite disponible|recordatorio de pago|pago m[ií]nimo|payment due|saldo pendiente|budget reached|presupuesto alcanzado|declinad[ao]|rechazad[ao]|cancelad[ao]|pending|declined|rejected)\b/iu', $text) === 1;
     }
 
     private function merchant(string $text): ?string
