@@ -19,3 +19,6 @@ The Android project uses this API URL by default. A local `local.properties` can
 
 For the missing Gmail/Microsoft OAuth backend routes and the required provider
 configuration, follow [EMAIL_OAUTH_SETUP.md](EMAIL_OAUTH_SETUP.md).
+
+For the operational PowerShell procedure to update the XAMPP VPS from Git, use
+[VPS_PULL.md](VPS_PULL.md).
