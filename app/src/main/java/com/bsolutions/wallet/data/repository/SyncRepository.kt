@@ -450,7 +450,9 @@ internal fun AccountEntity.toCreateAccountRequest() = CreateAccountRequest(
 internal fun AccountDto.toAccountEntity(ownerId: String) = AccountEntity(
     id = id,
     name = name,
-    type = type,
+    // Un backend sin la migracion de type no manda la clave: toda cuenta remota
+    // era bancaria antes de que existiera el campo.
+    type = type ?: "BANK",
     balance = balance,
     currency = currency,
     countryCode = countryCode,

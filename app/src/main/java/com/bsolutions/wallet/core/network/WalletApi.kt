@@ -47,7 +47,11 @@ data class AccountDto(
     @SerializedName("country_code") val countryCode: String,
     @SerializedName("card_last_four") val cardLastFour: String?,
     @SerializedName("is_active") val isActive: Boolean,
-    val type: String = "BANK",
+    // Nullable a proposito: un backend anterior a la migracion de type/credit_limit no
+    // envia estas claves. Gson no aplica los valores por defecto de Kotlin (instancia
+    // con Unsafe, saltandose el constructor), asi que un `= "BANK"` aqui llegaria como
+    // null y reventaria al construir AccountEntity. El defecto se aplica al mapear.
+    val type: String? = null,
     @SerializedName("credit_limit") val creditLimit: Long? = null
 )
 

@@ -1,5 +1,6 @@
 package com.bsolutions.wallet.core.network
 
+import com.bsolutions.wallet.data.repository.toAccountEntity
 import com.google.gson.JsonParser
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -40,6 +41,22 @@ class AccountApiContractTest {
 
         assertEquals("CREDIT_CARD", account.type)
         assertEquals(150_000L, account.creditLimit)
+    }
+
+    @Test
+    fun `account pull survives a backend that predates the type column`() = runBlocking {
+        // El VPS sin la migracion no manda type ni credit_limit. Gson no aplica los
+        // valores por defecto de Kotlin (instancia con Unsafe), asi que un campo
+        // no-nulo llegaria como null y reventaria al construir AccountEntity.
+        server.enqueue(MockResponse().setResponseCode(200).setBody(
+            """{"data":[{"id":"acc-1","name":"Cuenta","balance":1000,"currency":"DOP","institution_name":null,"country_code":"DO","card_last_four":null,"is_active":true}]}"""
+        ))
+
+        val account = api.pullAccounts(null, null).data.single()
+
+        assertNull(account.type)
+        assertNull(account.creditLimit)
+        assertEquals("BANK", account.toAccountEntity("owner-1").type)
     }
 
     @Test
