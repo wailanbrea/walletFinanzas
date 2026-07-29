@@ -57,6 +57,14 @@ class EmailConnectionController extends Controller
         if (! $connection) {
             return response()->json(['message' => 'No hay una conexion de correo autorizada para este proveedor.', 'code' => 'email_connection_not_found'], 409);
         }
+        $activeRun = $request->user()->emailSyncRuns()
+            ->where('email_connection_id', $connection->id)
+            ->whereIn('status', ['queued', 'running'])
+            ->latest('id')
+            ->first();
+        if ($activeRun) {
+            return (new EmailSyncRunResource($activeRun))->response()->setStatusCode(202);
+        }
         $run = EmailSyncRun::query()->create([
             'user_id' => $request->user()->id,
             'email_connection_id' => $connection->id,

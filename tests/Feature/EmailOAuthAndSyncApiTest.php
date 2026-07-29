@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -216,6 +217,21 @@ class EmailOAuthAndSyncApiTest extends TestCase
             ->assertJsonPath('data.status', 'categorized');
         $this->deleteJson('/api/v1/email-connections/gmail')->assertNoContent();
         $this->assertDatabaseMissing('email_connections', ['id' => $connection->id]);
+    }
+
+    public function test_repeated_sync_reuses_the_active_run(): void
+    {
+        Queue::fake();
+        $user = User::factory()->create();
+        $this->connection($user, 'gmail');
+        Sanctum::actingAs($user);
+
+        $first = $this->postJson('/api/v1/email-connections/gmail/sync')->assertStatus(202);
+        $second = $this->postJson('/api/v1/email-connections/gmail/sync')->assertStatus(202);
+
+        $this->assertSame($first->json('data.sync_run_id'), $second->json('data.sync_run_id'));
+        $this->assertDatabaseCount('email_sync_runs', 1);
+        Queue::assertPushed(\App\Jobs\SyncEmailConnection::class, 1);
     }
 
     private function connection(User $user, string $provider, mixed $expiresAt = null): EmailConnection
