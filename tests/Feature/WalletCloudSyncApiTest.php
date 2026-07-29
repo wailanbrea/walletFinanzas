@@ -22,6 +22,7 @@ class WalletCloudSyncApiTest extends TestCase
         $this->postJson('/api/v1/accounts', [
             'id' => $accountId,
             'name' => 'Efectivo',
+            'type' => 'CASH',
             'balance' => 10000,
             'currency' => 'DOP',
             'country_code' => 'DO',
@@ -67,6 +68,7 @@ class WalletCloudSyncApiTest extends TestCase
         $this->postJson('/api/v1/accounts', [
             'id' => $accountId,
             'name' => 'Banco',
+            'type' => 'BANK',
             'balance' => 0,
             'currency' => 'DOP',
             'country_code' => 'DO',
@@ -94,6 +96,7 @@ class WalletCloudSyncApiTest extends TestCase
         $this->postJson('/api/v1/accounts', [
             'id' => $accountId,
             'name' => 'Cuenta importada',
+            'type' => 'BANK',
             'balance' => 1000,
             'currency' => 'USD',
             'country_code' => 'DO',

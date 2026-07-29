@@ -16,7 +16,9 @@ class Account extends Model
         'id',
         'user_id',
         'name',
+        'type',
         'balance',
+        'credit_limit',
         'currency',
         'institution_name',
         'country_code',
@@ -28,6 +30,7 @@ class Account extends Model
     {
         return [
             'balance' => 'integer',
+            'credit_limit' => 'integer',
             'is_active' => 'boolean',
         ];
     }

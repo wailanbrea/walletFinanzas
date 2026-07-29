@@ -214,6 +214,7 @@ class EmailOAuthAndSyncApiTest extends TestCase
         $this->patchJson('/api/v1/email-candidates/'.$candidate->id, ['action' => 'categorize', 'category' => 'Food', 'learn' => true])
             ->assertOk()
             ->assertJsonPath('data.status', 'categorized');
+        $this->getJson('/api/v1/email-candidates')->assertOk()->assertJsonCount(0, 'data');
         $this->deleteJson('/api/v1/email-connections/gmail')->assertNoContent();
         $this->assertDatabaseMissing('email_connections', ['id' => $connection->id]);
     }

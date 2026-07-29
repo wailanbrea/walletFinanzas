@@ -12,7 +12,11 @@ class EmailCandidateController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $candidates = $request->user()->emailCandidates()->latest('occurred_at')->limit(200)->get();
+        $candidates = $request->user()->emailCandidates()
+            ->where('status', 'pending')
+            ->latest('occurred_at')
+            ->limit(200)
+            ->get();
 
         return response()->json(['data' => EmailCandidateResource::collection($candidates)->resolve()]);
     }
