@@ -17,6 +17,7 @@ import com.bsolutions.wallet.data.local.entity.GoalEntity
 import com.bsolutions.wallet.data.local.entity.PlannedPaymentEntity
 import com.bsolutions.wallet.data.local.entity.TransactionEntity
 import com.bsolutions.wallet.core.database.WalletOwnerScope
+import com.bsolutions.wallet.core.sync.SyncScheduler
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Budget
 import com.bsolutions.wallet.domain.model.Category
@@ -90,7 +91,10 @@ fun Debt.toEntity(ownerId: String) =
 class AccountRepositoryImpl @Inject constructor(
     private val dao: AccountDao,
     private val gson: Gson,
-    private val ownerScope: WalletOwnerScope
+    private val ownerScope: WalletOwnerScope,
+    // Cada cambio pide subir de inmediato: sin esto habia que esperar al ciclo
+    // periodico de 30 minutos para que el otro telefono se enterara.
+    private val syncScheduler: SyncScheduler
 ) : AccountRepository {
     override fun getAccounts(): Flow<List<Account>> =
         ownerScope.ownerId.flatMapLatest { dao.getAllAccounts(it) }.map { list -> list.map { it.toDomain() } }
@@ -102,6 +106,7 @@ class AccountRepositoryImpl @Inject constructor(
         // Inserta la cuenta y encola su subida al backend en la misma transacción.
         val entity = account.toEntity(ownerScope.currentOwnerId())
         dao.insertWithOp(entity, SyncRepository.accountOp(gson, entity))
+        syncScheduler.requestSyncNow()
     }
 
     // Editar y borrar tambien se encolan: antes solo subian las creaciones, asi que
@@ -110,18 +115,22 @@ class AccountRepositoryImpl @Inject constructor(
     override suspend fun updateAccount(account: Account) {
         val entity = account.toEntity(ownerScope.currentOwnerId())
         dao.updateWithOp(entity, SyncRepository.accountOp(gson, entity))
+        syncScheduler.requestSyncNow()
     }
 
-    override suspend fun deleteAccount(id: String) =
+    override suspend fun deleteAccount(id: String) {
         dao.softDeleteWithOp(ownerScope.currentOwnerId(), id) { deleted ->
             SyncRepository.accountOp(gson, deleted)
         }
+        syncScheduler.requestSyncNow()
+    }
 }
 
 class TransactionRepositoryImpl @Inject constructor(
     private val dao: TransactionDao,
     private val gson: Gson,
-    private val ownerScope: WalletOwnerScope
+    private val ownerScope: WalletOwnerScope,
+    private val syncScheduler: SyncScheduler
 ) : TransactionRepository {
     override fun getTransactions(): Flow<List<Transaction>> =
         ownerScope.ownerId.flatMapLatest { dao.getAllTransactions(it) }.map { list -> list.map { it.toDomain() } }
@@ -141,6 +150,7 @@ class TransactionRepositoryImpl @Inject constructor(
         // Inserta movimiento + ajusta saldo + encola la subida, todo atómico.
         val entity = transaction.toEntity(ownerScope.currentOwnerId())
         dao.insertWithBalanceAndOp(entity, SyncRepository.transactionOp(gson, entity))
+        syncScheduler.requestSyncNow()
     }
 
     override suspend fun executeTransfer(
@@ -163,6 +173,7 @@ class TransactionRepositoryImpl @Inject constructor(
     override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) {
         val entity = transaction.toEntity(ownerScope.currentOwnerId())
         dao.updateWithBalanceAndOp(entity, oldAmount, SyncRepository.transactionOp(gson, entity))
+        syncScheduler.requestSyncNow()
     }
 
     override suspend fun deleteTransaction(id: String) {
@@ -173,6 +184,7 @@ class TransactionRepositoryImpl @Inject constructor(
         // La lapida lleva isDeleted = 1 para que el push mande el DELETE al servidor.
         val entity = transaction.toEntity(ownerScope.currentOwnerId()).copy(isDeleted = true)
         dao.softDeleteWithBalanceAndOp(entity, SyncRepository.transactionOp(gson, entity))
+        syncScheduler.requestSyncNow()
     }
 }
 
