@@ -9,7 +9,8 @@ data class Account(
     val countryCode: String = "DO",
     val institutionName: String? = null,
     /** Solo los últimos cuatro dígitos; nunca se almacena el número completo de tarjeta. */
-    val cardLastFour: String? = null
+    val cardLastFour: String? = null,
+    val creditLimit: Long? = null // minor units (cents)
 )
 
 data class Transaction(

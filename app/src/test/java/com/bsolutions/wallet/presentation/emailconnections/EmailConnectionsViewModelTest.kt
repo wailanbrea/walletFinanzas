@@ -26,6 +26,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
+import java.time.Instant
+import java.time.ZoneId
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EmailConnectionsViewModelTest {
@@ -265,6 +267,34 @@ class EmailConnectionsViewModelTest {
         assertNull(candidateAmountForAccount(financialCandidate().copy(amount = 0), account))
         assertNull(candidateAmountForAccount(financialCandidate().copy(amount = Long.MIN_VALUE), account))
         assertNull(candidateOccurredAtMillis("not-a-date"))
+    }
+
+    @Test
+    fun `transaction date uses exact email instant unless user selects another day`() {
+        val occurredAt = "2026-07-20T14:30:00Z"
+        val selectedDay = Instant.parse("2026-08-05T00:00:00Z").toEpochMilli()
+        val santoDomingo = ZoneId.of("America/Santo_Domingo")
+
+        assertEquals(
+            Instant.parse(occurredAt).toEpochMilli(),
+            candidateTransactionDateMillis(occurredAt, null, santoDomingo)
+        )
+        assertEquals(
+            Instant.parse("2026-08-05T14:30:00Z").toEpochMilli(),
+            candidateTransactionDateMillis(occurredAt, selectedDay, santoDomingo)
+        )
+        assertNull(candidateTransactionDateMillis("not-a-date", selectedDay, santoDomingo))
+    }
+
+    @Test
+    fun `date picker opens on the email local calendar day`() {
+        val santoDomingo = ZoneId.of("America/Santo_Domingo")
+
+        assertEquals(
+            Instant.parse("2026-07-19T00:00:00Z").toEpochMilli(),
+            candidateDatePickerInitialMillis("2026-07-20T02:30:00Z", santoDomingo)
+        )
+        assertNull(candidateDatePickerInitialMillis("not-a-date", santoDomingo))
     }
 
     private fun gmailConnected() = EmailConnection(

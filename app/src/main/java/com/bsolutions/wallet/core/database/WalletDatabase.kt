@@ -33,7 +33,7 @@ import com.bsolutions.wallet.data.local.entity.TransactionEntity
         BankConnectionEntity::class,
         PendingOperationEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 abstract class WalletDatabase : RoomDatabase() {

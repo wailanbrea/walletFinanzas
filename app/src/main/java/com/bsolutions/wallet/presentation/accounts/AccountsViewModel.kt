@@ -83,31 +83,47 @@ class AccountsViewModel @Inject constructor(
     fun addAccount(
         name: String,
         type: String,
-        balance: Long,
+        displayedBalance: Long,
         countryCode: String = "DO",
         institutionName: String? = null,
-        cardLastFour: String? = null
+        cardLastFour: String? = null,
+        creditLimit: Long? = null
     ) {
+        if (name.isBlank() || (type == "CREDIT_CARD" && (creditLimit ?: 0L) <= 0L)) return
         viewModelScope.launch {
             accountRepository.addAccount(
                 Account(
                     id = UUID.randomUUID().toString(),
-                    name = name,
+                    name = name.trim(),
                     type = type,
-                    balance = balance,
+                    balance = storedBalance(type, displayedBalance),
                     currency = "DOP",
                     countryCode = countryCode,
                     institutionName = institutionName,
-                    cardLastFour = cardLastFour
+                    cardLastFour = cardLastFour,
+                    creditLimit = creditLimit.takeIf { type == "CREDIT_CARD" }
                 )
             )
         }
     }
 
-    fun updateAccount(account: Account, newName: String, newType: String) {
-        if (newName.isBlank()) return
+    fun updateAccount(
+        account: Account,
+        newName: String,
+        newType: String,
+        displayedBalance: Long,
+        creditLimit: Long?
+    ) {
+        if (newName.isBlank() || (newType == "CREDIT_CARD" && (creditLimit ?: 0L) <= 0L)) return
         viewModelScope.launch {
-            accountRepository.updateAccount(account.copy(name = newName.trim(), type = newType))
+            accountRepository.updateAccount(
+                account.copy(
+                    name = newName.trim(),
+                    type = newType,
+                    balance = storedBalance(newType, displayedBalance),
+                    creditLimit = creditLimit.takeIf { newType == "CREDIT_CARD" }
+                )
+            )
         }
     }
 
@@ -117,4 +133,19 @@ class AccountsViewModel @Inject constructor(
             if (selectedAccountId.value == accountId) selectedAccountId.value = null
         }
     }
+}
+
+internal fun storedBalance(type: String, displayedBalance: Long): Long =
+    if (type == "CREDIT_CARD") -displayedBalance.coerceAtLeast(0L) else displayedBalance
+
+internal fun creditCardDebt(balance: Long): Long = when {
+    balance == Long.MIN_VALUE -> Long.MAX_VALUE
+    balance < 0L -> -balance
+    else -> 0L
+}
+
+internal fun availableCredit(balance: Long, creditLimit: Long?): Long {
+    val limit = (creditLimit ?: 0L).coerceAtLeast(0L)
+    if (balance > Long.MAX_VALUE - limit) return Long.MAX_VALUE
+    return (limit + balance).coerceAtLeast(0L)
 }

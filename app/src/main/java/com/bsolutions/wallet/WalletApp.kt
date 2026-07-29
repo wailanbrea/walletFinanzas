@@ -12,6 +12,10 @@ import com.bsolutions.wallet.core.email.EmailSyncWorker
 import com.bsolutions.wallet.core.notifications.PlannedPaymentWorker
 import com.bsolutions.wallet.core.sync.SyncWorker
 import com.bsolutions.wallet.core.database.LocalDataIsolation
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import coil.decode.SvgDecoder
+import coil.disk.DiskCache
 import dagger.hilt.android.HiltAndroidApp
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -21,7 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
-class WalletApp : Application(), Configuration.Provider {
+class WalletApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
@@ -43,6 +47,21 @@ class WalletApp : Application(), Configuration.Provider {
         scheduleConnectedEmailSync()
         scheduleBackendSync()
     }
+
+    /**
+     * Los logos oficiales de la Superintendencia de Bancos son SVG en su mayoría, así que
+     * el decodificador se registra globalmente. La caché en disco evita volver a pedirlos:
+     * después de la primera descarga, la lista puede pintarse completa sin red.
+     */
+    override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
+        .components { add(SvgDecoder.Factory()) }
+        .diskCache {
+            DiskCache.Builder()
+                .directory(cacheDir.resolve("institution_logos"))
+                .maxSizeBytes(INSTITUTION_LOGO_CACHE_BYTES)
+                .build()
+        }
+        .build()
 
     /** Sincronización con el backend (push/pull) cada 30 min, solo con conexión. */
     private fun scheduleBackendSync() {
@@ -90,5 +109,10 @@ class WalletApp : Application(), Configuration.Provider {
             ExistingPeriodicWorkPolicy.KEEP,
             request
         )
+    }
+
+    private companion object {
+        /** 28 entidades; sobra de largo para el catálogo completo con sus variantes. */
+        const val INSTITUTION_LOGO_CACHE_BYTES = 16L * 1024 * 1024
     }
 }

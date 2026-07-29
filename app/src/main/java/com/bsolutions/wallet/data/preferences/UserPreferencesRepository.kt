@@ -29,8 +29,11 @@ val DEFAULT_DASHBOARD_CARD_IDS: Set<String> = setOf(
     "recent_transactions"
 )
 
+/** Nombre mostrado mientras el perfil no traiga uno real del backend. */
+const val DEFAULT_USER_NAME = "Mi Perfil"
+
 data class UserProfilePrefs(
-    val userName: String = "Mi Perfil",
+    val userName: String = DEFAULT_USER_NAME,
     val email: String = "",
     val walletName: String = "Mi Wallet",
     val biometricLockEnabled: Boolean = false,
@@ -74,7 +77,8 @@ class UserPreferencesRepository @Inject constructor(
         val financialCountry: Preferences.Key<String>,
         val balancesHidden: Preferences.Key<Boolean>,
         val dashboardCardIds: Preferences.Key<Set<String>>,
-        val saltEdgeCustomer: Preferences.Key<String>
+        val saltEdgeCustomer: Preferences.Key<String>,
+        val syncBackfillDone: Preferences.Key<Boolean>
     )
 
     private fun scopedKeys(ownerId: String): ScopedKeys {
@@ -88,7 +92,8 @@ class UserPreferencesRepository @Inject constructor(
             financialCountry = stringPreferencesKey("financial_country_$suffix"),
             balancesHidden = booleanPreferencesKey("balances_hidden_$suffix"),
             dashboardCardIds = stringSetPreferencesKey("dashboard_card_ids_$suffix"),
-            saltEdgeCustomer = stringPreferencesKey("saltedge_customer_id_$suffix")
+            saltEdgeCustomer = stringPreferencesKey("saltedge_customer_id_$suffix"),
+            syncBackfillDone = booleanPreferencesKey("sync_backfill_done_$suffix")
         )
     }
 
@@ -97,7 +102,7 @@ class UserPreferencesRepository @Inject constructor(
             val keys = scopedKeys(ownerId)
             val legacy = ownerId == WALLET_GUEST_OWNER_ID
             UserProfilePrefs(
-                userName = prefs[keys.userName] ?: prefs[Keys.USER_NAME].takeIf { legacy } ?: "Mi Perfil",
+                userName = prefs[keys.userName] ?: prefs[Keys.USER_NAME].takeIf { legacy } ?: DEFAULT_USER_NAME,
                 email = prefs[keys.email] ?: prefs[Keys.EMAIL].takeIf { legacy } ?: "",
                 walletName = prefs[keys.walletName] ?: prefs[Keys.WALLET_NAME].takeIf { legacy } ?: "Mi Wallet",
                 biometricLockEnabled = prefs[keys.biometricLock] ?: prefs[Keys.BIOMETRIC_LOCK].takeIf { legacy } ?: false,
@@ -122,6 +127,20 @@ class UserPreferencesRepository @Inject constructor(
             prefs[keys.email] = email.trim()
             prefs[keys.walletName] = walletName.trim()
             prefs[keys.financialCountry] = financialCountryCode
+        }
+    }
+
+    /**
+     * Marca si ya se encolaron para subida las cuentas y movimientos que existían antes
+     * de que hubiera cola de sincronización. Se guarda por propietario porque cada cuenta
+     * de usuario tiene su propio espacio de datos.
+     */
+    suspend fun isSyncBackfillDone(): Boolean =
+        context.userPrefsDataStore.data.first()[scopedKeys(ownerScope.currentOwnerId()).syncBackfillDone] ?: false
+
+    suspend fun markSyncBackfillDone() {
+        context.userPrefsDataStore.edit { prefs ->
+            prefs[scopedKeys(ownerScope.currentOwnerId()).syncBackfillDone] = true
         }
     }
 

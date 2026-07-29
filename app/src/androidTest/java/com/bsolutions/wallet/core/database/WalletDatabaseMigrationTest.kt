@@ -132,4 +132,36 @@ class WalletDatabaseMigrationTest {
         }
         migrated.close()
     }
+
+    @Test
+    fun migration9To10_addsNullableCreditLimit_andPreservesAccountType() {
+        val databaseName = "migration_9_10_test.db"
+        migrationHelper.createDatabase(databaseName, 9).apply {
+            execSQL(
+                "INSERT INTO accounts (ownerId, id, name, type, balance, currency, countryCode, " +
+                    "institutionName, cardLastFour, isDeleted) VALUES " +
+                    "('owner-1', 'credit-1', 'Tarjeta', 'CREDIT_CARD', -2500, 'DOP', 'DO', NULL, '1234', 0)"
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            10,
+            true,
+            WalletDatabaseMigrations.MIGRATION_9_10
+        )
+        migrated.query("SELECT type, balance, creditLimit FROM accounts WHERE id = 'credit-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("CREDIT_CARD", cursor.getString(0))
+            assertEquals(-2500L, cursor.getLong(1))
+            assertTrue(cursor.isNull(2))
+        }
+        migrated.execSQL("UPDATE accounts SET creditLimit = 150000 WHERE id = 'credit-1'")
+        migrated.query("SELECT creditLimit FROM accounts WHERE id = 'credit-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(150000L, cursor.getLong(0))
+        }
+        migrated.close()
+    }
 }

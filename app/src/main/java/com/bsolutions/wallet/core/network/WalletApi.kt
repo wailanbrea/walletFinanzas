@@ -46,7 +46,9 @@ data class AccountDto(
     @SerializedName("institution_name") val institutionName: String?,
     @SerializedName("country_code") val countryCode: String,
     @SerializedName("card_last_four") val cardLastFour: String?,
-    @SerializedName("is_active") val isActive: Boolean
+    @SerializedName("is_active") val isActive: Boolean,
+    val type: String = "BANK",
+    @SerializedName("credit_limit") val creditLimit: Long? = null
 )
 
 data class EmailConnectionDto(
@@ -112,7 +114,9 @@ data class CreateAccountRequest(
     val currency: String,
     @SerializedName("institution_name") val institutionName: String?,
     @SerializedName("country_code") val countryCode: String,
-    @SerializedName("card_last_four") val cardLastFour: String?
+    @SerializedName("card_last_four") val cardLastFour: String?,
+    val type: String = "BANK",
+    @SerializedName("credit_limit") val creditLimit: Long? = null
 )
 
 data class CreateTransactionRequest(

@@ -187,9 +187,9 @@ internal fun CashFlowCard(uiState: DashboardUiState) {
         title = stringResource(R.string.dashboard_card_cash_flow),
         subtitle = stringResource(R.string.dashboard_card_cash_flow_question)
     ) {
+        // El neto no se desenfoca: el modo privacidad solo cubre Balance Total e Ingresos.
         Text(
             text = MoneyFormat.format(uiState.monthlyIncome - uiState.monthlyExpenses),
-            modifier = Modifier.privacyBlur(uiState.balancesHidden, radius = 10.dp),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
@@ -207,7 +207,7 @@ internal fun CashFlowCard(uiState: DashboardUiState) {
             amount = uiState.monthlyExpenses,
             progress = uiState.monthlyExpenses / maximum,
             color = MaterialTheme.colorScheme.error,
-            hidden = uiState.balancesHidden
+            hidden = false
         )
     }
 }
@@ -249,7 +249,6 @@ internal fun ExpenseStructureCard(uiState: DashboardUiState) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     MoneyFormat.format(uiState.monthlyExpenses),
-                    modifier = Modifier.privacyBlur(uiState.balancesHidden, radius = 10.dp),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
@@ -335,7 +334,6 @@ private fun TransactionPreview(transaction: Transaction, uiState: DashboardUiSta
         }
         Text(
             MoneyFormat.formatSigned(transaction.amount, transaction.type == "INCOME", transaction.currency),
-            modifier = Modifier.privacyBlur(uiState.balancesHidden, radius = 8.dp),
             color = if (transaction.type == "INCOME") MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
             fontWeight = FontWeight.Bold
         )
@@ -361,7 +359,6 @@ internal fun AccountBalancesCard(uiState: DashboardUiState) {
                     Text(account.name, style = MaterialTheme.typography.bodyMedium)
                     Text(
                         MoneyFormat.format(account.balance, account.currency),
-                        modifier = Modifier.privacyBlur(uiState.balancesHidden, radius = 8.dp),
                         fontWeight = FontWeight.SemiBold
                     )
                 }

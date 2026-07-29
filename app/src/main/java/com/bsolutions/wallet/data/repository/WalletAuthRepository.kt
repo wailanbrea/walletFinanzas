@@ -69,7 +69,8 @@ class WalletAuthRepository(
         val payload = request()
         val user = AuthUser(
             uid = payload.user.id.toString(),
-            email = payload.user.email
+            email = payload.user.email,
+            name = payload.user.name
         )
         session.save(payload.token, user)
         try {

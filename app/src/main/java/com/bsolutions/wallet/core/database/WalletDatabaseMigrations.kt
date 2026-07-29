@@ -271,4 +271,11 @@ object WalletDatabaseMigrations {
             database.execSQL("DROP TABLE $legacy")
         }
     }
+
+    /** v9 -> v10: límite de crédito opcional, expresado en unidades menores. */
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE accounts ADD COLUMN creditLimit INTEGER")
+        }
+    }
 }

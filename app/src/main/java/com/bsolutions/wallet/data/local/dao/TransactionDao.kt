@@ -10,6 +10,10 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND isDeleted = 0 ORDER BY date DESC")
     fun getAllTransactions(ownerId: String): Flow<List<TransactionEntity>>
     
+    /** Lectura puntual para el respaldo de sincronización (no reactiva). */
+    @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND isDeleted = 0")
+    suspend fun getAllTransactionsOnce(ownerId: String): List<TransactionEntity>
+
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND accountId = :accountId AND isDeleted = 0 ORDER BY date DESC")
     fun getTransactionsByAccount(ownerId: String, accountId: String): Flow<List<TransactionEntity>>
     

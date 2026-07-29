@@ -16,7 +16,8 @@ data class AccountEntity(
     val institutionName: String? = null,
     val cardLastFour: String? = null,
     val isDeleted: Boolean = false,
-    val ownerId: String = WALLET_GUEST_OWNER_ID
+    val ownerId: String = WALLET_GUEST_OWNER_ID,
+    val creditLimit: Long? = null // minor units (cents)
 )
 
 @Entity(tableName = "transactions", primaryKeys = ["ownerId", "id"])

@@ -10,6 +10,10 @@ interface AccountDao {
     @Query("SELECT * FROM accounts WHERE ownerId = :ownerId AND isDeleted = 0")
     fun getAllAccounts(ownerId: String): Flow<List<AccountEntity>>
     
+    /** Lectura puntual para el respaldo de sincronización (no reactiva). */
+    @Query("SELECT * FROM accounts WHERE ownerId = :ownerId AND isDeleted = 0")
+    suspend fun getAllAccountsOnce(ownerId: String): List<AccountEntity>
+
     @Query("SELECT * FROM accounts WHERE ownerId = :ownerId AND id = :id AND isDeleted = 0")
     suspend fun getAccountById(ownerId: String, id: String): AccountEntity?
 

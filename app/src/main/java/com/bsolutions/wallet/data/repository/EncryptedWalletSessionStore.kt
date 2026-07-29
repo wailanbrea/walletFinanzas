@@ -23,7 +23,11 @@ class EncryptedWalletSessionStore(context: Context) : WalletSessionStore {
         get() {
             val id = preferences.getString(KEY_USER_ID, null) ?: return null
             val email = preferences.getString(KEY_USER_EMAIL, null) ?: return null
-            return AuthUser(uid = id, email = email)
+            return AuthUser(
+                uid = id,
+                email = email,
+                name = preferences.getString(KEY_USER_NAME, null).orEmpty()
+            )
         }
 
     override fun save(token: String, user: AuthUser) {
@@ -31,6 +35,7 @@ class EncryptedWalletSessionStore(context: Context) : WalletSessionStore {
             putString(KEY_TOKEN, token)
             putString(KEY_USER_ID, user.uid)
             putString(KEY_USER_EMAIL, user.email)
+            putString(KEY_USER_NAME, user.name)
         }
     }
 
@@ -43,5 +48,6 @@ class EncryptedWalletSessionStore(context: Context) : WalletSessionStore {
         const val KEY_TOKEN = "access_token"
         const val KEY_USER_ID = "user_id"
         const val KEY_USER_EMAIL = "user_email"
+        const val KEY_USER_NAME = "user_name"
     }
 }

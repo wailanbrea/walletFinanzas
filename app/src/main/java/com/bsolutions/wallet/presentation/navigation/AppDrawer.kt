@@ -111,6 +111,7 @@ val drawerItems = listOf(
 fun AppDrawerContent(
     userName: String,
     walletName: String,
+    email: String = "",
     currentRoute: String?,
     onNavigate: (String) -> Unit
 ) {
@@ -128,7 +129,7 @@ fun AppDrawerContent(
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
         ) {
-            DrawerHeader(userName = userName, walletName = walletName)
+            DrawerHeader(userName = userName, walletName = walletName, email = email)
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -162,7 +163,7 @@ fun AppDrawerContent(
 }
 
 @Composable
-private fun DrawerHeader(userName: String, walletName: String) {
+private fun DrawerHeader(userName: String, walletName: String, email: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -201,10 +202,13 @@ private fun DrawerHeader(userName: String, walletName: String) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            // Con sesión iniciada se muestra el correo; sin ella, el nombre del wallet.
             Text(
-                text = walletName,
+                text = email.ifBlank { walletName },
                 color = Color.White.copy(alpha = 0.9f),
-                fontSize = 14.sp
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

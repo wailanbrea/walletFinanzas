@@ -38,9 +38,30 @@ import kotlinx.coroutines.flow.flatMapLatest
 import javax.inject.Inject
 
 // Mappers
-fun AccountEntity.toDomain() = Account(id, name, type, balance, currency, countryCode, institutionName, cardLastFour)
-fun Account.toEntity(ownerId: String) =
-    AccountEntity(id, name, type, balance, currency, countryCode, institutionName, cardLastFour, ownerId = ownerId)
+fun AccountEntity.toDomain() = Account(
+    id = id,
+    name = name,
+    type = type,
+    balance = balance,
+    currency = currency,
+    countryCode = countryCode,
+    institutionName = institutionName,
+    cardLastFour = cardLastFour,
+    creditLimit = creditLimit
+)
+
+fun Account.toEntity(ownerId: String) = AccountEntity(
+    id = id,
+    name = name,
+    type = type,
+    balance = balance,
+    currency = currency,
+    countryCode = countryCode,
+    institutionName = institutionName,
+    cardLastFour = cardLastFour,
+    ownerId = ownerId,
+    creditLimit = creditLimit
+)
 
 fun TransactionEntity.toDomain() = Transaction(id, accountId, amount, type, categoryId, date, note, currency)
 fun Transaction.toEntity(ownerId: String) =

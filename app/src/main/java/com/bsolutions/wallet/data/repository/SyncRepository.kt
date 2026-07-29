@@ -5,12 +5,14 @@ package com.bsolutions.wallet.data.repository
 import com.bsolutions.wallet.core.network.CreateAccountRequest
 import com.bsolutions.wallet.core.network.CreateCategoryRequest
 import com.bsolutions.wallet.core.network.CreateTransactionRequest
+import com.bsolutions.wallet.core.network.AccountDto
 import com.bsolutions.wallet.core.network.BudgetSyncDto
 import com.bsolutions.wallet.core.network.GoalSyncDto
 import com.bsolutions.wallet.core.network.DebtSyncDto
 import com.bsolutions.wallet.core.network.PlannedPaymentSyncDto
 import com.bsolutions.wallet.core.network.WalletApi
 import com.bsolutions.wallet.core.database.WalletOwnerScope
+import com.bsolutions.wallet.data.preferences.UserPreferencesRepository
 import com.bsolutions.wallet.data.local.dao.AccountDao
 import com.bsolutions.wallet.data.local.dao.CategoryDao
 import com.bsolutions.wallet.data.local.dao.PendingOperationDao
@@ -67,6 +69,7 @@ class SyncRepository @Inject constructor(
     private val debtDao: DebtDao,
     private val plannedPaymentDao: PlannedPaymentDao,
     private val ownerScope: WalletOwnerScope,
+    private val preferences: UserPreferencesRepository,
     private val gson: Gson
 ) {
     val pendingCount: Flow<Int> = ownerScope.ownerId.flatMapLatest { ownerId ->
@@ -83,6 +86,7 @@ class SyncRepository @Inject constructor(
     suspend fun sync(): SyncOutcome {
         if (session.token.isNullOrBlank()) return SyncOutcome.NoSession
         return try {
+            backfillLegacyOperations()
             // Las categorías se suben primero porque una transacción solo puede
             // referenciar una categoría activa del mismo usuario en el backend.
             val pushed = pushCategories() + push() + pushFinancialPlans()
@@ -95,6 +99,24 @@ class SyncRepository @Inject constructor(
         } catch (e: Exception) {
             SyncOutcome.Error(e.message ?: "Error de sincronización.")
         }
+    }
+
+    /**
+     * Las cuentas y los movimientos solo se encolan al crearse. Todo lo que el usuario ya
+     * tenía antes de que existiera la cola nunca se subió, así que en un segundo teléfono
+     * no aparecía nada. Una sola vez por propietario se encola lo que falte; el push es
+     * idempotente (el id del cliente es la clave), de modo que reencolar no duplica nada.
+     */
+    private suspend fun backfillLegacyOperations() {
+        if (preferences.isSyncBackfillDone()) return
+        val ownerId = ownerScope.currentOwnerId()
+        for (account in accountDao.getAllAccountsOnce(ownerId)) {
+            pendingOps.insert(accountOp(gson, account))
+        }
+        for (transaction in transactionDao.getAllTransactionsOnce(ownerId)) {
+            pendingOps.insert(transactionOp(gson, transaction))
+        }
+        preferences.markSyncBackfillDone()
     }
 
     // ---------- PUSH ----------
@@ -188,17 +210,7 @@ class SyncRepository @Inject constructor(
 
     private suspend fun pushAccount(op: PendingOperationEntity) {
         val a = gson.fromJson(op.payload, AccountEntity::class.java)
-        api.createAccount(
-            CreateAccountRequest(
-                id = a.id,
-                name = a.name,
-                balance = a.balance,
-                currency = a.currency,
-                institutionName = a.institutionName,
-                countryCode = a.countryCode,
-                cardLastFour = a.cardLastFour
-            )
-        )
+        api.createAccount(a.toCreateAccountRequest())
     }
 
     private suspend fun pushTransaction(op: PendingOperationEntity) {
@@ -255,17 +267,7 @@ class SyncRepository @Inject constructor(
                 // Room sigue siendo autoritativo: una fila local, incluso eliminada,
                 // nunca se pisa ni se resucita durante el pull.
                 if (accountDao.getAccountByIdIncludingDeleted(ownerId, dto.id) == null) accountDao.insertAccount(
-                    AccountEntity(
-                        id = dto.id,
-                        name = dto.name,
-                        type = "BANK",
-                        balance = dto.balance,
-                        currency = dto.currency,
-                        countryCode = dto.countryCode,
-                        institutionName = dto.institutionName,
-                        cardLastFour = dto.cardLastFour,
-                        ownerId = ownerId
-                    )
+                    dto.toAccountEntity(ownerId)
                 )
                 pulled++
             }
@@ -432,6 +434,31 @@ class SyncRepository @Inject constructor(
             )
     }
 }
+
+internal fun AccountEntity.toCreateAccountRequest() = CreateAccountRequest(
+    id = id,
+    name = name,
+    balance = balance,
+    currency = currency,
+    institutionName = institutionName,
+    countryCode = countryCode,
+    cardLastFour = cardLastFour,
+    type = type,
+    creditLimit = creditLimit
+)
+
+internal fun AccountDto.toAccountEntity(ownerId: String) = AccountEntity(
+    id = id,
+    name = name,
+    type = type,
+    balance = balance,
+    currency = currency,
+    countryCode = countryCode,
+    institutionName = institutionName,
+    cardLastFour = cardLastFour,
+    ownerId = ownerId,
+    creditLimit = creditLimit
+)
 
 private fun BudgetEntity.toSyncDto() = BudgetSyncDto(
     id = id,

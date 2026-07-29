@@ -87,7 +87,8 @@ class WalletAuthRepositoryTest {
         )
         assertEquals("token-123", session.token)
         assertEquals("1", isolation.activeUserId)
-        assertEquals(AuthUser("1", "ada@example.com"), session.user)
+        // El nombre viaja hasta la sesión: sin él el menú lateral seguiría diciendo "Mi Perfil".
+        assertEquals(AuthUser("1", "ada@example.com", "Ada Lovelace"), session.user)
     }
 
     @Test

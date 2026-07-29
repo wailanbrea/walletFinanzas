@@ -22,7 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -33,6 +35,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -41,9 +45,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -73,7 +79,9 @@ import com.bsolutions.wallet.presentation.common.walletTopBarColors
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,6 +96,7 @@ fun EmailConnectionsScreen(
     var disconnectCandidate by remember { mutableStateOf<EmailProvider?>(null) }
     var classifyCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
     var dismissCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
+    var confirmClearAll by remember { mutableStateOf(false) }
 
     LaunchedEffect(oauthReturnNonce) {
         if (oauthReturnNonce > 0L) viewModel.onAuthorizationReturn()
@@ -140,6 +149,37 @@ fun EmailConnectionsScreen(
                 }?.id.orEmpty()
             )
         }
+        var selectedDateMillis by remember(candidate.id, bookedTransaction) {
+            mutableStateOf<Long?>(null)
+        }
+        var showDatePicker by remember(candidate.id) { mutableStateOf(false) }
+        if (showDatePicker && bookedTransaction == null) {
+            val datePickerState = rememberDatePickerState(
+                initialSelectedDateMillis = selectedDateMillis
+                    ?: candidateDatePickerInitialMillis(candidate.occurredAt)
+            )
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            selectedDateMillis = datePickerState.selectedDateMillis
+                            showDatePicker = false
+                        },
+                        enabled = datePickerState.selectedDateMillis != null
+                    ) {
+                        Text(stringResource(R.string.common_accept))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                }
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
         AlertDialog(
             onDismissRequest = { classifyCandidate = null },
             title = { Text(stringResource(R.string.email_candidate_classify_title)) },
@@ -181,6 +221,46 @@ fun EmailConnectionsScreen(
                         }
                     }
                     Text(
+                        text = stringResource(R.string.email_candidate_transaction_date_label),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedButton(
+                        onClick = { showDatePicker = true },
+                        enabled = bookedTransaction == null,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            when {
+                                bookedTransaction != null -> stringResource(
+                                    R.string.email_candidate_booked_date,
+                                    formatTransactionDate(bookedTransaction.date)
+                                )
+                                selectedDateMillis != null -> stringResource(
+                                    R.string.email_candidate_selected_date,
+                                    formatDatePickerSelection(checkNotNull(selectedDateMillis))
+                                )
+                                else -> stringResource(
+                                    R.string.email_candidate_use_email_date,
+                                    formatEmailCandidateDate(candidate.occurredAt)
+                                )
+                            }
+                        )
+                    }
+                    if (selectedDateMillis != null && bookedTransaction == null) {
+                        TextButton(
+                            onClick = { selectedDateMillis = null },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text(stringResource(R.string.email_candidate_reset_date))
+                        }
+                    }
+                    Text(
                         stringResource(
                             if (bookedTransaction == null) R.string.email_candidate_classify_help
                             else R.string.email_candidate_pending_confirmation_help
@@ -193,13 +273,39 @@ fun EmailConnectionsScreen(
                 TextButton(
                     onClick = {
                         classifyCandidate = null
-                        viewModel.classify(candidate.id, accountId, categoryId)
+                        viewModel.classify(
+                            candidate.id,
+                            accountId,
+                            categoryId,
+                            selectedDateMillis
+                        )
                     },
                     enabled = accountId.isNotBlank() && (categoryId.isNotBlank() || bookedTransaction != null)
                 ) { Text(stringResource(R.string.email_candidate_add_movement)) }
             },
             dismissButton = {
                 TextButton(onClick = { classifyCandidate = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    if (confirmClearAll) {
+        AlertDialog(
+            onDismissRequest = { confirmClearAll = false },
+            title = { Text(stringResource(R.string.email_candidates_clear_all)) },
+            text = { Text(stringResource(R.string.email_candidates_clear_all_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearAll = false
+                    viewModel.removeAll()
+                }) {
+                    Text(stringResource(R.string.email_candidates_clear_all))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearAll = false }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -345,6 +451,19 @@ fun EmailConnectionsScreen(
                             modifier = Modifier.padding(top = 8.dp)
                         )
                     }
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = { confirmClearAll = true },
+                                enabled = state.actionProvider == null && state.reviewCandidateId == null
+                            ) {
+                                Text(stringResource(R.string.email_candidates_clear_all))
+                            }
+                        }
+                    }
                     EmailProvider.entries.forEach { provider ->
                         val providerCandidates = state.candidatesByProvider[provider].orEmpty()
                         if (providerCandidates.isNotEmpty()) {
@@ -363,7 +482,8 @@ fun EmailConnectionsScreen(
                                     candidate = candidate,
                                     isReviewing = state.reviewCandidateId != null || state.actionProvider != null,
                                     onClassify = { classifyCandidate = candidate },
-                                    onDismiss = { dismissCandidate = candidate }
+                                    onDismiss = { dismissCandidate = candidate },
+                                    onRemove = { viewModel.remove(candidate.id) }
                                 )
                             }
                         }
@@ -509,15 +629,48 @@ private fun CandidateCard(
     candidate: EmailCandidate,
     isReviewing: Boolean,
     onClassify: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRemove: () -> Unit
 ) {
     val uriHandler = LocalUriHandler.current
+    val providerAccent = providerAccent(candidate.provider)
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, providerAccent.copy(alpha = 0.35f))
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ProviderBadge(candidate.provider)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(
+                            R.string.email_candidate_received_at,
+                            formatEmailCandidateDate(candidate.occurredAt)
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Quitar de la lista sin abrir diálogo: es la salida rápida del correo.
+                    IconButton(
+                        onClick = onRemove,
+                        enabled = !isReviewing,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.email_candidate_remove),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -528,14 +681,6 @@ private fun CandidateCard(
                     candidate.subject?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(
-                        text = stringResource(
-                            R.string.email_candidate_received_at,
-                            formatEmailCandidateDate(candidate.occurredAt)
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
                 Text(
                     text = formatCandidateAmount(candidate.amount, candidate.currency, candidate.direction),
@@ -615,6 +760,38 @@ private fun CandidateCard(
     }
 }
 
+@Composable
+private fun ProviderBadge(provider: EmailProvider) {
+    val accent = providerAccent(provider)
+    Surface(
+        color = accent.copy(alpha = 0.12f),
+        contentColor = accent,
+        shape = RoundedCornerShape(50)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Email,
+                contentDescription = null,
+                modifier = Modifier.size(15.dp)
+            )
+            Text(
+                text = providerName(provider),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+private fun providerAccent(provider: EmailProvider): Color = when (provider) {
+    EmailProvider.GMAIL -> Color(0xFFC5221F)
+    EmailProvider.MICROSOFT -> Color(0xFF0078D4)
+}
+
 private fun formatMinorAmount(amount: Long, currency: String): String {
     val formatted = NumberFormat.getNumberInstance().apply {
         minimumFractionDigits = 2
@@ -646,6 +823,29 @@ internal fun formatEmailCandidateDate(
         .withZone(zoneId)
         .format(Instant.parse(value))
 }.getOrDefault("—")
+
+internal fun candidateDatePickerInitialMillis(
+    occurredAt: String,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): Long? = runCatching {
+    Instant.parse(occurredAt)
+        .atZone(zoneId)
+        .toLocalDate()
+        .atStartOfDay(ZoneOffset.UTC)
+        .toInstant()
+        .toEpochMilli()
+}.getOrNull()
+
+internal fun formatDatePickerSelection(value: Long): String =
+    LocalDate.ofInstant(Instant.ofEpochMilli(value), ZoneOffset.UTC)
+        .format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+
+private fun formatTransactionDate(
+    value: Long,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): String = DateTimeFormatter.ofPattern("dd/MM/yyyy · HH:mm")
+    .withZone(zoneId)
+    .format(Instant.ofEpochMilli(value))
 
 @Composable
 private fun StatusLabel(text: String, icon: ImageVector, color: Color) {

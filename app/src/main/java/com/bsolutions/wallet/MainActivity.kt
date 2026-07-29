@@ -194,6 +194,7 @@ class MainActivity : FragmentActivity() {
                         AppDrawerContent(
                             userName = profile.userName,
                             walletName = profile.walletName,
+                            email = profile.email,
                             currentRoute = currentRoute,
                             onNavigate = { route ->
                                 scope.launch { drawerState.close() }
