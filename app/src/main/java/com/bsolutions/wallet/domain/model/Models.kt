@@ -28,7 +28,9 @@ data class Category(
     val id: String,
     val name: String,
     val icon: String,
-    val colorHex: String
+    val colorHex: String,
+    /** "EXPENSE", "INCOME" o "BOTH". Un gasto no debe poder etiquetarse "Salario". */
+    val type: String = "EXPENSE"
 )
 
 data class Budget(

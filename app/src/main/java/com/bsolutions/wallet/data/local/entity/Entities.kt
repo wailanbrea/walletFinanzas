@@ -40,6 +40,8 @@ data class CategoryEntity(
     val name: String,
     val icon: String, // Material Icons name
     val colorHex: String, // Hex color code
+    /** "EXPENSE", "INCOME" o "BOTH": filtra qué categorías se ofrecen en cada flujo. */
+    val type: String = "EXPENSE",
     val isDeleted: Boolean = false,
     /** Cambió localmente y debe subirse antes del siguiente pull remoto. */
     val needsSync: Boolean = true,

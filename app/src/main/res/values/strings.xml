@@ -220,6 +220,12 @@
     <string name="planned_overdue">Vencido: %1$s</string>
     <string name="planned_inactive">Inactivo</string>
     <string name="planned_pay_now">Pagar ahora</string>
+    <string name="planned_type">Tipo</string>
+    <string name="planned_type_expense">Gasto</string>
+    <string name="planned_type_income">Ingreso</string>
+    <string name="planned_register_income">Registrar ingreso</string>
+    <string name="planned_register_expense">Registrar pago</string>
+    <string name="planned_amount_hint">Confirma el monto real de esta vez. Si vino distinto de lo previsto, corrígelo aquí: el plan no cambia.</string>
     <string name="planned_delete">Eliminar pago</string>
     <string name="planned_create_title">Nuevo Pago Planificado</string>
     <string name="planned_name_hint">Nombre (ej. Renta)</string>

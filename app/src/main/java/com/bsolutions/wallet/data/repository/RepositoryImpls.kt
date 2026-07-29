@@ -67,8 +67,8 @@ fun TransactionEntity.toDomain() = Transaction(id, accountId, amount, type, cate
 fun Transaction.toEntity(ownerId: String) =
     TransactionEntity(id, accountId, amount, type, categoryId, date, note, currency, ownerId = ownerId)
 
-fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex)
-fun Category.toEntity(ownerId: String) = CategoryEntity(id, name, icon, colorHex, ownerId = ownerId)
+fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, type)
+fun Category.toEntity(ownerId: String) = CategoryEntity(id, name, icon, colorHex, type, ownerId = ownerId)
 
 fun BudgetEntity.toDomain() = Budget(id, categoryId, limitAmount, spentAmount, period)
 fun Budget.toEntity(ownerId: String) = BudgetEntity(id, categoryId, limitAmount, spentAmount, period, ownerId = ownerId)
@@ -104,11 +104,18 @@ class AccountRepositoryImpl @Inject constructor(
         dao.insertWithOp(entity, SyncRepository.accountOp(gson, entity))
     }
 
-    override suspend fun updateAccount(account: Account) =
-        dao.updateAccount(account.toEntity(ownerScope.currentOwnerId()))
+    // Editar y borrar tambien se encolan: antes solo subian las creaciones, asi que
+    // renombrar o eliminar una cuenta se quedaba en este telefono y los demas seguian
+    // viendo la version vieja.
+    override suspend fun updateAccount(account: Account) {
+        val entity = account.toEntity(ownerScope.currentOwnerId())
+        dao.updateWithOp(entity, SyncRepository.accountOp(gson, entity))
+    }
 
     override suspend fun deleteAccount(id: String) =
-        dao.softDeleteAccount(ownerScope.currentOwnerId(), id)
+        dao.softDeleteWithOp(ownerScope.currentOwnerId(), id) { deleted ->
+            SyncRepository.accountOp(gson, deleted)
+        }
 }
 
 class TransactionRepositoryImpl @Inject constructor(

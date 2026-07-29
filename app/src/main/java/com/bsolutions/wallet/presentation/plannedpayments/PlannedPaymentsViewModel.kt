@@ -64,7 +64,8 @@ class PlannedPaymentsViewModel @Inject constructor(
         categoryId: String,
         amount: Long,
         frequency: String,
-        firstDueDate: Long
+        firstDueDate: Long,
+        type: String = "EXPENSE"
     ) {
         if (name.isBlank() || accountId.isBlank() || amount <= 0L) return
         viewModelScope.launch {
@@ -76,7 +77,7 @@ class PlannedPaymentsViewModel @Inject constructor(
                     accountId = accountId,
                     categoryId = finalCategoryId,
                     amount = amount,
-                    type = "EXPENSE",
+                    type = type,
                     frequency = frequency,
                     nextDueDate = firstDueDate,
                     isActive = true
@@ -85,8 +86,15 @@ class PlannedPaymentsViewModel @Inject constructor(
         }
     }
 
-    /** Registra la transacción del pago y avanza la fecha del próximo vencimiento. */
-    fun payNow(payment: PlannedPayment) {
+    /**
+     * Registra la transacción del pago y avanza la fecha del próximo vencimiento.
+     *
+     * [actualAmount] permite corregir el importe de esa ocurrencia sin tocar el plan:
+     * una quincena puede venir con horas extra o con un descuento, y lo que debe quedar
+     * registrado es lo que realmente entró, no lo previsto.
+     */
+    fun payNow(payment: PlannedPayment, actualAmount: Long? = null) {
+        val amount = (actualAmount ?: payment.amount).takeIf { it > 0L } ?: return
         viewModelScope.launch {
             // Antes no se ajustaba el saldo (descuadre). Ahora: saldo + movimiento
             // atómicos, con la divisa de la cuenta del pago.
@@ -96,7 +104,7 @@ class PlannedPaymentsViewModel @Inject constructor(
                 Transaction(
                     id = UUID.randomUUID().toString(),
                     accountId = payment.accountId,
-                    amount = payment.amount,
+                    amount = amount,
                     type = payment.type,
                     categoryId = finalCategoryId,
                     date = System.currentTimeMillis(),

@@ -458,7 +458,8 @@ internal fun AccountEntity.toCreateAccountRequest() = CreateAccountRequest(
     countryCode = countryCode,
     cardLastFour = cardLastFour,
     type = type,
-    creditLimit = creditLimit
+    creditLimit = creditLimit,
+    isActive = !isDeleted
 )
 
 /**

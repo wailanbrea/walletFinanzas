@@ -5,7 +5,14 @@ import java.text.Normalizer
 
 /** Catálogo inicial con ids deterministas para que el sembrado sea idempotente. */
 object DefaultCategories {
-    data class Seed(val id: String, val name: String, val icon: String, val colorHex: String)
+    data class Seed(
+        val id: String,
+        val name: String,
+        val icon: String,
+        val colorHex: String,
+        /** "EXPENSE", "INCOME" o "BOTH". */
+        val type: String = "EXPENSE"
+    )
 
     val seeds: List<Seed> = listOf(
         Seed("cat_alimentacion", "Alimentación", "restaurant", "#E57373"),
@@ -22,11 +29,11 @@ object DefaultCategories {
         Seed("cat_viajes", "Viajes", "flight", "#4FC3F7"),
         Seed("cat_deporte", "Deporte", "fitness_center", "#66BB6A"),
         Seed("cat_regalos", "Regalos", "card_giftcard", "#F48FB1"),
-        Seed("cat_salario", "Salario", "payments", "#81C784"),
-        Seed("cat_otros", "Otros", "card_giftcard", "#90A4AE"),
+        Seed("cat_salario", "Salario", "payments", "#81C784", "INCOME"),
+        Seed("cat_otros", "Otros", "card_giftcard", "#90A4AE", "BOTH"),
     )
 
-    fun asCategories(): List<Category> = seeds.map { Category(it.id, it.name, it.icon, it.colorHex) }
+    fun asCategories(): List<Category> = seeds.map { Category(it.id, it.name, it.icon, it.colorHex, it.type) }
 }
 
 /**

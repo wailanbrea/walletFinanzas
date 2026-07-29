@@ -121,7 +121,10 @@ data class CreateAccountRequest(
     @SerializedName("country_code") val countryCode: String,
     @SerializedName("card_last_four") val cardLastFour: String?,
     val type: String = "BANK",
-    @SerializedName("credit_limit") val creditLimit: Long? = null
+    @SerializedName("credit_limit") val creditLimit: Long? = null,
+    // Una cuenta borrada se sube como inactiva: el backend hace updateOrCreate por id,
+    // asi que esto es la lapida que replica el borrado en los demas dispositivos.
+    @SerializedName("is_active") val isActive: Boolean = true
 )
 
 data class CreateTransactionRequest(
