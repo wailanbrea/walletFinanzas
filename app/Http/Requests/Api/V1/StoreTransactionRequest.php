@@ -50,7 +50,7 @@ class StoreTransactionRequest extends FormRequest
             'amount' => ['required', 'integer', 'not_in:0', 'between:-9000000000000000,9000000000000000'],
             'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'description' => ['nullable', 'string', 'max:500'],
-            'category_id' => ['nullable', 'uuid'],
+            'category_id' => ['nullable', 'string', 'max:64'],
             'timestamp' => ['required', 'date'],
             'status' => ['required', Rule::in(['pending', 'completed', 'cancelled'])],
         ];

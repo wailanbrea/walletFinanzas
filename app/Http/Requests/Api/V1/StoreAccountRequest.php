@@ -22,6 +22,8 @@ class StoreAccountRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // Id generado por el cliente (offline-first): la creación es idempotente.
+            'id' => ['sometimes', 'uuid'],
             'name' => ['required', 'string', 'max:120'],
             'balance' => ['required', 'integer', 'between:-9000000000000000,9000000000000000'],
             'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],

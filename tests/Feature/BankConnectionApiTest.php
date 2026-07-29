@@ -35,7 +35,7 @@ class BankConnectionApiTest extends TestCase
             'status' => 'connected',
         ]);
 
-        Sanctum::actingAs($owner);
+        Sanctum::actingAs($owner, ['wallet']);
         $this->getJson('/api/v1/bank-connections')
             ->assertOk()
             ->assertJsonCount(1, 'data')

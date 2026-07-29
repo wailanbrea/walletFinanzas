@@ -17,19 +17,35 @@ use Illuminate\Validation\ValidationException;
 
 class TransactionController extends Controller
 {
+    /**
+     * Lista movimientos con paginación por cursor y filtro incremental (?updated_since=).
+     * account_id es opcional: si se envía, filtra por esa cuenta (verificando pertenencia);
+     * si no, devuelve todos los del usuario (pull de sincronización offline-first).
+     */
     public function index(Request $request): AnonymousResourceCollection
     {
         $validated = $request->validate([
-            'account_id' => ['required', 'uuid'],
+            'account_id' => ['sometimes', 'uuid'],
+            'updated_since' => ['sometimes', 'date'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
         ]);
 
-        $account = $request->user()
-            ->accounts()
-            ->whereKey($validated['account_id'])
-            ->firstOrFail();
+        $query = Transaction::query()->where('user_id', $request->user()->id);
+
+        if (! empty($validated['account_id'])) {
+            // Verifica pertenencia (404 si la cuenta no es del usuario).
+            $request->user()->accounts()->whereKey($validated['account_id'])->firstOrFail();
+            $query->where('account_id', $validated['account_id']);
+        }
+
+        if (! empty($validated['updated_since'])) {
+            $query->where('updated_at', '>', CarbonImmutable::parse($validated['updated_since']));
+        }
+
+        $query->orderBy('updated_at')->orderBy('id');
 
         return TransactionResource::collection(
-            $account->transactions()->latest('occurred_at')->get()
+            $query->cursorPaginate($validated['per_page'] ?? 100)->withQueryString()
         );
     }
 
@@ -60,6 +76,19 @@ class TransactionController extends Controller
                     throw ValidationException::withMessages([
                         'currency' => ['La moneda del movimiento debe coincidir con la moneda de la cuenta.'],
                     ]);
+                }
+
+                if (! empty($validated['category_id'])) {
+                    $categoryExists = $request->user()->categories()
+                        ->where('client_id', $validated['category_id'])
+                        ->where('is_deleted', false)
+                        ->exists();
+
+                    if (! $categoryExists) {
+                        throw ValidationException::withMessages([
+                            'category_id' => ['La categoría no existe, fue eliminada o pertenece a otro usuario.'],
+                        ]);
+                    }
                 }
 
                 $transaction = $account->transactions()->create([

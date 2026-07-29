@@ -1,0 +1,5 @@
+@extends('layouts.app')
+@section('title','Usuarios')
+@section('content')
+<h1>Usuarios</h1><div class="card"><h2>Crear usuario</h2><form method="POST" action="/admin/users">@csrf<div class="grid"><div><label>Nombre</label><input name="name" required value="{{ old('name') }}"></div><div><label>Correo</label><input type="email" name="email" required value="{{ old('email') }}"></div><div><label>Contraseña (12+ caracteres)</label><input type="password" name="password" required></div><div><label>Confirmar contraseña</label><input type="password" name="password_confirmation" required></div></div>@if($errors->any())<ul class="error">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>@endif<button type="submit">Crear usuario</button></form></div><div class="card table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Alta</th></tr></thead><tbody>@foreach($users as $user)<tr><td>{{ $user->name }}</td><td>{{ $user->email }}</td><td>{{ $user->is_admin ? 'Administrador' : 'Usuario' }}</td><td>{{ $user->created_at }}</td></tr>@endforeach</tbody></table></div>{{ $users->links() }}
+@endsection

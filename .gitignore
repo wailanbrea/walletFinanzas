@@ -22,3 +22,7 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Artefactos de depuracion y salidas de herramientas (no son codigo del backend)
+/temp*
+/graphify-out/

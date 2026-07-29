@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Account;
+use App\Models\Category;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -26,7 +27,7 @@ class TransactionApiTest extends TestCase
 
         $this->postJson('/api/v1/transactions', [])->assertUnauthorized();
 
-        Sanctum::actingAs($owner);
+        Sanctum::actingAs($owner, ['wallet']);
         $transaction = $this->postJson('/api/v1/transactions', [
             'account_id' => $account->id,
             'amount' => -2500,
@@ -64,7 +65,7 @@ class TransactionApiTest extends TestCase
             'country_code' => 'DO',
         ]);
 
-        Sanctum::actingAs($outsider);
+        Sanctum::actingAs($outsider, ['wallet']);
 
         $payload = [
             'account_id' => $account->id,
@@ -90,7 +91,7 @@ class TransactionApiTest extends TestCase
             'currency' => 'DOP',
             'country_code' => 'DO',
         ]);
-        Sanctum::actingAs($owner);
+        Sanctum::actingAs($owner, ['wallet']);
 
         $payload = [
             'account_id' => $account->id,
@@ -138,7 +139,7 @@ class TransactionApiTest extends TestCase
             'currency' => 'DOP',
             'country_code' => 'DO',
         ]);
-        Sanctum::actingAs($owner);
+        Sanctum::actingAs($owner, ['wallet']);
 
         $payload = [
             'account_id' => $account->id,
@@ -176,7 +177,7 @@ class TransactionApiTest extends TestCase
             'currency' => 'DOP',
             'country_code' => 'DO',
         ]);
-        Sanctum::actingAs($owner);
+        Sanctum::actingAs($owner, ['wallet']);
 
         $payload = [
             'account_id' => $account->id,
@@ -214,7 +215,7 @@ class TransactionApiTest extends TestCase
             'currency' => 'DOP',
             'country_code' => 'DO',
         ]);
-        Sanctum::actingAs($owner);
+        Sanctum::actingAs($owner, ['wallet']);
 
         foreach ([0, 10.50] as $invalidAmount) {
             $this->postJson('/api/v1/transactions', [
@@ -235,5 +236,65 @@ class TransactionApiTest extends TestCase
             'status' => 'completed',
             'idempotency_key' => (string) Str::uuid(),
         ])->assertUnprocessable()->assertJsonValidationErrors(['currency']);
+    }
+
+    public function test_transaction_accepts_only_an_active_category_owned_by_user(): void
+    {
+        $owner = User::factory()->create();
+        $outsider = User::factory()->create();
+        $account = Account::create([
+            'user_id' => $owner->id,
+            'name' => 'Cuenta',
+            'balance' => 1000,
+            'currency' => 'DOP',
+            'country_code' => 'DO',
+        ]);
+        Category::create([
+            'user_id' => $owner->id,
+            'client_id' => 'cat_activa',
+            'name' => 'Activa',
+            'icon' => 'category',
+            'color_hex' => '#90A4AE',
+            'is_deleted' => false,
+        ]);
+        Category::create([
+            'user_id' => $owner->id,
+            'client_id' => 'cat_eliminada',
+            'name' => 'Eliminada',
+            'icon' => 'category',
+            'color_hex' => '#90A4AE',
+            'is_deleted' => true,
+        ]);
+        Category::create([
+            'user_id' => $outsider->id,
+            'client_id' => 'cat_ajena',
+            'name' => 'Ajena',
+            'icon' => 'category',
+            'color_hex' => '#90A4AE',
+            'is_deleted' => false,
+        ]);
+        Sanctum::actingAs($owner, ['wallet']);
+
+        $basePayload = [
+            'account_id' => $account->id,
+            'amount' => -100,
+            'currency' => 'DOP',
+            'timestamp' => '2026-07-20T14:30:00Z',
+            'status' => 'completed',
+        ];
+
+        foreach (['cat_eliminada', 'cat_ajena', 'cat_inexistente'] as $invalidId) {
+            $this->postJson('/api/v1/transactions', [
+                ...$basePayload,
+                'category_id' => $invalidId,
+                'idempotency_key' => (string) Str::uuid(),
+            ])->assertUnprocessable()->assertJsonValidationErrors(['category_id']);
+        }
+
+        $this->postJson('/api/v1/transactions', [
+            ...$basePayload,
+            'category_id' => 'cat_activa',
+            'idempotency_key' => (string) Str::uuid(),
+        ])->assertCreated()->assertJsonPath('data.category_id', 'cat_activa');
     }
 }

@@ -16,10 +16,20 @@ class AccountApiTest extends TestCase
         $this->getJson('/api/v1/accounts')->assertUnauthorized();
     }
 
+    public function test_accounts_reject_sanctum_tokens_without_wallet_ability(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('limited-client', ['profile:read'])->plainTextToken;
+
+        $this->withToken($token)
+            ->getJson('/api/v1/accounts')
+            ->assertForbidden();
+    }
+
     public function test_authenticated_user_can_create_and_list_only_their_accounts(): void
     {
         $owner = User::factory()->create();
-        Sanctum::actingAs($owner);
+        Sanctum::actingAs($owner, ['wallet']);
 
         $created = $this->postJson('/api/v1/accounts', [
             'name' => 'Cuenta principal',
@@ -42,7 +52,7 @@ class AccountApiTest extends TestCase
 
         $otherUser = User::factory()->create();
         $this->withHeader('Authorization', '');
-        Sanctum::actingAs($otherUser);
+        Sanctum::actingAs($otherUser, ['wallet']);
         $this->postJson('/api/v1/accounts', [
             'name' => 'Cuenta ajena',
             'balance' => 999,
@@ -50,7 +60,7 @@ class AccountApiTest extends TestCase
             'country_code' => 'US',
         ])->assertCreated();
 
-        Sanctum::actingAs($owner);
+        Sanctum::actingAs($owner, ['wallet']);
         $this->getJson('/api/v1/accounts')
             ->assertOk()
             ->assertJsonCount(1, 'data')
@@ -59,7 +69,7 @@ class AccountApiTest extends TestCase
 
     public function test_account_rejects_decimal_amounts_and_invalid_card_digits(): void
     {
-        Sanctum::actingAs(User::factory()->create());
+        Sanctum::actingAs(User::factory()->create(), ['wallet']);
 
         $this->postJson('/api/v1/accounts', [
             'name' => 'Inválida',

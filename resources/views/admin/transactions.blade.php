@@ -1,0 +1,3 @@
+@extends('layouts.app')
+@section('title','Transacciones')
+@section('content')<h1>Transacciones</h1><div class="card table-wrap"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Cuenta</th><th>Descripción</th><th>Importe</th><th>Estado</th></tr></thead><tbody>@foreach($transactions as $transaction)<tr><td>{{ $transaction->occurred_at }}</td><td>{{ $transaction->user->email }}</td><td>{{ $transaction->account->name }}</td><td>{{ $transaction->description }}</td><td>{{ number_format($transaction->amount / 100, 2) }} {{ $transaction->currency }}</td><td>{{ $transaction->status }}</td></tr>@endforeach</tbody></table></div>{{ $transactions->links() }}@endsection

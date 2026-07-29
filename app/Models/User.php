@@ -41,9 +41,54 @@ class User extends Authenticatable
         return $this->hasMany(BankConnection::class);
     }
 
+    public function emailConnections(): HasMany
+    {
+        return $this->hasMany(EmailConnection::class);
+    }
+
+    public function emailCandidates(): HasMany
+    {
+        return $this->hasMany(FinancialTransactionCandidate::class);
+    }
+
+    public function emailClassificationRules(): HasMany
+    {
+        return $this->hasMany(EmailClassificationRule::class);
+    }
+
+    public function oauthStates(): HasMany
+    {
+        return $this->hasMany(OauthState::class);
+    }
+
     public function accounts(): HasMany
     {
         return $this->hasMany(Account::class);
+    }
+
+    public function categories(): HasMany
+    {
+        return $this->hasMany(Category::class);
+    }
+
+    public function budgets(): HasMany
+    {
+        return $this->hasMany(Budget::class);
+    }
+
+    public function goals(): HasMany
+    {
+        return $this->hasMany(Goal::class);
+    }
+
+    public function debts(): HasMany
+    {
+        return $this->hasMany(Debt::class);
+    }
+
+    public function plannedPayments(): HasMany
+    {
+        return $this->hasMany(PlannedPayment::class);
     }
 
     /**
@@ -56,6 +101,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_admin' => 'boolean',
         ];
     }
 }
