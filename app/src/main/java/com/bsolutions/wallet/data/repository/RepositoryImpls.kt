@@ -159,15 +159,21 @@ class TransactionRepositoryImpl @Inject constructor(
         dao.updateTransaction(transaction.toEntity(ownerScope.currentOwnerId()))
     }
 
-    override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) =
-        dao.updateWithBalance(transaction.toEntity(ownerScope.currentOwnerId()), oldAmount)
+    // Corregir y borrar tambien se encolan: antes se quedaban en este telefono.
+    override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) {
+        val entity = transaction.toEntity(ownerScope.currentOwnerId())
+        dao.updateWithBalanceAndOp(entity, oldAmount, SyncRepository.transactionOp(gson, entity))
+    }
 
     override suspend fun deleteTransaction(id: String) {
         dao.softDeleteTransaction(ownerScope.currentOwnerId(), id)
     }
 
-    override suspend fun deleteTransactionWithBalance(transaction: Transaction) =
-        dao.softDeleteWithBalance(transaction.toEntity(ownerScope.currentOwnerId()))
+    override suspend fun deleteTransactionWithBalance(transaction: Transaction) {
+        // La lapida lleva isDeleted = 1 para que el push mande el DELETE al servidor.
+        val entity = transaction.toEntity(ownerScope.currentOwnerId()).copy(isDeleted = true)
+        dao.softDeleteWithBalanceAndOp(entity, SyncRepository.transactionOp(gson, entity))
+    }
 }
 
 class CategoryRepositoryImpl @Inject constructor(

@@ -122,4 +122,37 @@ class WalletSyncContractTest {
         assertEquals(0, page.data.size)
         assertNull(page.meta?.nextCursor)
     }
+
+    @Test
+    fun `editing uses PATCH with the client key and deleting uses DELETE`() = kotlinx.coroutines.runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""
+            {"data":{"id":"srv-1","account_id":"acc-1","amount":-3000,"currency":"DOP","description":null,"category_id":null,"timestamp":"2026-07-29T00:00:00Z","status":"completed","idempotency_key":"tx-local-1"}}
+        """.trimIndent()))
+
+        api.updateTransaction(
+            id = "tx-local-1",
+            request = UpdateTransactionRequest(
+                amount = -3000,
+                description = "Reloj",
+                categoryId = "cat_compras",
+                timestamp = "2026-07-29T00:00:00Z"
+            )
+        )
+        val patch = server.takeRequest()
+
+        assertEquals("PATCH", patch.method)
+        // Se direcciona por la clave que genero la app: el id de la fila lo pone el servidor.
+        assertEquals("/api/v1/transactions/tx-local-1", patch.path)
+        val body = JsonParser.parseString(patch.body.readUtf8()).asJsonObject
+        assertEquals(-3000L, body.get("amount").asLong)
+        assertEquals("cat_compras", body.get("category_id").asString)
+
+        server.enqueue(MockResponse().setResponseCode(204))
+        val deleted = api.deleteTransaction("tx-local-1")
+        val delete = server.takeRequest()
+
+        assertEquals(204, deleted.code())
+        assertEquals("DELETE", delete.method)
+        assertEquals("/api/v1/transactions/tx-local-1", delete.path)
+    }
 }

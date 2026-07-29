@@ -113,6 +113,22 @@ interface TransactionDao {
      * Asume que la cuenta y el tipo no cambian (solo monto/categoría/nota).
      */
     @Transaction
+    suspend fun updateWithBalanceAndOp(
+        updated: TransactionEntity,
+        oldAmount: Long,
+        op: PendingOperationEntity?
+    ) {
+        updateWithBalance(updated, oldAmount)
+        op?.let { insertPendingOp(it) }
+    }
+
+    @Transaction
+    suspend fun softDeleteWithBalanceAndOp(transaction: TransactionEntity, op: PendingOperationEntity?) {
+        softDeleteWithBalance(transaction)
+        op?.let { insertPendingOp(it) }
+    }
+
+    @Transaction
     suspend fun updateWithBalance(updated: TransactionEntity, oldAmount: Long) {
         require(updated.amount > 0L) { "El monto debe ser mayor que cero" }
         val original = checkNotNull(getTransactionById(updated.ownerId, updated.id))

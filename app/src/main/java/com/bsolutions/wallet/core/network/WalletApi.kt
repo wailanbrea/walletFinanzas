@@ -127,6 +127,13 @@ data class CreateAccountRequest(
     @SerializedName("is_active") val isActive: Boolean = true
 )
 
+data class UpdateTransactionRequest(
+    val amount: Long,
+    val description: String?,
+    @SerializedName("category_id") val categoryId: String?,
+    val timestamp: String
+)
+
 data class CreateTransactionRequest(
     @SerializedName("idempotency_key") val idempotencyKey: String,
     @SerializedName("account_id") val accountId: String,
@@ -249,6 +256,17 @@ interface WalletApi {
 
     @POST("transactions")
     suspend fun createTransaction(@Body request: CreateTransactionRequest): ApiEnvelope<TransactionDto>
+
+    // Corregir y borrar necesitan su propia puerta: createTransaction es inmutable y
+    // responde 409 si la misma clave de idempotencia vuelve con otros valores.
+    @PATCH("transactions/{id}")
+    suspend fun updateTransaction(
+        @Path("id") id: String,
+        @Body request: UpdateTransactionRequest
+    ): ApiEnvelope<TransactionDto>
+
+    @DELETE("transactions/{id}")
+    suspend fun deleteTransaction(@Path("id") id: String): retrofit2.Response<Unit>
 
     @POST("categories")
     suspend fun createCategory(@Body request: CreateCategoryRequest): ApiEnvelope<CategoryDto>

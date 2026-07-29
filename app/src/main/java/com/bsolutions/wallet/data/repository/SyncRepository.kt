@@ -5,6 +5,7 @@ package com.bsolutions.wallet.data.repository
 import com.bsolutions.wallet.core.network.CreateAccountRequest
 import com.bsolutions.wallet.core.network.CreateCategoryRequest
 import com.bsolutions.wallet.core.network.CreateTransactionRequest
+import com.bsolutions.wallet.core.network.UpdateTransactionRequest
 import com.bsolutions.wallet.core.network.AccountDto
 import com.bsolutions.wallet.core.network.BudgetSyncDto
 import com.bsolutions.wallet.core.network.GoalSyncDto
@@ -220,18 +221,42 @@ class SyncRepository @Inject constructor(
         val validCategoryId = t.categoryId.takeIf { id ->
             id.isNotBlank() && categoryDao.getCategoryById(t.ownerId, id) != null
         }
-        api.createTransaction(
-            CreateTransactionRequest(
-                idempotencyKey = t.id,
-                accountId = t.accountId,
-                amount = signedAmount,
-                currency = t.currency,
-                description = t.note.ifBlank { null },
-                categoryId = validCategoryId,
-                timestamp = isoUtc(t.date),
-                status = "completed"
-            )
+        // Un movimiento borrado se replica como borrado. Un 404 significa que el
+        // servidor ya no lo tiene: la cola no debe atascarse por eso.
+        if (t.isDeleted) {
+            val response = api.deleteTransaction(t.id)
+            if (!response.isSuccessful && response.code() != 404) {
+                throw HttpException(response)
+            }
+            return
+        }
+
+        val request = CreateTransactionRequest(
+            idempotencyKey = t.id,
+            accountId = t.accountId,
+            amount = signedAmount,
+            currency = t.currency,
+            description = t.note.ifBlank { null },
+            categoryId = validCategoryId,
+            timestamp = isoUtc(t.date),
+            status = "completed"
         )
+        try {
+            api.createTransaction(request)
+        } catch (exception: HttpException) {
+            // 409: la clave ya existe con otros valores, o sea que es una edicion.
+            // createTransaction es inmutable a proposito, asi que se corrige por PATCH.
+            if (exception.code() != 409) throw exception
+            api.updateTransaction(
+                id = t.id,
+                request = UpdateTransactionRequest(
+                    amount = signedAmount,
+                    description = request.description,
+                    categoryId = validCategoryId,
+                    timestamp = request.timestamp
+                )
+            )
+        }
     }
 
     // ---------- PULL (delta) ----------
