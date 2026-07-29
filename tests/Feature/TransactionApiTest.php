@@ -236,4 +236,90 @@ class TransactionApiTest extends TestCase
             'idempotency_key' => (string) Str::uuid(),
         ])->assertUnprocessable()->assertJsonValidationErrors(['currency']);
     }
+
+    public function test_editing_a_transaction_moves_the_balance_by_the_difference(): void
+    {
+        $owner = User::factory()->create();
+        Sanctum::actingAs($owner);
+        $account = Account::create([
+            'user_id' => $owner->id,
+            'name' => 'Efectivo',
+            'balance' => 10000,
+            'currency' => 'DOP',
+            'country_code' => 'DO',
+        ]);
+
+        $created = $this->postJson('/api/v1/transactions', [
+            'account_id' => $account->id,
+            'idempotency_key' => (string) Str::uuid(),
+            'amount' => -2500,
+            'currency' => 'DOP',
+            'timestamp' => now()->toISOString(),
+            'status' => 'completed',
+        ])->assertCreated()->json('data');
+
+        $this->assertSame(7500, $account->fresh()->balance);
+
+        // Al corregir el importe el saldo se mueve solo por la diferencia.
+        $this->patchJson("/api/v1/transactions/{$created['id']}", ['amount' => -4000])
+            ->assertOk()
+            ->assertJsonPath('data.amount', -4000);
+
+        $this->assertSame(6000, $account->fresh()->balance);
+    }
+
+    public function test_deleting_a_transaction_returns_its_amount_to_the_balance(): void
+    {
+        $owner = User::factory()->create();
+        Sanctum::actingAs($owner);
+        $account = Account::create([
+            'user_id' => $owner->id,
+            'name' => 'Efectivo',
+            'balance' => 10000,
+            'currency' => 'DOP',
+            'country_code' => 'DO',
+        ]);
+
+        $created = $this->postJson('/api/v1/transactions', [
+            'account_id' => $account->id,
+            'idempotency_key' => (string) Str::uuid(),
+            'amount' => -2500,
+            'currency' => 'DOP',
+            'timestamp' => now()->toISOString(),
+            'status' => 'completed',
+        ])->assertCreated()->json('data');
+
+        $this->deleteJson("/api/v1/transactions/{$created['id']}")->assertNoContent();
+        $this->assertSame(10000, $account->fresh()->balance);
+
+        // Repetir el borrado no vuelve a mover el saldo: la cola de la app reintenta.
+        $this->deleteJson("/api/v1/transactions/{$created['id']}")->assertNotFound();
+        $this->assertSame(10000, $account->fresh()->balance);
+    }
+
+    public function test_a_user_cannot_edit_or_delete_another_users_transaction(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::create([
+            'user_id' => $owner->id,
+            'name' => 'Efectivo',
+            'balance' => 10000,
+            'currency' => 'DOP',
+            'country_code' => 'DO',
+        ]);
+        Sanctum::actingAs($owner);
+        $created = $this->postJson('/api/v1/transactions', [
+            'account_id' => $account->id,
+            'idempotency_key' => (string) Str::uuid(),
+            'amount' => -2500,
+            'currency' => 'DOP',
+            'timestamp' => now()->toISOString(),
+            'status' => 'completed',
+        ])->assertCreated()->json('data');
+
+        Sanctum::actingAs(User::factory()->create());
+        $this->patchJson("/api/v1/transactions/{$created['id']}", ['amount' => -1])->assertNotFound();
+        $this->deleteJson("/api/v1/transactions/{$created['id']}")->assertNotFound();
+        $this->assertSame(7500, $account->fresh()->balance);
+    }
 }

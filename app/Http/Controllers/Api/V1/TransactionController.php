@@ -13,6 +13,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class TransactionController extends Controller
@@ -114,6 +115,105 @@ class TransactionController extends Controller
         return response()->json([
             'data' => (new TransactionResource($transaction))->resolve($request),
         ], $created ? 201 : 200);
+    }
+
+    /**
+     * Corrige un movimiento ya registrado. store() es deliberadamente inmutable -su
+     * clave de idempotencia protege al reintento de corromper el importe-, asi que
+     * editar necesita su propia puerta.
+     *
+     * El saldo de la cuenta se mueve por la diferencia, nunca se recalcula: sumar el
+     * delta bajo bloqueo es lo unico que no se descuadra si entran dos ediciones a la vez.
+     */
+    public function update(Request $request, Transaction $transaction): JsonResponse
+    {
+        abort_unless($transaction->user_id === $request->user()->id, 404);
+
+        $validated = $request->validate([
+            'amount' => ['sometimes', 'integer', 'not_in:0', 'between:-9000000000000000,9000000000000000'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'category_id' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'timestamp' => ['sometimes', 'date'],
+            'status' => ['sometimes', Rule::in(['pending', 'completed', 'cancelled'])],
+        ]);
+
+        $this->assertCategoryBelongsToUser($request, $validated['category_id'] ?? null);
+
+        $updated = DB::transaction(function () use ($request, $transaction, $validated): Transaction {
+            $account = Account::query()
+                ->where('user_id', $request->user()->id)
+                ->whereKey($transaction->account_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $fresh = $transaction->newQuery()->whereKey($transaction->getKey())->lockForUpdate()->firstOrFail();
+            $delta = array_key_exists('amount', $validated) ? $validated['amount'] - $fresh->amount : 0;
+
+            $fresh->fill([
+                'amount' => $validated['amount'] ?? $fresh->amount,
+                'description' => array_key_exists('description', $validated) ? $validated['description'] : $fresh->description,
+                'category_id' => array_key_exists('category_id', $validated) ? $validated['category_id'] : $fresh->category_id,
+                'occurred_at' => $validated['timestamp'] ?? $fresh->occurred_at,
+                'status' => $validated['status'] ?? $fresh->status,
+            ])->save();
+
+            if ($delta !== 0) {
+                $account->increment('balance', $delta);
+            }
+
+            return $fresh;
+        });
+
+        return response()->json([
+            'data' => (new TransactionResource($updated))->resolve($request),
+        ]);
+    }
+
+    /**
+     * Elimina el movimiento y devuelve su importe al saldo. Un borrado repetido
+     * responde 204 igual: la app reintenta su cola y no debe atascarse porque el
+     * servidor ya lo hubiera aplicado.
+     */
+    public function destroy(Request $request, Transaction $transaction): JsonResponse
+    {
+        abort_unless($transaction->user_id === $request->user()->id, 404);
+
+        DB::transaction(function () use ($request, $transaction): void {
+            $account = Account::query()
+                ->where('user_id', $request->user()->id)
+                ->whereKey($transaction->account_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $fresh = $transaction->newQuery()->whereKey($transaction->getKey())->lockForUpdate()->first();
+            if (! $fresh) {
+                return;
+            }
+
+            $account->decrement('balance', $fresh->amount);
+            $fresh->delete();
+        });
+
+        return response()->json(status: 204);
+    }
+
+    private function assertCategoryBelongsToUser(Request $request, ?string $categoryId): void
+    {
+        if ($categoryId === null) {
+            return;
+        }
+
+        $exists = (new WalletSyncResource)->setTable('categories')->newQuery()
+            ->where('user_id', $request->user()->id)
+            ->whereKey($categoryId)
+            ->where('is_deleted', false)
+            ->exists();
+
+        if (! $exists) {
+            throw ValidationException::withMessages([
+                'category_id' => ['La categoría no pertenece al usuario o fue eliminada.'],
+            ]);
+        }
     }
 
     private function ensureSameOperation(Transaction $transaction, array $validated): void
