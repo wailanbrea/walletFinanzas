@@ -308,18 +308,40 @@ fun AccountsListView(
             )
         }
 
-        // Los saldos por cuenta se ven siempre: el modo privacidad solo cubre el Balance Total.
-        items(accounts) { account ->
-            AccountRow(
-                account = account,
-                onClick = { onAccountClick(account) }
-            )
+        // Cuentas y tarjetas no son lo mismo: una guarda dinero propio y la otra es
+        // credito del banco. Van en bloques separados para no leerlas como una sola lista.
+        val (cards, deposits) = accounts.partition { it.type == "CREDIT_CARD" || it.type == "DEBIT_CARD" }
+
+        if (deposits.isNotEmpty()) {
+            item { AccountsSectionHeader(stringResource(R.string.accounts_section_accounts)) }
+            // Los saldos por cuenta se ven siempre: el modo privacidad solo cubre el Balance Total.
+            items(deposits, key = { it.id }) { account ->
+                AccountRow(account = account, onClick = { onAccountClick(account) })
+            }
+        }
+
+        if (cards.isNotEmpty()) {
+            item { AccountsSectionHeader(stringResource(R.string.accounts_section_cards)) }
+            items(cards, key = { it.id }) { account ->
+                AccountRow(account = account, onClick = { onAccountClick(account) })
+            }
         }
 
         item {
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+@Composable
+private fun AccountsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 8.dp)
+    )
 }
 
 @Composable

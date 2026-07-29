@@ -493,9 +493,12 @@ private fun normalizeForMatch(value: String?): String =
 internal fun AccountDto.toAccountEntity(ownerId: String) = AccountEntity(
     id = id,
     name = name,
-    // Un backend sin la migracion de type no manda la clave: toda cuenta remota
-    // era bancaria antes de que existiera el campo.
-    type = type ?: "BANK",
+    // Un backend sin la migracion de type no manda la clave. Traer un limite de
+    // credito solo tiene sentido en una tarjeta, asi que eso basta para reconocerla;
+    // sin esa pista, toda cuenta remota era bancaria antes de que existiera el campo.
+    // Importa acertar: una tarjeta marcada como banco suma su saldo al Balance Total
+    // como si fuera dinero propio, cuando es credito del banco.
+    type = type ?: if (creditLimit != null) "CREDIT_CARD" else "BANK",
     balance = balance,
     currency = currency,
     countryCode = countryCode,

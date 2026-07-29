@@ -275,6 +275,8 @@
 
     <!-- Cuentas -->
     <string name="accounts_title">Mis Cuentas</string>
+    <string name="accounts_section_accounts">Cuentas</string>
+    <string name="accounts_section_cards">Tarjetas</string>
     <string name="accounts_detail_title">Detalle de Cuenta</string>
     <string name="accounts_new">Nueva Cuenta</string>
     <string name="accounts_add">Agregar cuenta</string>

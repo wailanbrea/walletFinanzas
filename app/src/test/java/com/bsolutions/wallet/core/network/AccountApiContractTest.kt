@@ -60,6 +60,20 @@ class AccountApiContractTest {
     }
 
     @Test
+    fun `a remote credit limit identifies a card even without the type field`() = runBlocking {
+        // Traer limite de credito solo tiene sentido en una tarjeta. Si se tomara por
+        // cuenta bancaria, su saldo sumaria al Balance Total como dinero propio.
+        server.enqueue(MockResponse().setResponseCode(200).setBody(
+            """{"data":[{"id":"acc-2","name":"Visa Gold","balance":0,"currency":"DOP","institution_name":"Banco Popular Dominicano","country_code":"DO","card_last_four":null,"credit_limit":6600000,"is_active":true}]}"""
+        ))
+
+        val entity = api.pullAccounts(null, null).data.single().toAccountEntity("owner-1")
+
+        assertEquals("CREDIT_CARD", entity.type)
+        assertEquals(6_600_000L, entity.creditLimit)
+    }
+
+    @Test
     fun `account push serializes type and nullable credit limit`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(201).setBody(
             """{"data":{"id":"credit-1","name":"Tarjeta","type":"CREDIT_CARD","balance":0,"currency":"DOP","institution_name":null,"country_code":"DO","card_last_four":null,"credit_limit":null,"is_active":true}}"""
