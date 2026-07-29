@@ -138,8 +138,7 @@ fun EmailConnectionsScreen(
         val bookedTransaction = state.bookedCandidates[candidate.id]
         var accountId by remember(candidate.id, state.accounts, bookedTransaction) {
             mutableStateOf(
-                bookedTransaction?.accountId
-                    ?: state.accounts.firstOrNull { candidateAmountForAccount(candidate, it) != null }?.id.orEmpty()
+                bookedTransaction?.accountId ?: preselectedAccountId(candidate, state.accounts)
             )
         }
         var categoryId by remember(candidate.id, state.categories, bookedTransaction) {
@@ -680,6 +679,13 @@ private fun CandidateCard(
                     )
                     candidate.subject?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    candidate.cardLastFour?.takeIf { it.isNotBlank() }?.let { last4 ->
+                        Text(
+                            text = stringResource(R.string.email_candidate_card, last4),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
                 Text(

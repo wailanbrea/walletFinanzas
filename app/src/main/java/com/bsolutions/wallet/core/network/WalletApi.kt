@@ -80,6 +80,7 @@ data class EmailCandidateDto(
     val id: String,
     val provider: String,
     val merchant: String?,
+    @SerializedName("card_last_four") val cardLastFour: String? = null,
     val amount: Long,
     val currency: String,
     val direction: String,

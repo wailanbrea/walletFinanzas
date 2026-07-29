@@ -381,6 +381,26 @@ class EmailConnectionsViewModel @Inject constructor(
     }
 }
 
+/**
+ * Cuenta que debe venir preseleccionada al aceptar un correo. Se prefiere la tarjeta
+ * cuyos ultimos cuatro digitos coinciden con los del correo; si el correo no los trae
+ * o ninguna cuenta coincide, se cae a la primera compatible en divisa.
+ *
+ * Una coincidencia de digitos con divisa incompatible se descarta: registrar el
+ * movimiento en esa cuenta daria un importe erroneo.
+ */
+internal fun preselectedAccountId(candidate: EmailCandidate, accounts: List<Account>): String {
+    val compatible = accounts.filter { candidateAmountForAccount(candidate, it) != null }
+    val digits = candidate.cardLastFour?.takeIf { it.isNotBlank() }
+    val byCard = digits?.let { last4 -> compatible.filter { it.cardLastFour == last4 } }
+
+    // Con dos tarjetas del mismo final no se puede decidir: mejor no adivinar.
+    return when {
+        byCard != null && byCard.size == 1 -> byCard.first().id
+        else -> compatible.firstOrNull()?.id.orEmpty()
+    }
+}
+
 internal fun candidateAmountForAccount(candidate: EmailCandidate, account: Account): Long? {
     val amount = when {
         candidate.currency == account.currency -> candidate.amount

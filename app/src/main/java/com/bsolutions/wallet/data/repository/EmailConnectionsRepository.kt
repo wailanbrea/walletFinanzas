@@ -42,6 +42,8 @@ data class EmailCandidate(
     val id: String,
     val provider: EmailProvider,
     val merchant: String?,
+    /** Ultimos cuatro digitos de la tarjeta que origino el movimiento, si el correo los trae. */
+    val cardLastFour: String? = null,
     val amount: Long,
     val currency: String,
     val direction: String,
@@ -151,6 +153,7 @@ private fun EmailCandidateDto.toDomain() = EmailCandidate(
     id = id,
     provider = EmailProvider.fromApi(provider),
     merchant = merchant,
+    cardLastFour = cardLastFour,
     amount = amount,
     currency = currency,
     direction = direction,

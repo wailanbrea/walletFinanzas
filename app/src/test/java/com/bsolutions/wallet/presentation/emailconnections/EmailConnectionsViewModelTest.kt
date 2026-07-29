@@ -253,6 +253,54 @@ class EmailConnectionsViewModelTest {
     }
 
     @Test
+    fun `preselects the card whose last four digits match the email`() {
+        val efectivo = Account("acc-cash", "Efectivo", "CASH", 0, "DOP")
+        val visa = Account("acc-visa", "Visa", "CREDIT_CARD", 0, "DOP", cardLastFour = "1234")
+        val master = Account("acc-master", "Mastercard", "CREDIT_CARD", 0, "DOP", cardLastFour = "5678")
+        val accounts = listOf(efectivo, visa, master)
+
+        assertEquals(
+            "acc-master",
+            preselectedAccountId(financialCandidate().copy(cardLastFour = "5678"), accounts)
+        )
+
+        // Sin digitos en el correo se mantiene la primera cuenta compatible.
+        assertEquals("acc-cash", preselectedAccountId(financialCandidate(), accounts))
+
+        // Digitos que no coinciden con ninguna cuenta tampoco fuerzan una eleccion rara.
+        assertEquals(
+            "acc-cash",
+            preselectedAccountId(financialCandidate().copy(cardLastFour = "9999"), accounts)
+        )
+    }
+
+    @Test
+    fun `does not guess when two cards share the same last four digits`() {
+        val primera = Account("acc-1", "Visa", "CREDIT_CARD", 0, "DOP", cardLastFour = "1234")
+        val segunda = Account("acc-2", "Visa adicional", "CREDIT_CARD", 0, "DOP", cardLastFour = "1234")
+
+        assertEquals(
+            "acc-1",
+            preselectedAccountId(financialCandidate().copy(cardLastFour = "1234"), listOf(primera, segunda))
+        )
+    }
+
+    @Test
+    fun `ignores a card match whose currency cannot hold the amount`() {
+        // Coincide el final pero la divisa no cuadra: registrarlo ahi daria un importe erroneo.
+        val visaUsd = Account("acc-usd", "Visa USD", "CREDIT_CARD", 0, "USD", cardLastFour = "1234")
+        val cuentaDop = Account("acc-dop", "Cuenta", "BANK", 0, "DOP")
+
+        assertEquals(
+            "acc-dop",
+            preselectedAccountId(
+                financialCandidate().copy(cardLastFour = "1234", currency = "DOP"),
+                listOf(visaUsd, cuentaDop)
+            )
+        )
+    }
+
+    @Test
     fun `converted amount is required when account currency differs`() {
         val account = Account("account-1", "Cuenta", "BANK", 0, "DOP")
 
