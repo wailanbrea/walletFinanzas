@@ -322,4 +322,37 @@ class TransactionApiTest extends TestCase
         $this->deleteJson("/api/v1/transactions/{$created['id']}")->assertNotFound();
         $this->assertSame(7500, $account->fresh()->balance);
     }
+
+    public function test_the_client_can_correct_a_transaction_using_its_own_key(): void
+    {
+        $owner = User::factory()->create();
+        Sanctum::actingAs($owner);
+        $account = Account::create([
+            'user_id' => $owner->id,
+            'name' => 'Efectivo',
+            'balance' => 10000,
+            'currency' => 'DOP',
+            'country_code' => 'DO',
+        ]);
+
+        // La app solo conoce la clave que ella genero; el id de la fila lo pone el servidor.
+        $clientKey = (string) Str::uuid();
+        $this->postJson('/api/v1/transactions', [
+            'account_id' => $account->id,
+            'idempotency_key' => $clientKey,
+            'amount' => -2500,
+            'currency' => 'DOP',
+            'timestamp' => now()->toISOString(),
+            'status' => 'completed',
+        ])->assertCreated();
+
+        $this->patchJson("/api/v1/transactions/{$clientKey}", ['amount' => -3000])
+            ->assertOk()
+            ->assertJsonPath('data.amount', -3000);
+
+        $this->assertSame(7000, $account->fresh()->balance);
+
+        $this->deleteJson("/api/v1/transactions/{$clientKey}")->assertNoContent();
+        $this->assertSame(10000, $account->fresh()->balance);
+    }
 }

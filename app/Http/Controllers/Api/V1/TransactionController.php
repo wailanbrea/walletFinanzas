@@ -125,9 +125,9 @@ class TransactionController extends Controller
      * El saldo de la cuenta se mueve por la diferencia, nunca se recalcula: sumar el
      * delta bajo bloqueo es lo unico que no se descuadra si entran dos ediciones a la vez.
      */
-    public function update(Request $request, Transaction $transaction): JsonResponse
+    public function update(Request $request, string $transaction): JsonResponse
     {
-        abort_unless($transaction->user_id === $request->user()->id, 404);
+        $transaction = $this->resolveOwned($request, $transaction);
 
         $validated = $request->validate([
             'amount' => ['sometimes', 'integer', 'not_in:0', 'between:-9000000000000000,9000000000000000'],
@@ -174,9 +174,9 @@ class TransactionController extends Controller
      * responde 204 igual: la app reintenta su cola y no debe atascarse porque el
      * servidor ya lo hubiera aplicado.
      */
-    public function destroy(Request $request, Transaction $transaction): JsonResponse
+    public function destroy(Request $request, string $transaction): JsonResponse
     {
-        abort_unless($transaction->user_id === $request->user()->id, 404);
+        $transaction = $this->resolveOwned($request, $transaction);
 
         DB::transaction(function () use ($request, $transaction): void {
             $account = Account::query()
@@ -195,6 +195,19 @@ class TransactionController extends Controller
         });
 
         return response()->json(status: 204);
+    }
+
+    /**
+     * La app solo conoce el id que ella genero, que viaja como idempotency_key; el id
+     * de la fila lo pone el servidor. Se acepta cualquiera de los dos para que un
+     * cliente pueda corregir lo que subio sin tener que aprender el id remoto.
+     */
+    private function resolveOwned(Request $request, string $key): Transaction
+    {
+        return Transaction::query()
+            ->where('user_id', $request->user()->id)
+            ->where(fn ($query) => $query->where('idempotency_key', $key)->orWhere('id', $key))
+            ->firstOr(fn () => abort(404));
     }
 
     private function assertCategoryBelongsToUser(Request $request, ?string $categoryId): void
