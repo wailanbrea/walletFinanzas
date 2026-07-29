@@ -13,6 +13,7 @@ class EmailCandidateResource extends JsonResource
             'id' => $this->id,
             'provider' => $this->provider,
             'merchant' => $this->merchant,
+            'card_last_four' => $this->card_last_four,
             'amount' => $this->amount,
             'currency' => $this->currency,
             'direction' => $this->direction,

@@ -66,4 +66,37 @@ class FinancialEmailExtractorTest extends TestCase
         $this->assertNull($this->extractor->extract('Payment rejected USD 10.00', null, null));
         $this->assertNull($this->extractor->extract('150% of budget reached', 'Payment USD 3.60', null));
     }
+
+    public function test_it_extracts_card_last_four_from_masked_and_labeled_formats(): void
+    {
+        $cases = [
+            'Tarjeta ****1234 compra aprobada RD$1,000.00' => '1234',
+            'Tarjeta terminada en 5678 compra aprobada RD$1,000.00' => '5678',
+            'Card ending in 4321 was charged USD 10.00' => '4321',
+            'Tarjeta xxxx-8765 cargo por RD$500.00' => '8765',
+            'Tarjeta 401234******9012 compra de RD$250.00' => '9012',
+            'Tarjeta No.: 3456 pago de RD$100.00' => '3456',
+        ];
+
+        foreach ($cases as $subject => $expected) {
+            $candidate = $this->extractor->extract($subject, null, null);
+
+            $this->assertNotNull($candidate, "No se extrajo: $subject");
+            $this->assertSame($expected, $candidate['card_last_four'], "Fallo con: $subject");
+        }
+    }
+
+    public function test_it_never_mistakes_the_amount_for_a_card_number(): void
+    {
+        // Qik pone el importe justo despues de "tarjeta de credito Qik": un patron
+        // laxo devolveria 8268 (de RD$826.80) como numero de tarjeta.
+        $candidate = $this->extractor->extract(
+            'Usaste tu tarjeta de crédito Qik',
+            'Se hizo una transacción de RD$826.80 en UBER*EATS',
+            null,
+        );
+
+        $this->assertNotNull($candidate);
+        $this->assertNull($candidate['card_last_four']);
+    }
 }

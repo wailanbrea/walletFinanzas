@@ -35,6 +35,7 @@ class FinancialEmailExtractor
 
         return [
             'merchant' => $merchant,
+            'card_last_four' => $this->cardLastFour($text),
             'amount' => $amount,
             'currency' => $currency,
             'direction' => $expense ? 'expense' : 'income',
@@ -44,6 +45,35 @@ class FinancialEmailExtractor
             'status' => 'pending',
             'subject' => $subject,
         ];
+    }
+
+    /**
+     * Ultimos cuatro digitos de la tarjeta que origino el movimiento, para que la app
+     * pueda preseleccionar la cuenta correcta al aceptar el correo.
+     *
+     * Solo se acepta cuando hay mascara ("****1234") o etiqueta explicita ("terminada
+     * en 1234"). Un patron mas suelto como "tarjeta ... 1234" tomaria el importe por
+     * numero de tarjeta en correos como los de Qik, donde el monto va justo despues.
+     */
+    private function cardLastFour(string $text): ?string
+    {
+        $patterns = [
+            // "terminada en 1234", "termina en 1234", "ending in 1234"
+            '/\b(?:terminad[ao]s?|termina|finalizada|ending)\s+(?:en|in)\s*[:\-]?\s*(?<digits>\d{4})\b/iu',
+            // Mascara antes de los digitos: "****1234", "xxxx-1234", "•••• 1234"
+            '/(?:[*x•·]\s*){3,}[\s\-]*(?<digits>\d{4})\b/iu',
+            // BIN visible y resto enmascarado: "401234******1234"
+            '/\b\d{6}[*x]{4,}(?<digits>\d{4})\b/iu',
+            // Etiqueta con separador obligatorio: "Tarjeta No.: 1234"
+            '/\btarjeta\s*(?:n[uú]mero|no\.?|#)?\s*[:\-]\s*[*x•·\s\-]*(?<digits>\d{4})\b/iu',
+        ];
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $text, $match) === 1) {
+                return $match['digits'];
+            }
+        }
+
+        return null;
     }
 
     public function isDefiniteNonTransaction(?string $subject, ?string $snippet): bool

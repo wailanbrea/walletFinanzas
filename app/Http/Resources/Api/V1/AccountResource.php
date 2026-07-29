@@ -12,7 +12,9 @@ class AccountResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'type' => $this->type,
             'balance' => $this->balance,
+            'credit_limit' => $this->credit_limit,
             'currency' => $this->currency,
             'institution_name' => $this->institution_name,
             'country_code' => $this->country_code,

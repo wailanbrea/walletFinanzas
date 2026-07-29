@@ -10,7 +10,7 @@ class EmailCandidate extends Model
 {
     use HasUuids;
 
-    protected $fillable = ['user_id', 'provider_message_id', 'provider', 'merchant', 'amount', 'currency', 'direction', 'category_suggestion', 'occurred_at', 'confidence', 'status', 'subject', 'category'];
+    protected $fillable = ['user_id', 'provider_message_id', 'provider', 'merchant', 'card_last_four', 'amount', 'currency', 'direction', 'category_suggestion', 'occurred_at', 'confidence', 'status', 'subject', 'category'];
 
     protected function casts(): array
     {
