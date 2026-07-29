@@ -20,7 +20,13 @@ class FinancialEmailClassifier
 
         $sender = Str::lower(trim((string) ($message['sender_email'] ?? '')));
         if ($this->isKnownSender($sender)) {
-            return $this->classifyKnownFormat($sender, $subject, $body, $message);
+            $candidate = $this->classifyKnownFormat($sender, $subject, $body, $message);
+
+            // Los ultimos cuatro digitos se extraen aqui y no dentro de cada formato:
+            // el patron es identico en todos los bancos y asi no se repite ocho veces.
+            return $candidate === null
+                ? null
+                : [...$candidate, 'card_last_four' => $this->extractCardLastFour($plainText)];
         }
 
         $securityWords = [
@@ -77,7 +83,37 @@ class FinancialEmailClassifier
             'confidence' => min(95, 75 + ($category ? 10 : 0) + ($message['sender_email'] ? 5 : 0)),
             'reasons' => $reasons,
             'status' => 'pending',
+            'card_last_four' => $this->extractCardLastFour($plainText),
         ];
+    }
+
+    /**
+     * Ultimos cuatro digitos de la tarjeta que origino el movimiento, para que la app
+     * pueda preseleccionar la cuenta correcta al aceptar el correo.
+     *
+     * Solo se acepta cuando hay mascara ("****1234") o etiqueta explicita ("terminada
+     * en 1234"). Un patron mas suelto como "tarjeta ... 1234" tomaria el monto por
+     * numero de tarjeta en correos como los de Qik, donde el importe va justo despues.
+     */
+    private function extractCardLastFour(string $text): ?string
+    {
+        $patterns = [
+            // "terminada en 1234", "termina en 1234", "ending in 1234"
+            '/\b(?:terminad[ao]s?|termina|finalizada|ending)\s+(?:en|in)\s*[:\-]?\s*(?<digits>\d{4})\b/iu',
+            // Mascara antes de los digitos: "****1234", "xxxx-1234", "•••• 1234"
+            '/(?:[*x•·]\s*){3,}[\s\-]*(?<digits>\d{4})\b/iu',
+            // BIN visible y resto enmascarado: "401234******1234"
+            '/\b\d{6}[*x]{4,}(?<digits>\d{4})\b/iu',
+            // Etiqueta con separador obligatorio: "Tarjeta No.: 1234"
+            '/\btarjeta\s*(?:n[uú]mero|no\.?|#)?\s*[:\-]\s*[*x•·\s\-]*(?<digits>\d{4})\b/iu',
+        ];
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $text, $match) === 1) {
+                return $match['digits'];
+            }
+        }
+
+        return null;
     }
 
     private function isKnownSender(string $sender): bool

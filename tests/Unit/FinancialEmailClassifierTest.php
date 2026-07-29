@@ -234,6 +234,42 @@ class FinancialEmailClassifierTest extends TestCase
         ));
     }
 
+    public function test_extracts_card_last_four_from_masked_and_labeled_formats(): void
+    {
+        $cases = [
+            'Tarjeta ****1234 compra aprobada' => '1234',
+            'Tarjeta terminada en 5678 compra aprobada' => '5678',
+            'Card ending in 4321 was charged' => '4321',
+            'Tarjeta xxxx-8765 cargo realizado' => '8765',
+            'Tarjeta 401234******9012 compra aprobada' => '9012',
+            'Tarjeta No.: 3456 cargo aplicado' => '3456',
+        ];
+
+        foreach ($cases as $body => $expected) {
+            $candidate = $this->classify(
+                subject: 'Consumo',
+                body: $body.' Monto RD$1,000.00',
+                senderEmail: 'alertas@banco.example',
+            );
+
+            $this->assertNotNull($candidate, "No se clasifico: $body");
+            $this->assertSame($expected, $candidate['card_last_four'], "Fallo con: $body");
+        }
+    }
+
+    public function test_amount_is_never_mistaken_for_a_card_number(): void
+    {
+        // Qik pone el importe justo despues de "tarjeta de credito Qik": un patron
+        // laxo devolveria 8268 (de RD$826.80) como numero de tarjeta.
+        $candidate = $this->classify(
+            subject: 'Usaste tu tarjeta de crédito Qik',
+            body: 'Se hizo una transacción de RD$826.80 en UBER*EATS. Localidad UBER*EATS Fecha y hora 07-18-2026 02:26 PM (AST) Monto RD$826.80 Balance Disponible RD$110,877.31',
+            senderEmail: 'notificaciones@qik.do',
+        );
+
+        $this->assertNull($candidate['card_last_four']);
+    }
+
     /** @return array<string, mixed>|null */
     private function classify(string $subject, string $body, string $senderEmail): ?array
     {

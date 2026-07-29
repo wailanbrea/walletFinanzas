@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class FinancialTransactionCandidate extends Model
 {
     protected $fillable = [
-        'user_id', 'email_message_id', 'provider', 'merchant', 'amount', 'currency',
+        'user_id', 'email_message_id', 'provider', 'merchant', 'card_last_four', 'amount', 'currency',
         'converted_amount', 'converted_currency', 'exchange_rate_micros', 'exchange_rate_at',
         'exchange_rate_source', 'direction', 'category_suggestion', 'occurred_at', 'confidence',
         'reasons', 'status',
