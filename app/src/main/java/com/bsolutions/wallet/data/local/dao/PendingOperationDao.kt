@@ -25,6 +25,10 @@ interface PendingOperationDao {
     @Query("UPDATE pending_operations SET attempts = attempts + 1 WHERE ownerId = :ownerId AND id = :id")
     suspend fun bumpAttempts(ownerId: String, id: String)
 
+    /** Cuántas se van a descartar, para poder avisar en vez de perderlas en silencio. */
+    @Query("SELECT COUNT(*) FROM pending_operations WHERE ownerId = :ownerId AND attempts >= :maxAttempts")
+    suspend fun countFailed(ownerId: String, maxAttempts: Int): Int
+
     /** Descarta operaciones rechazadas repetidamente por el servidor (4xx persistente). */
     @Query("DELETE FROM pending_operations WHERE ownerId = :ownerId AND attempts >= :maxAttempts")
     suspend fun purgeFailed(ownerId: String, maxAttempts: Int)

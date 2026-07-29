@@ -6,8 +6,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import javax.inject.Provider
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -38,7 +36,6 @@ class WorkManagerSyncScheduler @Inject constructor(
     private val syncRepository: Provider<SyncRepository>
 ) : SyncScheduler {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val running = Mutex()
 
     override fun requestSyncNow() {
         // Se intenta de inmediato y ademas se encola.
@@ -48,15 +45,9 @@ class WorkManagerSyncScheduler @Inject constructor(
         // tardar mucho, asi que un cambio recien hecho parecia no subir nunca. La
         // subida directa cubre el caso normal -la app esta abierta y hay red- y el
         // trabajo encolado queda como red de seguridad si el proceso muere antes.
-        scope.launch {
-            // Una sola subida a la vez: varias ediciones seguidas no lanzan copias.
-            if (!running.tryLock()) return@launch
-            try {
-                runCatching { syncRepository.get().sync() }
-            } finally {
-                running.unlock()
-            }
-        }
+        // No hace falta cerrojo aqui: SyncRepository.sync() ya comparte una sola
+        // ejecucion entre quien la pida, incluido el worker de WorkManager.
+        scope.launch { runCatching { syncRepository.get().sync() } }
         enqueueBackgroundSync()
     }
 

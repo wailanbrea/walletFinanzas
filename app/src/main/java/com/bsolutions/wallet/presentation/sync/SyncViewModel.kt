@@ -35,8 +35,20 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = SyncUiState(isSyncing = true)
             _uiState.value = when (val outcome = syncRepository.sync()) {
-                is SyncOutcome.Success ->
-                    SyncUiState(lastResult = "Sincronizado: ${outcome.pushed} subidos, ${outcome.pulled} recibidos.")
+                is SyncOutcome.Success -> {
+                    val base = "Sincronizado: ${outcome.pushed} subidos, ${outcome.pulled} recibidos."
+                    if (outcome.discarded > 0) {
+                        // El servidor los rechazó una y otra vez: decirlo, porque son
+                        // cambios del usuario que se quedaron solo en este teléfono.
+                        SyncUiState(
+                            lastResult = "$base ${outcome.discarded} no se pudieron subir y se " +
+                                "descartaron; revisa esos cambios.",
+                            isError = true
+                        )
+                    } else {
+                        SyncUiState(lastResult = base)
+                    }
+                }
                 is SyncOutcome.NoSession ->
                     SyncUiState(lastResult = "Inicia sesión para sincronizar con la nube.", isError = true)
                 is SyncOutcome.Error ->

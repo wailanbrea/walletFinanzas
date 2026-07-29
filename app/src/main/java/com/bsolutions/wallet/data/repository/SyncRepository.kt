@@ -34,6 +34,13 @@ import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -45,8 +52,12 @@ import javax.inject.Singleton
 import kotlin.math.abs
 
 sealed interface SyncOutcome {
-    /** Sincronizado: [pushed] operaciones subidas, [pulled] filas traídas. */
-    data class Success(val pushed: Int, val pulled: Int) : SyncOutcome
+    /**
+     * Sincronizado: [pushed] operaciones subidas, [pulled] filas traídas y [discarded]
+     * descartadas por rechazo repetido del servidor. Un descarte se informa en vez de
+     * pasar en silencio: significa que un cambio del usuario no llegó a la nube.
+     */
+    data class Success(val pushed: Int, val pulled: Int, val discarded: Int = 0) : SyncOutcome
     /** No hay sesión: la app queda local-only (degradación limpia). */
     data object NoSession : SyncOutcome
     data class Error(val message: String) : SyncOutcome
@@ -84,15 +95,39 @@ class SyncRepository @Inject constructor(
         ) { counts -> counts.sum() }
     }
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val gate = Mutex()
+    private var inFlight: Deferred<SyncOutcome>? = null
+
+    /**
+     * Una sola sincronización a la vez, compartida por quien la pida.
+     *
+     * La piden dos caminos distintos —la subida inmediata tras un cambio y el worker de
+     * WorkManager—, y sin esto ambos hacían las mismas peticiones a la vez: el doble de
+     * red y de batería para el mismo resultado. Quien llegue mientras otra corre espera
+     * su resultado en lugar de lanzar una copia.
+     */
     suspend fun sync(): SyncOutcome {
+        val running = gate.withLock {
+            inFlight?.takeIf { it.isActive } ?: scope.async { runSync() }.also { inFlight = it }
+        }
+        return try {
+            running.await()
+        } finally {
+            gate.withLock { if (inFlight === running && running.isCompleted) inFlight = null }
+        }
+    }
+
+    private suspend fun runSync(): SyncOutcome {
         if (session.token.isNullOrBlank()) return SyncOutcome.NoSession
         return try {
             backfillLegacyOperations()
             // Las categorías se suben primero porque una transacción solo puede
             // referenciar una categoría activa del mismo usuario en el backend.
+            discardedInLastPush = 0
             val pushed = pushCategories() + push() + pushFinancialPlans()
             val pulled = pull()
-            SyncOutcome.Success(pushed, pulled)
+            SyncOutcome.Success(pushed, pulled, discardedInLastPush)
         } catch (e: SessionExpiredException) {
             SyncOutcome.NoSession
         } catch (e: IOException) {
@@ -170,10 +205,16 @@ class SyncRepository @Inject constructor(
                 }
             }
         }
-        // Descarta lo que el servidor rechaza repetidamente (evita bucles).
+        // Descarta lo que el servidor rechaza repetidamente (evita bucles), pero se
+        // cuenta antes: un descarte es un cambio del usuario que no llegó a la nube y
+        // debe decirse, no desaparecer.
+        discardedInLastPush = pendingOps.countFailed(ownerId, MAX_ATTEMPTS)
         pendingOps.purgeFailed(ownerId, MAX_ATTEMPTS)
         return pushed
     }
+
+    /** Descartes de la última subida, para informarlos en el resultado. */
+    private var discardedInLastPush = 0
 
     private suspend fun pushFinancialPlans(): Int {
         val ownerId = ownerScope.currentOwnerId()
