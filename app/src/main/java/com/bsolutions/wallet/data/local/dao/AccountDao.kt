@@ -14,6 +14,13 @@ interface AccountDao {
     @Query("SELECT * FROM accounts WHERE ownerId = :ownerId AND isDeleted = 0")
     suspend fun getAllAccountsOnce(ownerId: String): List<AccountEntity>
 
+    /**
+     * Incluye las borradas: su lápida también tiene que subir, o el borrado se queda
+     * en este teléfono y los demás siguen viendo la cuenta.
+     */
+    @Query("SELECT * FROM accounts WHERE ownerId = :ownerId")
+    suspend fun getAllAccountsIncludingDeletedOnce(ownerId: String): List<AccountEntity>
+
     @Query("SELECT * FROM accounts WHERE ownerId = :ownerId AND id = :id AND isDeleted = 0")
     suspend fun getAccountById(ownerId: String, id: String): AccountEntity?
 

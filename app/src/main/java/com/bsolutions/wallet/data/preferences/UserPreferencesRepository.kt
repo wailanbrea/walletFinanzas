@@ -7,6 +7,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.bsolutions.wallet.core.database.WalletOwnerScope
@@ -28,6 +29,13 @@ val DEFAULT_DASHBOARD_CARD_IDS: Set<String> = setOf(
     "expense_structure",
     "recent_transactions"
 )
+
+/**
+ * Versión del respaldo de sincronización. Subirla hace que se repita una vez: la
+ * primera versión no encolaba las cuentas borradas, así que sus lápidas nunca
+ * llegaban al servidor y un borrado hecho en un teléfono no se replicaba.
+ */
+const val SYNC_BACKFILL_VERSION = 2
 
 /** Nombre mostrado mientras el perfil no traiga uno real del backend. */
 const val DEFAULT_USER_NAME = "Mi Perfil"
@@ -78,7 +86,7 @@ class UserPreferencesRepository @Inject constructor(
         val balancesHidden: Preferences.Key<Boolean>,
         val dashboardCardIds: Preferences.Key<Set<String>>,
         val saltEdgeCustomer: Preferences.Key<String>,
-        val syncBackfillDone: Preferences.Key<Boolean>
+        val syncBackfillVersion: Preferences.Key<Int>
     )
 
     private fun scopedKeys(ownerId: String): ScopedKeys {
@@ -93,7 +101,7 @@ class UserPreferencesRepository @Inject constructor(
             balancesHidden = booleanPreferencesKey("balances_hidden_$suffix"),
             dashboardCardIds = stringSetPreferencesKey("dashboard_card_ids_$suffix"),
             saltEdgeCustomer = stringPreferencesKey("saltedge_customer_id_$suffix"),
-            syncBackfillDone = booleanPreferencesKey("sync_backfill_done_$suffix")
+            syncBackfillVersion = intPreferencesKey("sync_backfill_version_$suffix")
         )
     }
 
@@ -136,11 +144,12 @@ class UserPreferencesRepository @Inject constructor(
      * de usuario tiene su propio espacio de datos.
      */
     suspend fun isSyncBackfillDone(): Boolean =
-        context.userPrefsDataStore.data.first()[scopedKeys(ownerScope.currentOwnerId()).syncBackfillDone] ?: false
+        context.userPrefsDataStore.data.first()[scopedKeys(ownerScope.currentOwnerId()).syncBackfillVersion]
+            ?.let { it >= SYNC_BACKFILL_VERSION } ?: false
 
     suspend fun markSyncBackfillDone() {
         context.userPrefsDataStore.edit { prefs ->
-            prefs[scopedKeys(ownerScope.currentOwnerId()).syncBackfillDone] = true
+            prefs[scopedKeys(ownerScope.currentOwnerId()).syncBackfillVersion] = SYNC_BACKFILL_VERSION
         }
     }
 

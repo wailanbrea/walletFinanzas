@@ -146,7 +146,7 @@ class SyncRepository @Inject constructor(
     private suspend fun backfillLegacyOperations() {
         if (preferences.isSyncBackfillDone()) return
         val ownerId = ownerScope.currentOwnerId()
-        for (account in accountDao.getAllAccountsOnce(ownerId)) {
+        for (account in accountDao.getAllAccountsIncludingDeletedOnce(ownerId)) {
             pendingOps.insert(accountOp(gson, account))
         }
         for (transaction in transactionDao.getAllTransactionsOnce(ownerId)) {
@@ -306,6 +306,18 @@ class SyncRepository @Inject constructor(
         var pulled = 0
         val ownerId = ownerScope.currentOwnerId()
 
+        // Regla de conflicto: gana el servidor, salvo que la fila local tenga un cambio
+        // aun sin subir -ese se respeta porque es lo mas reciente que dijo el usuario-.
+        //
+        // Antes el pull solo insertaba lo que no existia, asi que una correccion hecha en
+        // otro telefono no llegaba nunca: el segundo dispositivo se quedaba con los datos
+        // viejos para siempre.
+        val locallyPending = pendingOps.getAll(ownerId)
+            .groupBy({ it.entityType }, { it.entityId })
+            .mapValues { (_, ids) -> ids.toSet() }
+        val pendingAccounts = locallyPending["ACCOUNT"].orEmpty()
+        val pendingTransactions = locallyPending["TRANSACTION"].orEmpty()
+
         var cursor: String? = null
         do {
             val page = api.pullCategories(updatedSince = null, cursor = cursor)
@@ -337,14 +349,24 @@ class SyncRepository @Inject constructor(
             for (dto in page.data) {
                 // Room sigue siendo autoritativo: una fila local, incluso eliminada,
                 // nunca se pisa ni se resucita durante el pull.
-                if (accountDao.getAccountByIdIncludingDeleted(ownerId, dto.id) == null) {
-                    val twin = accountDao.getAllAccountsOnce(ownerId)
-                        .firstOrNull { it.matchesSameRealAccount(dto) }
-                    if (twin != null) {
-                        remoteToLocalAccount[dto.id] = twin.id
-                    } else {
-                        accountDao.insertAccount(dto.toAccountEntity(ownerId))
+                val local = accountDao.getAccountByIdIncludingDeleted(ownerId, dto.id)
+                when {
+                    local == null -> {
+                        val twin = accountDao.getAllAccountsOnce(ownerId)
+                            .firstOrNull { it.matchesSameRealAccount(dto) }
+                        if (twin != null) {
+                            remoteToLocalAccount[dto.id] = twin.id
+                        } else {
+                            accountDao.insertAccount(dto.toAccountEntity(ownerId))
+                        }
                     }
+                    // Cambio local sin subir: se respeta, ya viaja en la cola.
+                    dto.id in pendingAccounts -> Unit
+                    else -> accountDao.updateAccount(
+                        // is_active = false es la lapida: borrar en un telefono debe
+                        // borrar en los demas.
+                        dto.toAccountEntity(ownerId).copy(isDeleted = !dto.isActive)
+                    )
                 }
                 pulled++
             }
@@ -360,9 +382,14 @@ class SyncRepository @Inject constructor(
                 val validCategoryId = dto.categoryId?.takeIf { id ->
                     categoryDao.getCategoryById(ownerId, id) != null
                 }.orEmpty()
-                if (transactionDao.getTransactionByIdIncludingDeleted(ownerId, dto.idempotencyKey ?: dto.id) == null) transactionDao.insertTransaction(
+                val localId = dto.idempotencyKey ?: dto.id
+                val existing = transactionDao.getTransactionByIdIncludingDeleted(ownerId, localId)
+                // Se copia el estado del servidor tal cual, sin recalcular saldos: el
+                // saldo de la cuenta llega en el mismo pull, asi que ambos quedan
+                // coherentes entre si.
+                if (existing == null || localId !in pendingTransactions) transactionDao.insertTransaction(
                     TransactionEntity(
-                        id = dto.idempotencyKey ?: dto.id,
+                        id = localId,
                         // Si la cuenta remota se reconcilio con una local, el movimiento
                         // cuelga de la local: si no, quedaria apuntando a una cuenta
                         // que nunca se inserto.
