@@ -260,15 +260,26 @@ class SyncRepository @Inject constructor(
             cursor = page.meta?.nextCursor
         } while (cursor != null)
 
+        // Una misma cuenta real puede existir con ids distintos en el telefono y en el
+        // servidor (se creo por separado en cada uno). Insertarla a ciegas la duplicaba
+        // y falseaba el Balance Total, asi que primero se busca su equivalente local y,
+        // si aparece, se anota para redirigir hacia ella los movimientos que llegan.
+        val remoteToLocalAccount = mutableMapOf<String, String>()
         cursor = null
         do {
             val page = api.pullAccounts(updatedSince = null, cursor = cursor)
             for (dto in page.data) {
                 // Room sigue siendo autoritativo: una fila local, incluso eliminada,
                 // nunca se pisa ni se resucita durante el pull.
-                if (accountDao.getAccountByIdIncludingDeleted(ownerId, dto.id) == null) accountDao.insertAccount(
-                    dto.toAccountEntity(ownerId)
-                )
+                if (accountDao.getAccountByIdIncludingDeleted(ownerId, dto.id) == null) {
+                    val twin = accountDao.getAllAccountsOnce(ownerId)
+                        .firstOrNull { it.matchesSameRealAccount(dto) }
+                    if (twin != null) {
+                        remoteToLocalAccount[dto.id] = twin.id
+                    } else {
+                        accountDao.insertAccount(dto.toAccountEntity(ownerId))
+                    }
+                }
                 pulled++
             }
             cursor = page.meta?.nextCursor
@@ -286,7 +297,10 @@ class SyncRepository @Inject constructor(
                 if (transactionDao.getTransactionByIdIncludingDeleted(ownerId, dto.idempotencyKey ?: dto.id) == null) transactionDao.insertTransaction(
                     TransactionEntity(
                         id = dto.idempotencyKey ?: dto.id,
-                        accountId = dto.accountId,
+                        // Si la cuenta remota se reconcilio con una local, el movimiento
+                        // cuelga de la local: si no, quedaria apuntando a una cuenta
+                        // que nunca se inserto.
+                        accountId = remoteToLocalAccount[dto.accountId] ?: dto.accountId,
                         amount = positive,
                         type = type,
                         categoryId = validCategoryId,
@@ -446,6 +460,35 @@ internal fun AccountEntity.toCreateAccountRequest() = CreateAccountRequest(
     type = type,
     creditLimit = creditLimit
 )
+
+/**
+ * Decide si una cuenta que llega del servidor y una local son la misma cuenta real
+ * creada por separado en cada dispositivo.
+ *
+ * Se exige que coincida la divisa y, ademas, una de dos evidencias fuertes: los cuatro
+ * digitos de la tarjeta en la misma institucion, o el mismo nombre en la misma
+ * institucion. Emparejar solo por nombre seria temerario —"Ahorros" existe en varios
+ * bancos— y equivocarse aqui mezcla el dinero de dos cuentas distintas, que es peor
+ * que dejar un duplicado a la vista.
+ */
+internal fun AccountEntity.matchesSameRealAccount(remote: AccountDto): Boolean {
+    if (isDeleted || !currency.equals(remote.currency, ignoreCase = true)) return false
+
+    val sameInstitution = normalizeForMatch(institutionName) == normalizeForMatch(remote.institutionName)
+    if (!sameInstitution) return false
+
+    val localDigits = cardLastFour?.takeIf { it.isNotBlank() }
+    val remoteDigits = remote.cardLastFour?.takeIf { it.isNotBlank() }
+    if (localDigits != null && remoteDigits != null) return localDigits == remoteDigits
+
+    // Sin digitos que comparar, el nombre dentro de la misma institucion es lo unico
+    // que queda. Una institucion vacia a ambos lados no basta como evidencia.
+    if (normalizeForMatch(institutionName).isEmpty()) return false
+    return normalizeForMatch(name) == normalizeForMatch(remote.name)
+}
+
+private fun normalizeForMatch(value: String?): String =
+    value?.trim()?.lowercase()?.replace(Regex("\\s+"), " ").orEmpty()
 
 internal fun AccountDto.toAccountEntity(ownerId: String) = AccountEntity(
     id = id,
