@@ -78,6 +78,46 @@ class EmailBodyTextTest extends TestCase
         $this->assertSame('Comercio | Qik', $this->bodyText->fromGmailPayload($payload));
     }
 
+    public function test_a_plain_text_stub_does_not_beat_the_real_html_notice(): void
+    {
+        // Muchos avisos de Gmail traen relleno en la parte de texto y el aviso solo en
+        // HTML. Preferir el texto sin mirar tiraba el correo entero y dejaba guardado
+        // "Para ver este mensaje active HTML".
+        $payload = [
+            'mimeType' => 'multipart/alternative',
+            'parts' => [
+                ['mimeType' => 'text/plain', 'body' => ['data' => $this->base64url('Para ver este mensaje active HTML.')]],
+                ['mimeType' => 'text/html', 'body' => ['data' => $this->base64url(
+                    '<tr><td>Comercio</td><td>FERRETERIA OCHOA</td></tr><tr><td>Monto</td><td>RD$3,450.00</td></tr>'
+                )]],
+            ],
+        ];
+
+        $text = $this->bodyText->fromGmailPayload($payload);
+
+        $this->assertStringContainsString('Comercio | FERRETERIA OCHOA', $text);
+    }
+
+    public function test_a_real_plain_text_notice_still_wins_over_the_html(): void
+    {
+        // Con contenido de verdad se prefiere el texto: el HTML del banco es una tabla
+        // anidada y su version en texto viene mas limpia.
+        $plain = 'Estimado cliente, le informamos que se realizo un consumo con su tarjeta '
+            .'terminada en 4266 por RD$1,250.00 en SUPERMERCADO NACIONAL el dia 30 de julio '
+            .'de 2026 a las 14:35. Si no reconoce esta transaccion comuniquese de inmediato '
+            .'con nuestro centro de atencion al cliente.';
+        $payload = [
+            'mimeType' => 'multipart/alternative',
+            'parts' => [
+                ['mimeType' => 'text/plain', 'body' => ['data' => $this->base64url($plain)]],
+                ['mimeType' => 'text/html', 'body' => ['data' => $this->base64url('<p>version html mas larga '.str_repeat('x ', 200).'</p>')]],
+            ],
+        ];
+
+        $this->assertStringContainsString('SUPERMERCADO NACIONAL', $this->bodyText->fromGmailPayload($payload));
+        $this->assertStringNotContainsString('version html', $this->bodyText->fromGmailPayload($payload));
+    }
+
     public function test_empty_cells_do_not_leave_a_wall_of_separators(): void
     {
         $html = '<tr><td>Comercio</td><td></td><td></td><td>Qik</td></tr>';

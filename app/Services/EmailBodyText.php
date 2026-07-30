@@ -21,6 +21,14 @@ class EmailBodyText
     public const MAX_LENGTH = 4000;
 
     /**
+     * Debajo de esto, la parte de texto se considera relleno y no el aviso.
+     *
+     * Un aviso bancario real trae fecha, monto, comercio y tarjeta: no cabe en menos.
+     * Los rellenos tipo "para ver este mensaje active HTML" rondan los cincuenta.
+     */
+    private const MIN_USEFUL_PLAIN = 200;
+
+    /**
      * Texto del cuerpo de un mensaje de Gmail (respuesta con format=full).
      *
      * Se prefiere text/plain: el HTML de un banco es una tabla anidada y su version en
@@ -31,13 +39,23 @@ class EmailBodyText
         if ($payload === null) {
             return null;
         }
-        $plain = $this->firstGmailPartOfType($payload, 'text/plain');
-        if ($plain !== null && trim($plain) !== '') {
-            return $this->normalize($plain);
-        }
-        $html = $this->firstGmailPartOfType($payload, 'text/html');
+        $rawPlain = $this->firstGmailPartOfType($payload, 'text/plain');
+        $plain = $rawPlain === null ? null : $this->normalize($rawPlain);
+        $rawHtml = $this->firstGmailPartOfType($payload, 'text/html');
+        $html = $rawHtml === null ? null : $this->fromHtml($rawHtml);
 
-        return $html === null ? null : $this->fromHtml($html);
+        if ($plain === null || $plain === '') {
+            return $html === '' ? null : $html;
+        }
+        // Muchos avisos traen un relleno en la parte de texto -"para ver este mensaje
+        // active HTML"- y el aviso de verdad solo en la parte HTML. Quedarse con el
+        // relleno tira el correo entero, asi que un texto sospechosamente corto cede
+        // ante un HTML que dice mas.
+        if (mb_strlen($plain) < self::MIN_USEFUL_PLAIN && $html !== null && mb_strlen($html) > mb_strlen($plain)) {
+            return $html;
+        }
+
+        return $plain;
     }
 
     /** Texto del cuerpo de un mensaje de Microsoft Graph. */
