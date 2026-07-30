@@ -111,6 +111,8 @@ data class EmailCandidateReviewRequest(
     @SerializedName("duplicate_of_id") val duplicateOfId: String? = null
 )
 
+data class UpdateProfileRequest(val name: String)
+
 data class MessageResponse(val message: String)
 
 // ---- Sync (push): el cliente genera los ids/idempotency-key ----
@@ -274,6 +276,13 @@ interface WalletApi {
 
     // Corregir y borrar necesitan su propia puerta: createTransaction es inmutable y
     // responde 409 si la misma clave de idempotencia vuelve con otros valores.
+    /** El nombre visible; el correo no se cambia por aqui, es la credencial. */
+    @PATCH("user")
+    suspend fun updateProfile(@Body request: UpdateProfileRequest): ApiEnvelope<AuthUserDto>
+
+    @GET("user")
+    suspend fun getProfile(): ApiEnvelope<AuthUserDto>
+
     @PATCH("transactions/{id}")
     suspend fun updateTransaction(
         @Path("id") id: String,

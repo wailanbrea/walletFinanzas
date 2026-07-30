@@ -1,5 +1,7 @@
 package com.bsolutions.wallet.data.repository
 
+import com.bsolutions.wallet.core.network.UpdateProfileRequest
+import com.bsolutions.wallet.core.network.AuthUserDto
 import com.bsolutions.wallet.core.network.AccountDto
 import com.bsolutions.wallet.core.network.ApiEnvelope
 import com.bsolutions.wallet.core.network.AuthPayload
@@ -162,6 +164,8 @@ class WalletAuthRepositoryTest {
 }
 
 private class FakeWalletApi : WalletApi {
+    override suspend fun getProfile(): ApiEnvelope<AuthUserDto> = error("sin uso")
+    override suspend fun updateProfile(request: UpdateProfileRequest): ApiEnvelope<AuthUserDto> = error("sin uso")
     var registerRequest: RegisterRequest? = null
     var loginRequest: LoginRequest? = null
     var logoutCalled = false

@@ -1,5 +1,7 @@
 package com.bsolutions.wallet.data.repository
 
+import com.bsolutions.wallet.core.network.UpdateProfileRequest
+import com.bsolutions.wallet.core.network.AuthUserDto
 import com.bsolutions.wallet.core.network.AccountDto
 import com.bsolutions.wallet.core.network.ApiEnvelope
 import com.bsolutions.wallet.core.network.AuthPayload
@@ -109,6 +111,8 @@ private class FakeEmailConnectionsApi(
     private val candidates: List<EmailCandidateDto> = emptyList(),
     private val authorizationUrl: String = "https://example.test/authorize"
 ) : WalletApi {
+    override suspend fun getProfile(): ApiEnvelope<AuthUserDto> = error("sin uso")
+    override suspend fun updateProfile(request: UpdateProfileRequest): ApiEnvelope<AuthUserDto> = error("sin uso")
     val authorizationProviders = mutableListOf<String>()
     val deletedProviders = mutableListOf<String>()
 
