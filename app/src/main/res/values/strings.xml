@@ -518,7 +518,10 @@
     <string name="email_candidate_direction_label">¿Es un gasto o un ingreso?</string>
     <string name="email_candidate_recurring">Se repite: anotarlo como movimiento fijo</string>
     <string name="email_candidate_freq_weekly">Semanal</string>
-    <string name="email_candidate_freq_biweekly">Quincenal</string>
+    <string name="email_candidate_freq_semimonthly">Quincenal (15 y fin de mes)</string>
+    <string name="email_candidate_freq_every15">Cada 15 días</string>
+    <string name="email_candidate_freq_every30">Cada 30 días</string>
+    <string name="email_candidate_freq_start">¿Cuándo es la próxima?</string>
     <string name="email_candidate_freq_monthly">Mensual</string>
     <string name="email_candidate_freq_yearly">Anual</string>
     <string name="email_candidate_debt_label">¿Es por algo que prestaste? (opcional)</string>

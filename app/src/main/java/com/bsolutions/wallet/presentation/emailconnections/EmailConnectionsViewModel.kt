@@ -14,6 +14,7 @@ import com.bsolutions.wallet.domain.repository.PlannedPaymentRepository
 import com.bsolutions.wallet.domain.usecase.DEBT_OWED_TO_ME
 import com.bsolutions.wallet.domain.usecase.DebtLedger
 import com.bsolutions.wallet.domain.usecase.LOAN_CATEGORY_ID
+import com.bsolutions.wallet.presentation.plannedpayments.nextDueDate
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import com.bsolutions.wallet.data.repository.EmailCandidate
 import com.bsolutions.wallet.data.repository.EmailConnection
@@ -638,17 +639,8 @@ internal fun parseEditedAmountMinor(text: String): Long? {
  * Se adelanta una ocurrencia a proposito: la de [fromMillis] es la que se acaba de
  * registrar desde el correo, asi que anotarla otra vez la duplicaria.
  */
-internal fun nextOccurrence(fromMillis: Long, frequency: String): Long {
-    val date = Instant.ofEpochMilli(fromMillis).atZone(ZoneOffset.UTC).toLocalDate()
-    val next = when (frequency) {
-        "WEEKLY" -> date.plusWeeks(1)
-        "BIWEEKLY" -> date.plusWeeks(2)
-        "YEARLY" -> date.plusYears(1)
-        else -> date.plusMonths(1)
-    }
-
-    return next.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-}
+internal fun nextOccurrence(fromMillis: Long, frequency: String): Long =
+    nextDueDate(fromMillis, frequency)
 
 internal fun candidateOccurredAtMillis(value: String): Long? =
     candidateTransactionDateMillis(value, selectedDateMillis = null)

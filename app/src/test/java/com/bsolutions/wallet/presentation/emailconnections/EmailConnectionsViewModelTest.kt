@@ -217,13 +217,22 @@ class EmailConnectionsViewModelTest {
     }
 
     @Test
-    fun `the next occurrence skips the one already registered`() {
-        val martes = Instant.parse("2026-07-30T00:00:00Z").toEpochMilli()
+    fun `a fixed day does not drift like an interval does`() {
+        // Una quincena dominicana cae el 15 y el ultimo del mes. Contando catorce dias,
+        // en pocos meses el sueldo terminaba cayendo cualquier dia.
+        fun dia(fecha: String) = java.util.Calendar.getInstance().apply {
+            timeInMillis = Instant.parse(fecha).toEpochMilli()
+        }.get(java.util.Calendar.DAY_OF_MONTH)
 
-        assertEquals(Instant.parse("2026-08-13T00:00:00Z").toEpochMilli(), nextOccurrence(martes, "BIWEEKLY"))
-        assertEquals(Instant.parse("2026-08-06T00:00:00Z").toEpochMilli(), nextOccurrence(martes, "WEEKLY"))
-        assertEquals(Instant.parse("2026-08-30T00:00:00Z").toEpochMilli(), nextOccurrence(martes, "MONTHLY"))
-        assertEquals(Instant.parse("2027-07-30T00:00:00Z").toEpochMilli(), nextOccurrence(martes, "YEARLY"))
+        val elDiez = Instant.parse("2026-07-10T12:00:00Z").toEpochMilli()
+        assertEquals(15, dia(Instant.ofEpochMilli(nextOccurrence(elDiez, "SEMIMONTHLY")).toString()))
+
+        val elQuince = Instant.parse("2026-07-15T12:00:00Z").toEpochMilli()
+        assertEquals(31, dia(Instant.ofEpochMilli(nextOccurrence(elQuince, "SEMIMONTHLY")).toString()))
+
+        // El intervalo si cuenta dias, que es lo que hay que poder elegir aparte.
+        val treinta = nextOccurrence(Instant.parse("2026-07-10T12:00:00Z").toEpochMilli(), "EVERY_30_DAYS")
+        assertEquals(9, dia(Instant.ofEpochMilli(treinta).toString()))
     }
 
     @Test

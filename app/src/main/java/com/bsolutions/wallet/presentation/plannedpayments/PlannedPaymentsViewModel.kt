@@ -136,14 +136,49 @@ class PlannedPaymentsViewModel @Inject constructor(
         ).orEmpty()
     }
 
-    private fun nextDate(from: Long, frequency: String): Long {
-        val cal = Calendar.getInstance().apply { timeInMillis = from }
-        when (frequency) {
-            "WEEKLY" -> cal.add(Calendar.WEEK_OF_YEAR, 1)
-            "BIWEEKLY" -> cal.add(Calendar.WEEK_OF_YEAR, 2)
-            "MONTHLY" -> cal.add(Calendar.MONTH, 1)
-            "YEARLY" -> cal.add(Calendar.YEAR, 1)
+    private fun nextDate(from: Long, frequency: String): Long = nextDueDate(from, frequency)
+}
+
+/**
+ * Cuándo toca la próxima vez.
+ *
+ * Hay dos familias y confundirlas descuadra el calendario. Las de intervalo cuentan días
+ * desde la última vez y se corren solas. Las de día fijo caen siempre en la misma fecha
+ * del mes, que es como se cobra un sueldo o se paga un alquiler.
+ *
+ * "Quincenal" en República Dominicana es el 15 y el último día del mes, no cada catorce
+ * días: con el intervalo, en pocos meses el sueldo terminaba cayendo cualquier día.
+ */
+internal fun nextDueDate(fromMillis: Long, frequency: String): Long {
+    val cal = Calendar.getInstance().apply { timeInMillis = fromMillis }
+    when (frequency) {
+        "WEEKLY" -> cal.add(Calendar.WEEK_OF_YEAR, 1)
+        // Intervalos: se cuentan días, sin mirar el calendario.
+        "BIWEEKLY" -> cal.add(Calendar.WEEK_OF_YEAR, 2)
+        "EVERY_15_DAYS" -> cal.add(Calendar.DAY_OF_MONTH, 15)
+        "EVERY_30_DAYS" -> cal.add(Calendar.DAY_OF_MONTH, 30)
+        // Día fijo: el 15 y el último del mes, saltando al que toque después de hoy.
+        "SEMIMONTHLY" -> {
+            val day = cal.get(Calendar.DAY_OF_MONTH)
+            if (day < 15) {
+                cal.set(Calendar.DAY_OF_MONTH, 15)
+            } else {
+                cal.set(Calendar.DAY_OF_MONTH, cal.getActualMaximum(Calendar.DAY_OF_MONTH))
+                if (day >= cal.get(Calendar.DAY_OF_MONTH)) {
+                    cal.add(Calendar.MONTH, 1)
+                    cal.set(Calendar.DAY_OF_MONTH, 15)
+                }
+            }
         }
-        return cal.timeInMillis
+        // Mismo día cada mes; si ese día no existe (31 en febrero) cae en el último.
+        "MONTHLY" -> {
+            val day = cal.get(Calendar.DAY_OF_MONTH)
+            cal.set(Calendar.DAY_OF_MONTH, 1)
+            cal.add(Calendar.MONTH, 1)
+            cal.set(Calendar.DAY_OF_MONTH, minOf(day, cal.getActualMaximum(Calendar.DAY_OF_MONTH)))
+        }
+        "YEARLY" -> cal.add(Calendar.YEAR, 1)
     }
+
+    return cal.timeInMillis
 }

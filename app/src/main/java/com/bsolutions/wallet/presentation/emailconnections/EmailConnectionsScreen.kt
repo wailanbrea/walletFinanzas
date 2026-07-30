@@ -89,9 +89,11 @@ import java.time.format.DateTimeFormatter
 
 /** Frecuencias que se ofrecen al marcar un correo como movimiento fijo. */
 private val recurringFrequencies = listOf(
-    "WEEKLY" to R.string.email_candidate_freq_weekly,
-    "BIWEEKLY" to R.string.email_candidate_freq_biweekly,
+    "SEMIMONTHLY" to R.string.email_candidate_freq_semimonthly,
     "MONTHLY" to R.string.email_candidate_freq_monthly,
+    "WEEKLY" to R.string.email_candidate_freq_weekly,
+    "EVERY_15_DAYS" to R.string.email_candidate_freq_every15,
+    "EVERY_30_DAYS" to R.string.email_candidate_freq_every30,
     "YEARLY" to R.string.email_candidate_freq_yearly
 )
 
@@ -218,7 +220,7 @@ fun EmailConnectionsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(
                                 selected = direction == "expense",
-                                onClick = { direction = "expense"; categoryId = "" },
+                                onClick = { direction = "expense"; categoryId = ""; recurringFrequency = null },
                                 label = { Text(stringResource(R.string.quick_expense)) }
                             )
                             FilterChip(
@@ -368,11 +370,12 @@ fun EmailConnectionsScreen(
                     }
                     // Un sueldo llega siempre: dejarlo anotado desde el propio aviso evita
                     // ir a crearlo aparte repitiendo monto, cuenta y categoría.
-                    if (bookedTransaction == null) {
+                    // Solo para ingresos: un gasto fijo se lleva desde Pagos planificados.
+                    if (bookedTransaction == null && direction == "income") {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
                                 checked = recurringFrequency != null,
-                                onCheckedChange = { recurringFrequency = if (it) "BIWEEKLY" else null }
+                                onCheckedChange = { recurringFrequency = if (it) "SEMIMONTHLY" else null }
                             )
                             Text(
                                 text = stringResource(R.string.email_candidate_recurring),
