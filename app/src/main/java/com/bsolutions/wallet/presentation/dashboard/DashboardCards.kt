@@ -429,9 +429,14 @@ internal fun AccountBalancesCard(uiState: DashboardUiState) {
                 Spacer(Modifier.height(6.dp))
                 // Mismo tratamiento que el flujo de caja: degradado, esquinas redondeadas
                 // y crecimiento animado, para que las dos tarjetas se lean como una familia.
+                // Las barras son relativas a la cuenta mas grande, asi que un saldo
+                // pequeno al lado de uno grande da una fraccion invisible. Se le da un
+                // minimo visible: la comparacion sigue siendo justa y deja de parecer
+                // que la cuenta esta vacia cuando no lo esta.
                 val share = (account.balance.coerceAtLeast(0L) / maximum).coerceIn(0f, 1f)
+                val visible = if (account.balance > 0L) share.coerceAtLeast(0.06f) else 0f
                 val grown by animateFloatAsState(
-                    targetValue = share,
+                    targetValue = visible,
                     animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
                     label = "barraCuenta"
                 )
@@ -441,7 +446,9 @@ internal fun AccountBalancesCard(uiState: DashboardUiState) {
                         .fillMaxWidth()
                         .height(10.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(accent.copy(alpha = 0.14f))
+                        // Canal mas marcado que en flujo de caja: aqui las barras son
+                        // cortas y sin el el hueco no se lee.
+                        .background(accent.copy(alpha = 0.22f))
                 ) {
                     Box(
                         modifier = Modifier
