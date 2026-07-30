@@ -5,17 +5,11 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -43,22 +37,12 @@ fun WaterSurface(
     color: Color,
     modifier: Modifier = Modifier
 ) {
-    val tilt = rememberDeviceTilt()  // se lee dentro del Canvas, no aquí
+    val water = rememberWaterMotion()  // se lee dentro del Canvas, no aquí
     // El nivel se anima para que al cambiar de meta el agua suba en vez de saltar.
     val filled by animateFloatAsState(
         targetValue = level.coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 900),
         label = "nivel"
-    )
-    val waves = rememberInfiniteTransition(label = "olas")
-    val phase by waves.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "fase"
     )
 
     Canvas(modifier = modifier) {
@@ -67,13 +51,17 @@ fun WaterSurface(
         // Desnivel entre un extremo y el otro. Va contra el ancho y no contra el alto:
         // la superficie cruza la tarjeta a lo largo, así que un desnivel medido en la
         // altura quedaba en unos pocos píxeles y no se veía nada.
-        val slope = tilt.value * size.width * 0.22f
+        val slope = water.tilt.value * size.width * 0.22f
+        // La ola solo existe mientras quede chapoteo: con el teléfono quieto la
+        // superficie es una línea recta y no se redibuja nada.
+        val energy = water.energy.value
+        val phase = water.phase.value
 
         drawWave(
             surfaceY = surfaceY,
             slope = slope * 0.6f,
             phase = phase * 0.7f,
-            amplitude = size.height * 0.035f,
+            amplitude = size.height * 0.045f * energy,
             brush = Brush.verticalGradient(
                 listOf(color.copy(alpha = 0.22f), color.copy(alpha = 0.10f)),
                 startY = surfaceY,
@@ -84,7 +72,7 @@ fun WaterSurface(
             surfaceY = surfaceY,
             slope = slope,
             phase = phase,
-            amplitude = size.height * 0.05f,
+            amplitude = size.height * 0.065f * energy,
             brush = Brush.verticalGradient(
                 listOf(color.copy(alpha = 0.40f), color.copy(alpha = 0.16f)),
                 startY = surfaceY,
@@ -119,34 +107,54 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
     drawPath(path, brush)
 }
 
+/** Estado del líquido: hacia dónde se inclina y cuánto chapotea. */
+private class WaterMotion {
+    val tilt = mutableFloatStateOf(0f)
+    /** De 0 a 1: cuánto queda del chapoteo. En 0 la superficie es una línea recta. */
+    val energy = mutableFloatStateOf(0f)
+    val phase = mutableFloatStateOf(0f)
+}
+
 /**
- * Inclinación lateral del teléfono, de -1 a 1.
+ * Sigue el movimiento del teléfono.
+ *
+ * El agua no se mueve sola: con el teléfono quieto la superficie queda plana y quita.
+ * Solo al moverlo aparece el chapoteo, que luego se apaga como se apaga el de un vaso.
+ *
+ * Todo se calcula en el propio evento del sensor, sin animación de fondo. Un
+ * acelerómetro reporta también en reposo, así que basta con mirar cuánto cambia: si no
+ * cambia, la energía cae a cero y deja de dibujarse movimiento.
  *
  * El listener se suelta al salir de la pantalla: un sensor que sigue escuchando cuando
  * no se ve nada gasta batería sin que el usuario tenga forma de notarlo.
  */
 @Composable
-private fun rememberDeviceTilt(): FloatState {
+private fun rememberWaterMotion(): WaterMotion {
+    val water = remember { WaterMotion() }
     // En las vistas previas y en los tests no hay sensor: el agua se queda quieta.
-    if (LocalInspectionMode.current) return remember { mutableFloatStateOf(0f) }
+    if (LocalInspectionMode.current) return water
     val context = LocalContext.current
-    // Se devuelve el estado y no su valor: leerlo dentro del Canvas invalida solo el
-    // dibujo. Leyendolo aqui, cada evento del sensor obligaria a recomponer la tarjeta
-    // entera, que es carisimo a la frecuencia del acelerometro.
-    val tilt = remember { mutableFloatStateOf(0f) }
 
     DisposableEffect(context) {
         val sensors = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         val accelerometer = sensors?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                // El eje X en m/s²; a 9.8 el teléfono está de lado. Se suaviza para que
-                // el agua no tiemble con el pulso.
-                // El eje X es el giro lateral: a 9.8 m/s² el teléfono está de lado. Se
-                // amplifica porque en la mano se inclina poco, y se suaviza lo justo para
-                // que no tiemble con el pulso sin que llegue tarde.
+                // El eje X es el giro lateral. Se amplifica porque en la mano el teléfono
+                // se inclina poco: nadie lo pone de costado para mirar el saldo.
                 val target = (event.values[0] / 4.5f).coerceIn(-1f, 1f)
-                tilt.floatValue += (target - tilt.floatValue) * 0.35f
+                val change = target - water.tilt.floatValue
+                water.tilt.floatValue += change * 0.35f
+
+                // Lo que agita el agua es el cambio, no la posición: sostenerlo inclinado
+                // y quieto deja la superficie en diagonal pero sin olas.
+                val stirred = (kotlin.math.abs(change) * 14f).coerceAtMost(1f)
+                water.energy.floatValue = maxOf(water.energy.floatValue * 0.94f, stirred)
+                if (water.energy.floatValue < 0.01f) {
+                    water.energy.floatValue = 0f
+                } else {
+                    water.phase.floatValue += 0.25f + water.energy.floatValue * 0.5f
+                }
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -157,7 +165,7 @@ private fun rememberDeviceTilt(): FloatState {
         onDispose { sensors?.unregisterListener(listener) }
     }
 
-    return tilt
+    return water
 }
 
 /**
