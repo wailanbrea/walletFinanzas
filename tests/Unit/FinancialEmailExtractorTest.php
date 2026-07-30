@@ -47,6 +47,35 @@ class FinancialEmailExtractorTest extends TestCase
         $this->assertSame(2500000, $candidate['amount']);
     }
 
+    public function test_a_payroll_notice_is_income_even_when_it_says_pago(): void
+    {
+        // "Pago de nomina" es el sueldo, no un gasto. La palabra "pago" ganaba y el
+        // sueldo se restaba del balance ademas de inflar los gastos del mes.
+        $cases = [
+            'Pago de nómina por RD$22,173.10',
+            'Se ha realizado el pago de su nómina RD$22,173.10',
+            // Estos dos no casaban con ninguna de las dos listas y se descartaban.
+            'Acreditación de salario RD$22,173.10',
+            'Su sueldo quincenal fue pagado RD$22,173.10',
+        ];
+
+        foreach ($cases as $body) {
+            $candidate = $this->extractor->extract('Notificaciones Banreservas', $body, null);
+
+            $this->assertNotNull($candidate, "Se descartó: $body");
+            $this->assertSame('income', $candidate['direction'], "Falló con: $body");
+            $this->assertSame('Salario', $candidate['category_suggestion'], "Falló con: $body");
+        }
+    }
+
+    public function test_paying_a_card_is_still_an_expense(): void
+    {
+        // El contrapeso: no todo lo que dice "pago" pasa a ser ingreso.
+        $candidate = $this->extractor->extract('Aviso', 'Pago de tu tarjeta de crédito RD$5,000.00', null);
+
+        $this->assertSame('expense', $candidate['direction']);
+    }
+
     public function test_it_rejects_payment_reminders_but_not_transactional_messages_with_promo_footers(): void
     {
         $this->assertNull($this->extractor->extract(

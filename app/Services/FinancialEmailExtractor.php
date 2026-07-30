@@ -12,7 +12,17 @@ class FinancialEmailExtractor
         }
 
         $expense = preg_match('/\b(compra|pago|cargo|debito|débito|consumo|purchase|payment|charged|spent)\b|usaste tu tarjeta/iu', $text) === 1;
-        $income = preg_match('/\b(abono|deposito|depósito|ingreso|transferencia recibida|crédito recibido|received|deposit)\b/iu', $text) === 1;
+        $income = preg_match('/\b(abono|deposito|depósito|ingreso|acreditaci[oó]n|acreditad[ao]|transferencia recibida|crédito recibido|received|deposit)\b/iu', $text) === 1;
+
+        // Un aviso de nomina es dinero que entra aunque diga "pago": "pago de nomina" es
+        // el sueldo, no un gasto. Sin esto el sueldo se restaba del balance y ademas
+        // inflaba los gastos del mes. Y "sueldo quincenal fue pagado" no casaba con
+        // ninguna de las dos listas, asi que el aviso se descartaba entero.
+        if (preg_match('/\b(n[oó]mina|salario|sueldo|quincena|honorarios?|pensi[oó]n|jubilaci[oó]n)\b/iu', $text) === 1) {
+            $expense = false;
+            $income = true;
+        }
+
         if ($expense === $income) {
             return null;
         }
