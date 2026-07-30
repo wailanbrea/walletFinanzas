@@ -18,6 +18,7 @@ class EmailMailboxScanner
         private FinancialEmailExtractor $extractor,
         private UsdDopExchangeRateService $exchangeRates,
         private DuplicateEmailCandidateDetector $duplicates,
+        private EmailBodyText $bodyText,
     ) {}
 
     public function scan(EmailConnection $connection): array
@@ -142,14 +143,17 @@ class EmailMailboxScanner
                     break;
                 }
                 $detail = $this->http($token)->get('https://gmail.googleapis.com/gmail/v1/users/me/messages/'.rawurlencode($reference['id']), [
-                    'format' => 'metadata',
-                    'metadataHeaders' => ['Subject', 'Date'],
+                    // full y no metadata: metadata no devuelve el cuerpo, y sin cuerpo el
+                    // comercio y la tarjeta de muchos avisos son ilegibles.
+                    'format' => 'full',
                 ])->throw()->json();
                 $headers = collect($detail['payload']['headers'] ?? [])->mapWithKeys(fn (array $header) => [strtolower((string) ($header['name'] ?? '')) => $header['value'] ?? null]);
                 $messages[] = [
                     'id' => (string) $reference['id'],
                     'subject' => $this->limited($headers['subject'] ?? null, 500),
-                    'snippet' => $this->limited($detail['snippet'] ?? null, 1000),
+                    // Si el cuerpo no se pudo leer, la vista previa sigue sirviendo.
+                    'snippet' => $this->bodyText->fromGmailPayload($detail['payload'] ?? null)
+                        ?? $this->limited($detail['snippet'] ?? null, 1000),
                     'occurred_at' => $this->date($headers['date'] ?? null),
                 ];
             }
@@ -164,7 +168,9 @@ class EmailMailboxScanner
         $limit = $this->messageLimit();
         $messages = [];
         $url = 'https://graph.microsoft.com/v1.0/me/messages';
-        $query = ['$top' => min(50, $limit), '$select' => 'id,subject,bodyPreview,receivedDateTime', '$orderby' => 'receivedDateTime desc'];
+        // Se pide body y no solo bodyPreview: la vista previa corta el aviso justo antes
+        // de la tabla con el comercio y la tarjeta.
+        $query = ['$top' => min(50, $limit), '$select' => 'id,subject,bodyPreview,body,receivedDateTime', '$orderby' => 'receivedDateTime desc'];
         do {
             $page = $this->http($token)->get($url, $query)->throw()->json();
             $query = [];
@@ -175,7 +181,8 @@ class EmailMailboxScanner
                 $messages[] = [
                     'id' => $item['id'],
                     'subject' => $this->limited($item['subject'] ?? null, 500),
-                    'snippet' => $this->limited($item['bodyPreview'] ?? null, 1000),
+                    'snippet' => $this->bodyText->fromGraphBody($item['body'] ?? null)
+                        ?? $this->limited($item['bodyPreview'] ?? null, 1000),
                     'occurred_at' => $this->date($item['receivedDateTime'] ?? null),
                 ];
             }
