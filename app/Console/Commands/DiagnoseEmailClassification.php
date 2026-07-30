@@ -22,6 +22,7 @@ class DiagnoseEmailClassification extends Command
         {--user= : Limitar a un usuario por id}
         {--show=15 : Cuántos casos fallidos listar}
         {--dump=0 : Cuántos casos sin comercio volcar con su texto completo}
+        {--shape=0 : Como --dump pero enmascarando el contenido; muestra solo el formato}
         {--dump-chars=700 : Cuánto texto volcar de cada uno}';
 
     protected $description = 'Reporta qué tan bien se están clasificando los correos guardados';
@@ -96,8 +97,65 @@ class DiagnoseEmailClassification extends Command
         $this->listFailures('Sin comercio', $noMerchant, $show);
         $this->listFailures('Sin categoría', $noCategory, $show);
         $this->dumpSamples($noMerchantSamples);
+        $this->shapeSamples($noMerchantSamples);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Como el volcado, pero enmascarando el contenido: deja ver el formato sin exponer
+     * el buzon.
+     *
+     * Para escribir una regla hace falta saber donde estan los rotulos y que separa el
+     * valor, no cual es el valor. Se conservan los rotulos conocidos, la puntuacion y los
+     * simbolos de moneda; el resto se sustituye letra a letra respetando mayusculas, de
+     * modo que "FERRETERIA OCHOA" se ve como "XXXXXXXXXX XXXXX" y sigue siendo evidente
+     * que ahi va un nombre.
+     */
+    private function shapeSamples(array $messages): void
+    {
+        $shape = max(0, (int) $this->option('shape'));
+        if ($shape === 0 || $messages === []) {
+            return;
+        }
+        $chars = max(100, (int) $this->option('dump-chars'));
+
+        $this->newLine();
+        $this->info('Formato de los casos sin comercio (contenido enmascarado):');
+        foreach (array_slice($messages, 0, $shape) as $index => $message) {
+            $this->newLine();
+            $this->line('  ── '.($index + 1).' ── '.($message->provider ?? '?'));
+            $masked = $this->mask(mb_substr(trim((string) $message->snippet), 0, $chars));
+            $this->line($masked === '' ? '  (sin texto)' : '  '.str_replace("\n", "\n  ", $masked));
+        }
+        $this->newLine();
+        $this->comment('Esta sección no contiene datos del buzón: se puede compartir.');
+    }
+
+    /** Sustituye el contenido dejando intactos rotulos, puntuacion y monedas. */
+    private function mask(string $text): string
+    {
+        $keep = 'comercio|establecimiento|negocio|afiliado|adquirente|merchant|localidad|'
+            .'lugar de consumo|tarjeta|monto|importe|fecha|hora|referencia|autorizaci[oó]n|'
+            .'compra|consumo|pago|cargo|abono|dep[oó]sito|aprobad[ao]|declinad[ao]|'
+            .'terminad[ao]|termina|ending|RD\$|USD|DOP|EUR';
+
+        return preg_replace_callback(
+            '/'.$keep.'|\p{Lu}|\p{Ll}|\d/iu',
+            function (array $match): string {
+                $token = $match[0];
+                if (mb_strlen($token) > 1) {
+                    return $token; // rotulo o simbolo de moneda: se conserva
+                }
+
+                return match (true) {
+                    (bool) preg_match('/\d/u', $token) => '9',
+                    (bool) preg_match('/\p{Lu}/u', $token) => 'X',
+                    default => 'x',
+                };
+            },
+            $text
+        ) ?? $text;
     }
 
     /**

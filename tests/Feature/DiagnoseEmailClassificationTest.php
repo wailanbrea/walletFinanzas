@@ -52,6 +52,26 @@ class DiagnoseEmailClassificationTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_the_shape_mode_shows_the_format_without_the_content(): void
+    {
+        $user = User::factory()->create();
+        // Sin rotulo el comercio no se detecta: es justamente un caso "sin comercio".
+        $this->message(
+            $user,
+            'Notificación de Consumo',
+            'Consumo aprobado en FERRETERIA OCHOA | Monto | RD$3,450.00'
+        );
+
+        // Una sola aserción sobre la línea enmascarada: el matcher consume una línea por
+        // expectativa, así que varias sobre la misma línea fallarían aunque el texto esté.
+        // De paso prueba las tres cosas a la vez: el nombre enmascarado conservando su
+        // forma, el rótulo intacto y la moneda intacta con las cifras enmascaradas.
+        $this->artisan('email:diagnose', ['--shape' => 2])
+            ->expectsOutputToContain('XXXXXXXXXX XXXXX | Monto | RD$9,999.99')
+            ->doesntExpectOutputToContain('FERRETERIA OCHOA')
+            ->assertSuccessful();
+    }
+
     public function test_it_says_so_when_there_is_nothing_to_analyse(): void
     {
         $this->artisan('email:diagnose')
