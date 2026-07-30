@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SyncEmailConnection;
 use App\Models\EmailCandidate;
 use App\Models\EmailConnection;
 use App\Models\EmailOAuthState;
@@ -231,7 +232,7 @@ class EmailOAuthAndSyncApiTest extends TestCase
 
         $this->assertSame($first->json('data.sync_run_id'), $second->json('data.sync_run_id'));
         $this->assertDatabaseCount('email_sync_runs', 1);
-        Queue::assertPushed(\App\Jobs\SyncEmailConnection::class, 1);
+        Queue::assertPushed(SyncEmailConnection::class, 1);
     }
 
     private function connection(User $user, string $provider, mixed $expiresAt = null): EmailConnection

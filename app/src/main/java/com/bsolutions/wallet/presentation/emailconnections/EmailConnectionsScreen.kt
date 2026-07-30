@@ -88,6 +88,7 @@ fun EmailConnectionsScreen(
     var disconnectCandidate by remember { mutableStateOf<EmailProvider?>(null) }
     var classifyCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
     var dismissCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
+    var duplicateCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
 
     LaunchedEffect(oauthReturnNonce) {
         if (oauthReturnNonce > 0L) viewModel.onAuthorizationReturn()
@@ -221,6 +222,27 @@ fun EmailConnectionsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { dismissCandidate = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    duplicateCandidate?.let { candidate ->
+        AlertDialog(
+            onDismissRequest = { duplicateCandidate = null },
+            title = { Text(stringResource(R.string.email_candidate_duplicate_title)) },
+            text = { Text(stringResource(R.string.email_candidate_duplicate_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    duplicateCandidate = null
+                    viewModel.markDuplicate(candidate.id)
+                }) {
+                    Text(stringResource(R.string.email_candidate_duplicate))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { duplicateCandidate = null }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -363,7 +385,8 @@ fun EmailConnectionsScreen(
                                     candidate = candidate,
                                     isReviewing = state.reviewCandidateId != null || state.actionProvider != null,
                                     onClassify = { classifyCandidate = candidate },
-                                    onDismiss = { dismissCandidate = candidate }
+                                    onDismiss = { dismissCandidate = candidate },
+                                    onDuplicate = { duplicateCandidate = candidate }
                                 )
                             }
                         }
@@ -509,7 +532,8 @@ private fun CandidateCard(
     candidate: EmailCandidate,
     isReviewing: Boolean,
     onClassify: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onDuplicate: () -> Unit
 ) {
     val uriHandler = LocalUriHandler.current
     Card(
@@ -610,6 +634,13 @@ private fun CandidateCard(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
+            }
+            TextButton(
+                onClick = onDuplicate,
+                enabled = !isReviewing,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.email_candidate_duplicate))
             }
         }
     }

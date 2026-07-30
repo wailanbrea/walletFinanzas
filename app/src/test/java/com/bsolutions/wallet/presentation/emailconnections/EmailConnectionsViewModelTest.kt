@@ -130,6 +130,27 @@ class EmailConnectionsViewModelTest {
     }
 
     @Test
+    fun `duplicate candidates are hidden and can be marked manually`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
+            candidates = listOf(
+                financialCandidate("pending"),
+                financialCandidate("already-duplicate").copy(status = "duplicate")
+            )
+        }
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        assertEquals(listOf("pending"), viewModel.uiState.value.candidates.map { it.id })
+
+        viewModel.markDuplicate("pending")
+        advanceUntilIdle()
+
+        assertEquals(Triple("pending", "duplicate", null), repository.reviews.single())
+        assertEquals(emptyList<EmailCandidate>(), viewModel.uiState.value.candidates)
+        assertEquals("Movimiento marcado como duplicado.", viewModel.uiState.value.message)
+    }
+
+    @Test
     fun `classifying candidate calls backend and removes reviewed item`() = runTest {
         val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
             candidates = listOf(financialCandidate())

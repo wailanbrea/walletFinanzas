@@ -101,9 +101,7 @@ class UsdDopExchangeRateService
             $rate = data_get($response->json(), 'usd.dop');
 
             return is_numeric($rate) && (float) $rate > 0 ? (float) $rate : null;
-        } catch (Throwable $exception) {
-            report($exception);
-
+        } catch (Throwable) {
             return null;
         }
     }

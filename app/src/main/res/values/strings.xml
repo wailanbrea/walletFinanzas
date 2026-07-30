@@ -452,6 +452,9 @@
     <string name="email_candidate_conversion_unavailable">Conversión a DOP no disponible. Se conserva el importe original en USD.</string>
     <string name="email_candidate_classify">Clasificar</string>
     <string name="email_candidate_not_movement">No es movimiento</string>
+    <string name="email_candidate_duplicate">Marcar como duplicado</string>
+    <string name="email_candidate_duplicate_title">Movimiento duplicado</string>
+    <string name="email_candidate_duplicate_confirm">Este aviso corresponde a un movimiento que ya apareció en otro correo. Se ocultará de la lista sin crear una transacción.</string>
     <string name="email_candidate_classify_title">Clasificar movimiento</string>
     <string name="email_candidate_account_label">Cargar en cuenta</string>
     <string name="email_candidate_no_compatible_account">No tienes una cuenta en la moneda del movimiento ni en su moneda convertida.</string>

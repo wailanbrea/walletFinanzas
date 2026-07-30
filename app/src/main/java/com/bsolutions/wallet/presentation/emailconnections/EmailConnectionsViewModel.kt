@@ -242,6 +242,10 @@ class EmailConnectionsViewModel @Inject constructor(
         }
     }
 
+    fun markDuplicate(candidateId: String) {
+        review(candidateId, "duplicate", null)
+    }
+
     private fun review(candidateId: String, action: String, category: String?, lockAlreadyHeld: Boolean = false) {
         if (!lockAlreadyHeld && (_uiState.value.reviewCandidateId != null || _uiState.value.actionProvider != null)) return
         if (!lockAlreadyHeld) _uiState.value = _uiState.value.copy(reviewCandidateId = candidateId, message = null)
@@ -251,10 +255,10 @@ class EmailConnectionsViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     candidates = _uiState.value.candidates.filterNot { it.id == candidateId },
                     reviewCandidateId = null,
-                    message = if (action == "dismiss") {
-                        "El correo fue descartado y la corrección se usará en el futuro."
-                    } else {
-                        "Movimiento clasificado. La categoría se usará en futuros correos similares."
+                    message = when (action) {
+                        "dismiss" -> "El correo fue descartado y la corrección se usará en el futuro."
+                        "duplicate" -> "Movimiento marcado como duplicado."
+                        else -> "Movimiento clasificado. La categoría se usará en futuros correos similares."
                     }
                 )
             } catch (exception: Exception) {
@@ -273,7 +277,7 @@ class EmailConnectionsViewModel @Inject constructor(
     private suspend fun loadConnections(syncResult: EmailSyncResult? = _uiState.value.syncResult) {
         try {
             val connections = repository.getConnections()
-            val candidates = repository.getCandidates()
+            val candidates = repository.getCandidates().filterNot { it.status == "duplicate" }
             _uiState.value = _uiState.value.copy(
                 phase = if (connections.isEmpty()) EmailConnectionsPhase.EMPTY else EmailConnectionsPhase.CONTENT,
                 connections = connections,
