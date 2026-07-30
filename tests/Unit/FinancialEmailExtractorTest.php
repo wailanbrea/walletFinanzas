@@ -99,4 +99,40 @@ class FinancialEmailExtractorTest extends TestCase
         $this->assertNotNull($candidate);
         $this->assertNull($candidate['card_last_four']);
     }
+
+    public function test_a_qualified_symbol_decides_the_currency(): void
+    {
+        $cases = [
+            'Compra aprobada por RD$1,500.00' => 'DOP',
+            'Compra aprobada por USD 355.00' => 'USD',
+            'Compra aprobada por DOP 1,500.00' => 'DOP',
+            'Compra aprobada por EUR 40.00' => 'EUR',
+            'Compra aprobada por €40.00' => 'EUR',
+        ];
+
+        foreach ($cases as $body => $expected) {
+            $candidate = $this->extractor->extract('Consumo', $body, null);
+
+            $this->assertNotNull($candidate, "No se extrajo: $body");
+            $this->assertSame($expected, $candidate['currency'], "Fallo con: $body");
+        }
+    }
+
+    public function test_a_bare_dollar_sign_uses_the_qualifier_found_in_the_text(): void
+    {
+        // PayPal escribe "$355.00 USD": el cualificador está al lado, no en el símbolo.
+        $usd = $this->extractor->extract('Pago realizado', 'Se cobró $355.00 USD a tu cuenta', null);
+        $this->assertSame('USD', $usd['currency']);
+
+        // Un banco dominicano habla de pesos aunque escriba solo "$".
+        $dop = $this->extractor->extract('Consumo aprobado', 'Compra por $1,500.00 pesos dominicanos', null);
+        $this->assertSame('DOP', $dop['currency']);
+    }
+
+    public function test_an_unqualified_dollar_sign_is_never_guessed(): void
+    {
+        // Tomar RD$1,500 por dólares lo convertiría en unos RD$90,000. Sin una pista
+        // clara se descarta en vez de desplazar el importe por un factor de sesenta.
+        $this->assertNull($this->extractor->extract('Compra aprobada', 'Cargo por $1,500.00', null));
+    }
 }

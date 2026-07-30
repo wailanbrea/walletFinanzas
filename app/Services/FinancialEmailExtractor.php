@@ -20,11 +20,13 @@ class FinancialEmailExtractor
         if (! preg_match('/(?:(RD\$|USD|DOP|EUR|\$|€)\s*)([0-9][0-9., ]{0,16})/iu', $text, $match)) {
             return null;
         }
-        $currency = match (strtoupper($match[1])) {
-            'RD$', 'DOP' => 'DOP',
-            'EUR', '€' => 'EUR',
-            default => 'USD',
-        };
+        $currency = $this->currencyFor($match[1], $text);
+        if ($currency === null) {
+            // Un "$" a secas no dice qué moneda es, y equivocarse cuesta caro: tomar
+            // RD$1,500 por dólares lo convierte en unos RD$90,000. Sin una pista clara
+            // se descarta y el correo queda para revisión manual.
+            return null;
+        }
         $amount = $this->minorUnits($match[2]);
         if ($amount === null || $amount <= 0) {
             return null;
@@ -71,6 +73,37 @@ class FinancialEmailExtractor
             if (preg_match($pattern, $text, $match) === 1) {
                 return $match['digits'];
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resuelve la moneda del importe encontrado.
+     *
+     * Los símbolos cualificados (RD$, USD, DOP, EUR, €) se toman tal cual. Un "$" a
+     * secas es ambiguo -en RD se usa tanto para pesos como para dólares-, así que se
+     * busca un cualificador en el resto del texto: "US$", "dólares" o "USD" lo hacen
+     * dólares; "RD$" o "pesos" lo hacen pesos. Sin ninguna pista devuelve null, porque
+     * adivinar aquí desplaza el importe por un factor de sesenta.
+     */
+    private function currencyFor(string $symbol, string $text): ?string
+    {
+        $qualified = match (strtoupper($symbol)) {
+            'RD$', 'DOP' => 'DOP',
+            'EUR', '€' => 'EUR',
+            'USD' => 'USD',
+            default => null,
+        };
+        if ($qualified !== null) {
+            return $qualified;
+        }
+
+        if (preg_match('/\b(?:USD|US\$|d[oó]lar(?:es)?)\b/iu', $text) === 1) {
+            return 'USD';
+        }
+        if (preg_match('/\b(?:RD\$|DOP|pesos?\s+dominicanos?|pesos)\b/iu', $text) === 1) {
+            return 'DOP';
         }
 
         return null;
