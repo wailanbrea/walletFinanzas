@@ -426,13 +426,35 @@ internal fun AccountBalancesCard(uiState: DashboardUiState) {
                         fontWeight = FontWeight.SemiBold
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { (account.balance.coerceAtLeast(0L) / maximum).coerceIn(0f, 1f) },
+                Spacer(Modifier.height(6.dp))
+                // Mismo tratamiento que el flujo de caja: degradado, esquinas redondeadas
+                // y crecimiento animado, para que las dos tarjetas se lean como una familia.
+                val share = (account.balance.coerceAtLeast(0L) / maximum).coerceIn(0f, 1f)
+                val grown by animateFloatAsState(
+                    targetValue = share,
+                    animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+                    label = "barraCuenta"
+                )
+                val accent = MaterialTheme.colorScheme.primary
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(10.dp)
-                )
+                        .clip(RoundedCornerShape(50))
+                        .background(accent.copy(alpha = 0.14f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(grown)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(50))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(accent.copy(alpha = 0.55f), accent)
+                                )
+                            )
+                    )
+                }
             }
         }
     }
