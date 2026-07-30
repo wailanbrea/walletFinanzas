@@ -42,7 +42,7 @@ class CategoryApiContractTest {
                 name = "Movilidad",
                 icon = "directions_car",
                 colorHex = "#64B5F6",
-                isDeleted = true
+                type = "EXPENSE", isDeleted = true
             )
         ).data
         val request = server.takeRequest()

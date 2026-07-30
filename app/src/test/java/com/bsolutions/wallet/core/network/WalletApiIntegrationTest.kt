@@ -59,7 +59,7 @@ class WalletApiIntegrationTest {
                 name = "Integración",
                 icon = "category",
                 colorHex = "#90A4AE",
-                isDeleted = false
+                type = "EXPENSE", isDeleted = false
             )
         ).data
         assertEquals(categoryId, category.id)
@@ -155,7 +155,7 @@ class WalletApiIntegrationTest {
                 name = "Integración",
                 icon = "category",
                 colorHex = "#90A4AE",
-                isDeleted = true
+                type = "EXPENSE", isDeleted = true
             )
         ).data
         assertTrue(tombstone.isDeleted)

@@ -7,8 +7,10 @@ import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.model.Debt
+import com.bsolutions.wallet.domain.model.PlannedPayment
 import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.DebtRepository
+import com.bsolutions.wallet.domain.repository.PlannedPaymentRepository
 import com.bsolutions.wallet.domain.usecase.DEBT_OWED_TO_ME
 import com.bsolutions.wallet.domain.usecase.DebtLedger
 import com.bsolutions.wallet.domain.usecase.LOAN_CATEGORY_ID
@@ -31,6 +33,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.UUID
 import javax.inject.Inject
 
 enum class EmailConnectionsPhase { LOADING, CONTENT, EMPTY, ERROR }
@@ -133,7 +136,8 @@ class EmailConnectionsViewModel @Inject constructor(
     private val accountRepository: AccountRepository,
     private val transactionRepository: TransactionRepository,
     private val debtRepository: DebtRepository,
-    private val debtLedger: DebtLedger
+    private val debtLedger: DebtLedger,
+    private val plannedPaymentRepository: PlannedPaymentRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(EmailConnectionsUiState())
     val uiState: StateFlow<EmailConnectionsUiState> = _uiState.asStateFlow()
@@ -271,7 +275,22 @@ class EmailConnectionsViewModel @Inject constructor(
         selectedDateMillis: Long? = null,
         overrideAmountMinor: Long? = null,
         /** Deuda a la que se le carga el monto, si el correo es por algo que prestaste. */
-        debtId: String? = null
+        debtId: String? = null,
+        /**
+         * "income" o "expense" cuando el usuario corrige lo detectado.
+         *
+         * Hace falta porque la deteccion se equivoca: un aviso de nomina que dice "pago"
+         * se leia como gasto, y sin poder corregirlo aqui el sueldo entraba restando y
+         * no habia forma de arreglarlo despues, porque editar no deja cambiar el tipo.
+         */
+        directionOverride: String? = null,
+        /**
+         * Frecuencia con la que se repite: crea ademas el recurrente en esa misma fecha.
+         *
+         * Un sueldo llega siempre, asi que dejarlo anotado desde el propio aviso evita
+         * tener que ir a crearlo aparte repitiendo monto, cuenta y categoria.
+         */
+        recurringFrequency: String? = null
     ) {
         val bookedTransaction = _uiState.value.bookedCandidates[candidateId]
         // Con deuda no hace falta categoria: se usa la de prestamos.
@@ -307,7 +326,7 @@ class EmailConnectionsViewModel @Inject constructor(
                     val finalCategoryId = if (debt != null) LOAN_CATEGORY_ID else checkNotNull(chosenCategory).id
                     val amount = overrideAmountMinor?.takeIf { it > 0L }
                         ?: checkNotNull(candidateAmountForAccount(candidate, account))
-                    val type = when (candidate.direction) {
+                    val type = when (directionOverride ?: candidate.direction) {
                         "income" -> "INCOME"
                         "expense" -> "EXPENSE"
                         else -> error("Dirección de movimiento inválida")
@@ -340,6 +359,25 @@ class EmailConnectionsViewModel @Inject constructor(
                     debtLedger.onLinkedTransactionAdded(transaction)
                 }
                 movementReady = true
+                // El recurrente se crea despues del movimiento y sin tumbar el flujo si
+                // falla: lo importante ya quedo guardado y esto es una comodidad.
+                if (recurringFrequency != null) {
+                    runCatching {
+                        plannedPaymentRepository.addPlannedPayment(
+                            PlannedPayment(
+                                id = UUID.randomUUID().toString(),
+                                name = transaction.note.ifBlank { categoryName },
+                                accountId = transaction.accountId,
+                                categoryId = transaction.categoryId,
+                                amount = transaction.amount,
+                                type = transaction.type,
+                                frequency = recurringFrequency,
+                                nextDueDate = nextOccurrence(transaction.date, recurringFrequency),
+                                isActive = true
+                            )
+                        )
+                    }
+                }
                 repository.reviewCandidate(candidateId, "categorize", categoryName)
                 _uiState.value = _uiState.value.copy(
                     candidates = _uiState.value.candidates.filterNot { it.id == candidateId },
@@ -592,6 +630,24 @@ internal fun parseEditedAmountMinor(text: String): Long? {
     val value = runCatching { BigDecimal(cleaned) }.getOrNull() ?: return null
     if (value <= BigDecimal.ZERO) return null
     return value.movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong()
+}
+
+/**
+ * Cuando toca la proxima vez, contando desde [fromMillis].
+ *
+ * Se adelanta una ocurrencia a proposito: la de [fromMillis] es la que se acaba de
+ * registrar desde el correo, asi que anotarla otra vez la duplicaria.
+ */
+internal fun nextOccurrence(fromMillis: Long, frequency: String): Long {
+    val date = Instant.ofEpochMilli(fromMillis).atZone(ZoneOffset.UTC).toLocalDate()
+    val next = when (frequency) {
+        "WEEKLY" -> date.plusWeeks(1)
+        "BIWEEKLY" -> date.plusWeeks(2)
+        "YEARLY" -> date.plusYears(1)
+        else -> date.plusMonths(1)
+    }
+
+    return next.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 }
 
 internal fun candidateOccurredAtMillis(value: String): Long? =

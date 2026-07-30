@@ -11,6 +11,8 @@ import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.model.Debt
+import com.bsolutions.wallet.domain.model.PlannedPayment
+import com.bsolutions.wallet.domain.repository.PlannedPaymentRepository
 import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.DebtRepository
 import com.bsolutions.wallet.domain.usecase.DebtLedger
@@ -179,6 +181,49 @@ class EmailConnectionsViewModelTest {
         assertEquals(false, booked.isConsumption)
         // Y la deuda crece por ese monto.
         assertEquals(20_000L + booked.amount, debts.debts.value.single().totalAmount)
+    }
+
+    @Test
+    fun `a misread payroll can be corrected to income and left as recurring`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
+            // Detectado como gasto, que es justo lo que pasaba con "pago de nomina".
+            candidates = listOf(financialCandidate())
+        }
+        val transactions = FakeTransactionRepository()
+        val planned = FakePlannedPaymentRepository()
+        val viewModel = createViewModel(
+            repository,
+            transactionRepository = transactions,
+            plannedPaymentRepository = planned
+        )
+        advanceUntilIdle()
+
+        viewModel.classify(
+            candidateId = "candidate-1",
+            accountId = "account-1",
+            categoryId = "cat_alimentacion",
+            directionOverride = "income",
+            recurringFrequency = "BIWEEKLY"
+        )
+        advanceUntilIdle()
+
+        // El movimiento entra sumando y no restando.
+        assertEquals("INCOME", transactions.added.single().type)
+        // Y queda anotado el recurrente, con la próxima fecha y no la que ya se registró.
+        val recurring = planned.added.single()
+        assertEquals("BIWEEKLY", recurring.frequency)
+        assertEquals("INCOME", recurring.type)
+        assertEquals(transactions.added.single().amount, recurring.amount)
+    }
+
+    @Test
+    fun `the next occurrence skips the one already registered`() {
+        val martes = Instant.parse("2026-07-30T00:00:00Z").toEpochMilli()
+
+        assertEquals(Instant.parse("2026-08-13T00:00:00Z").toEpochMilli(), nextOccurrence(martes, "BIWEEKLY"))
+        assertEquals(Instant.parse("2026-08-06T00:00:00Z").toEpochMilli(), nextOccurrence(martes, "WEEKLY"))
+        assertEquals(Instant.parse("2026-08-30T00:00:00Z").toEpochMilli(), nextOccurrence(martes, "MONTHLY"))
+        assertEquals(Instant.parse("2027-07-30T00:00:00Z").toEpochMilli(), nextOccurrence(martes, "YEARLY"))
     }
 
     @Test
@@ -457,15 +502,26 @@ class EmailConnectionsViewModelTest {
         repository: EmailConnectionsRepository,
         accountRepository: AccountRepository = FakeAccountRepository(),
         transactionRepository: TransactionRepository = FakeTransactionRepository(),
-        debtRepository: DebtRepository = FakeDebtRepository()
+        debtRepository: DebtRepository = FakeDebtRepository(),
+        plannedPaymentRepository: FakePlannedPaymentRepository = FakePlannedPaymentRepository()
     ) = EmailConnectionsViewModel(
         repository,
         FakeCategoryRepository(),
         accountRepository,
         transactionRepository,
         debtRepository,
-        DebtLedger(transactionRepository, debtRepository)
+        DebtLedger(transactionRepository, debtRepository),
+        plannedPaymentRepository
     )
+
+    private class FakePlannedPaymentRepository : PlannedPaymentRepository {
+        val added = mutableListOf<PlannedPayment>()
+        override fun getPlannedPayments(): Flow<List<PlannedPayment>> = MutableStateFlow(added.toList())
+        override suspend fun getPlannedPayment(id: String): PlannedPayment? = added.firstOrNull { it.id == id }
+        override suspend fun addPlannedPayment(payment: PlannedPayment) { added += payment }
+        override suspend fun updatePlannedPayment(payment: PlannedPayment) = Unit
+        override suspend fun deletePlannedPayment(id: String) = Unit
+    }
 
     private class FakeDebtRepository : DebtRepository {
         val debts = MutableStateFlow<List<Debt>>(emptyList())

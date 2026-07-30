@@ -515,6 +515,12 @@
     <string name="email_candidate_conversion_unavailable">Conversión a DOP no disponible. Se conserva el importe original en USD.</string>
     <string name="email_candidate_classify">Clasificar</string>
     <string name="email_candidate_not_movement">No es movimiento</string>
+    <string name="email_candidate_direction_label">¿Es un gasto o un ingreso?</string>
+    <string name="email_candidate_recurring">Se repite: anotarlo como movimiento fijo</string>
+    <string name="email_candidate_freq_weekly">Semanal</string>
+    <string name="email_candidate_freq_biweekly">Quincenal</string>
+    <string name="email_candidate_freq_monthly">Mensual</string>
+    <string name="email_candidate_freq_yearly">Anual</string>
     <string name="email_candidate_debt_label">¿Es por algo que prestaste? (opcional)</string>
     <string name="email_candidate_debt_help">Se sumará a esa deuda y no contará como tu gasto.</string>
     <string name="email_candidate_amount_label">Monto en %1$s</string>

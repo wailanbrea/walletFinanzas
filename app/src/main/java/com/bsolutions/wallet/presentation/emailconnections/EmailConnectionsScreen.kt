@@ -38,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,6 +86,14 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+
+/** Frecuencias que se ofrecen al marcar un correo como movimiento fijo. */
+private val recurringFrequencies = listOf(
+    "WEEKLY" to R.string.email_candidate_freq_weekly,
+    "BIWEEKLY" to R.string.email_candidate_freq_biweekly,
+    "MONTHLY" to R.string.email_candidate_freq_monthly,
+    "YEARLY" to R.string.email_candidate_freq_yearly
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -164,6 +173,10 @@ fun EmailConnectionsScreen(
         }
         val editedAmount = parseEditedAmountMinor(amountText)
         var chargeToDebtId by remember(candidate.id) { mutableStateOf<String?>(null) }
+        // Corregible porque la detección se equivoca: un aviso de nómina que dice "pago"
+        // se leía como gasto, y una vez creado el movimiento el tipo ya no se puede cambiar.
+        var direction by remember(candidate.id) { mutableStateOf(candidate.direction) }
+        var recurringFrequency by remember(candidate.id) { mutableStateOf<String?>(null) }
         var showDatePicker by remember(candidate.id) { mutableStateOf(false) }
         if (showDatePicker && bookedTransaction == null) {
             val datePickerState = rememberDatePickerState(
@@ -197,6 +210,24 @@ fun EmailConnectionsScreen(
             title = { Text(stringResource(R.string.email_candidate_classify_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (bookedTransaction == null) {
+                        Text(
+                            text = stringResource(R.string.email_candidate_direction_label),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = direction == "expense",
+                                onClick = { direction = "expense"; categoryId = "" },
+                                label = { Text(stringResource(R.string.quick_expense)) }
+                            )
+                            FilterChip(
+                                selected = direction == "income",
+                                onClick = { direction = "income"; categoryId = "" },
+                                label = { Text(stringResource(R.string.quick_income)) }
+                            )
+                        }
+                    }
                     Text(
                         text = stringResource(R.string.email_candidate_account_label),
                         style = MaterialTheme.typography.labelLarge
@@ -282,7 +313,11 @@ fun EmailConnectionsScreen(
                         style = MaterialTheme.typography.labelLarge
                     )
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(state.categories, key = { it.id }) { category ->
+                        // Solo las del tipo elegido: un ingreso no debe poder etiquetarse
+                        // con una categoría de gasto ni al revés.
+                        val wanted = if (direction == "income") "INCOME" else "EXPENSE"
+                        val offered = state.categories.filter { it.type == wanted || it.type == "BOTH" }
+                        items(offered, key = { it.id }) { category ->
                             FilterChip(
                                 selected = categoryId == category.id,
                                 onClick = { categoryId = category.id },
@@ -331,6 +366,31 @@ fun EmailConnectionsScreen(
                             Text(stringResource(R.string.email_candidate_reset_date))
                         }
                     }
+                    // Un sueldo llega siempre: dejarlo anotado desde el propio aviso evita
+                    // ir a crearlo aparte repitiendo monto, cuenta y categoría.
+                    if (bookedTransaction == null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = recurringFrequency != null,
+                                onCheckedChange = { recurringFrequency = if (it) "BIWEEKLY" else null }
+                            )
+                            Text(
+                                text = stringResource(R.string.email_candidate_recurring),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        if (recurringFrequency != null) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(recurringFrequencies) { (value, label) ->
+                                    FilterChip(
+                                        selected = recurringFrequency == value,
+                                        onClick = { recurringFrequency = value },
+                                        label = { Text(stringResource(label)) }
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Text(
                         stringResource(
                             if (bookedTransaction == null) R.string.email_candidate_classify_help
@@ -350,7 +410,9 @@ fun EmailConnectionsScreen(
                             categoryId,
                             selectedDateMillis,
                             editedAmount,
-                            chargeToDebtId
+                            chargeToDebtId,
+                            direction,
+                            recurringFrequency
                         )
                     },
                     enabled = accountId.isNotBlank() &&

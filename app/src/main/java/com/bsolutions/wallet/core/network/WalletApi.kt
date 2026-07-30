@@ -160,6 +160,8 @@ data class CreateCategoryRequest(
     val name: String,
     val icon: String,
     @SerializedName("color_hex") val colorHex: String,
+    /** "EXPENSE", "INCOME" o "BOTH"; sin esto el tipo nunca salía del teléfono. */
+    val type: String,
     @SerializedName("is_deleted") val isDeleted: Boolean
 )
 
@@ -168,6 +170,8 @@ data class CategoryDto(
     val name: String,
     val icon: String,
     @SerializedName("color_hex") val colorHex: String,
+    /** Nullable: un servidor sin la columna todavía no lo manda. */
+    val type: String? = null,
     @SerializedName("is_deleted") val isDeleted: Boolean,
     @SerializedName("updated_at") val updatedAt: String?
 )

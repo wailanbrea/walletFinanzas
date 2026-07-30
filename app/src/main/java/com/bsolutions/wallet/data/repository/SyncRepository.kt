@@ -168,6 +168,7 @@ class SyncRepository @Inject constructor(
                         name = category.name,
                         icon = category.icon,
                         colorHex = category.colorHex,
+                        type = category.type,
                         isDeleted = category.isDeleted
                     )
                 )
@@ -331,6 +332,9 @@ class SyncRepository @Inject constructor(
                         name = dto.name,
                         icon = dto.icon,
                         colorHex = dto.colorHex,
+                        // Se conserva el local si el servidor aun no manda el tipo:
+                        // reconstruirlo por defecto convertia "Salario" en gasto.
+                        type = dto.type ?: categoryDao.getCategoryByIdIncludingDeleted(ownerId, dto.id)?.type ?: "EXPENSE",
                         isDeleted = dto.isDeleted,
                         needsSync = false,
                         ownerId = ownerId
