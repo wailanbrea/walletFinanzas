@@ -252,6 +252,15 @@ private class WaterMotion {
     val bob = mutableFloatStateOf(0f)
     var bobVelocity = 0f
 
+    /**
+     * Hacia donde cae la gravedad, en coordenadas de la tarjeta y normalizada.
+     *
+     * Las gotas caian siempre hacia abajo de la pantalla: con el telefono inclinado eso
+     * se ve mal de inmediato, porque el agua se inclina y las gotas no.
+     */
+    var gravityX = 0f
+    var gravityY = 1f
+
     var lastEventNanos = 0L
 
     /**
@@ -274,6 +283,9 @@ private const val MAX_DROPLETS = 20
  */
 private fun advanceDroplets(water: WaterMotion, dt: Float, stirred: Float) {
     val gravity = 2.4f
+    // Se cae hacia donde tira la gravedad de verdad, no hacia abajo de la tarjeta.
+    val gx = water.gravityX
+    val gy = water.gravityY
     val iterator = water.droplets.iterator()
     while (iterator.hasNext()) {
         val drop = iterator.next()
@@ -294,14 +306,19 @@ private fun advanceDroplets(water: WaterMotion, dt: Float, stirred: Float) {
             continue
         }
 
-        drop.vy += gravity * dt
+        drop.vx += gx * gravity * dt
+        drop.vy += gy * gravity * dt
         drop.x += drop.vx * dt
         drop.y += drop.vy * dt
-        drop.life -= dt * 1.1f
+        drop.life -= dt * 0.75f
 
         // Al llegar arriba del arco la gota toca el cristal; unas se quedan pegadas y
         // otras siguen cayendo, que es lo que pasa al agitar una botella.
-        if (drop.vy > 0f && drop.y < -0.02f && !drop.stuck && Math.random().toFloat() < 0.35f) {
+        // Toca el cristal al llegar arriba del arco: es cuando deja de subir contra la
+        // gravedad y empieza a caer. Se mide sobre el vector, no sobre el eje vertical,
+        // porque con el telefono girado "arriba" ya no es arriba de la pantalla.
+        val alongGravity = drop.vx * gx + drop.vy * gy
+        if (alongGravity > 0f && !drop.stuck && Math.random().toFloat() < 0.35f) {
             drop.stuck = true
             drop.glassY = drop.y
             drop.vy = 0f
@@ -322,8 +339,11 @@ private fun advanceDroplets(water: WaterMotion, dt: Float, stirred: Float) {
                 y = 0f,
                 // Salen hacia donde va la superficie: si el agua sube por la derecha,
                 // las gotas salen hacia la derecha.
-                vx = (water.velocity * 0.35f) + (Math.random().toFloat() - 0.5f) * 0.35f,
-                vy = -(0.5f + stirred * 0.9f) * (0.7f + Math.random().toFloat() * 0.6f),
+                // Salen contra la gravedad, no hacia arriba de la pantalla: si el
+                // telefono esta de lado, el agua salta hacia el lado.
+                vx = -water.gravityX * (0.5f + stirred * 0.9f) * (0.7f + Math.random().toFloat() * 0.6f) +
+                    (water.velocity * 0.35f) + (Math.random().toFloat() - 0.5f) * 0.35f,
+                vy = -water.gravityY * (0.5f + stirred * 0.9f) * (0.7f + Math.random().toFloat() * 0.6f),
                 size = 0.006f + Math.random().toFloat() * 0.010f
             )
         }
@@ -374,6 +394,10 @@ private fun rememberWaterMotion(): WaterMotion {
                 val gy = event.values[1]
                 val planar = kotlin.math.sqrt(gx * gx + gy * gy)
                 val target = if (planar > 0.5f) (gx / planar).coerceIn(-1f, 1f) else 0f
+                if (planar > 0.5f) {
+                    water.gravityX = gx / planar
+                    water.gravityY = gy / planar
+                }
 
                 // Resorte amortiguado en vez de perseguir la gravedad con retardo: la
                 // superficie se pasa de largo y vuelve, que es lo que hace que se lea como
