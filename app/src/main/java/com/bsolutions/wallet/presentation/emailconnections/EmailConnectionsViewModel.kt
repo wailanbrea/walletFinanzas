@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -238,11 +240,20 @@ class EmailConnectionsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Crea el movimiento del correo [candidateId].
+     *
+     * [overrideAmountMinor] reemplaza el importe calculado. Hace falta porque la
+     * conversion a pesos es una estimacion con la tasa media publicada: el banco cobra
+     * con su propio margen, asi que el monto real del estado de cuenta casi nunca
+     * coincide al centavo y solo el usuario sabe cual fue.
+     */
     fun classify(
         candidateId: String,
         accountId: String,
         categoryId: String,
-        selectedDateMillis: Long? = null
+        selectedDateMillis: Long? = null,
+        overrideAmountMinor: Long? = null
     ) {
         val bookedTransaction = _uiState.value.bookedCandidates[candidateId]
         if (
@@ -268,7 +279,8 @@ class EmailConnectionsViewModel @Inject constructor(
                 } else {
                     val account = checkNotNull(accountRepository.getAccount(accountId))
                     val category = checkNotNull(_uiState.value.categories.firstOrNull { it.id == categoryId })
-                    val amount = checkNotNull(candidateAmountForAccount(candidate, account))
+                    val amount = overrideAmountMinor?.takeIf { it > 0L }
+                        ?: checkNotNull(candidateAmountForAccount(candidate, account))
                     val type = when (candidate.direction) {
                         "income" -> "INCOME"
                         "expense" -> "EXPENSE"
@@ -525,6 +537,30 @@ internal fun candidateAmountForAccount(candidate: EmailCandidate, account: Accou
     }
     if (amount == 0L || amount == Long.MIN_VALUE) return null
     return kotlin.math.abs(amount)
+}
+
+/** Importe en unidades menores tal como se escribe en un campo de texto: 2065823 -> "20658.23". */
+internal fun formatAmountForEditing(amountMinor: Long): String =
+    BigDecimal.valueOf(kotlin.math.abs(amountMinor), 2).toPlainString()
+
+/**
+ * Lee el monto que escribio el usuario y lo devuelve en unidades menores.
+ *
+ * Devuelve null si no es un importe positivo utilizable, para que el boton siga
+ * deshabilitado en vez de guardar un movimiento en cero o con basura.
+ */
+internal fun parseEditedAmountMinor(text: String): Long? {
+    var cleaned = text.trim().replace(" ", "").replace(" ", "")
+    if (cleaned.isEmpty()) return null
+    // Con separador de miles y de decimales a la vez, la coma es de miles (20,658.23).
+    cleaned = if (cleaned.contains(',') && cleaned.contains('.')) {
+        cleaned.replace(",", "")
+    } else {
+        cleaned.replace(',', '.')
+    }
+    val value = runCatching { BigDecimal(cleaned) }.getOrNull() ?: return null
+    if (value <= BigDecimal.ZERO) return null
+    return value.movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong()
 }
 
 internal fun candidateOccurredAtMillis(value: String): Long? =

@@ -480,6 +480,10 @@
     <string name="email_candidate_conversion_unavailable">Conversión a DOP no disponible. Se conserva el importe original en USD.</string>
     <string name="email_candidate_classify">Clasificar</string>
     <string name="email_candidate_not_movement">No es movimiento</string>
+    <string name="email_candidate_amount_label">Monto en %1$s</string>
+    <string name="email_candidate_amount_help">Es el monto estimado del correo. Puedes corregirlo.</string>
+    <string name="email_candidate_amount_edited">Se guardará con el monto que escribiste, no con el estimado.</string>
+    <string name="email_candidate_amount_invalid">Escribe un monto mayor que cero.</string>
     <string name="email_candidate_classify_title">Clasificar movimiento</string>
     <string name="email_candidate_account_label">Cargar en cuenta</string>
     <string name="email_candidate_no_compatible_account">No tienes una cuenta en la moneda del movimiento ni en su moneda convertida.</string>

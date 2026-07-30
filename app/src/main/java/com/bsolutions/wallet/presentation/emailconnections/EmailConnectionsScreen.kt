@@ -43,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -65,6 +66,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -153,6 +155,14 @@ fun EmailConnectionsScreen(
         var selectedDateMillis by remember(candidate.id, bookedTransaction) {
             mutableStateOf<Long?>(null)
         }
+        val selectedAccount = state.accounts.firstOrNull { it.id == accountId }
+        val automaticAmount = selectedAccount?.let { candidateAmountForAccount(candidate, it) }
+        // Se precarga con el importe calculado: casi siempre sirve, y cuando la
+        // conversion no coincide con lo que cobro el banco basta con corregirlo.
+        var amountText by remember(candidate.id, accountId, bookedTransaction) {
+            mutableStateOf(automaticAmount?.let { formatAmountForEditing(it) }.orEmpty())
+        }
+        val editedAmount = parseEditedAmountMinor(amountText)
         var showDatePicker by remember(candidate.id) { mutableStateOf(false) }
         if (showDatePicker && bookedTransaction == null) {
             val datePickerState = rememberDatePickerState(
@@ -205,6 +215,39 @@ fun EmailConnectionsScreen(
                             stringResource(R.string.email_candidate_no_compatible_account),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    if (bookedTransaction == null && automaticAmount != null) {
+                        OutlinedTextField(
+                            value = amountText,
+                            onValueChange = { amountText = it },
+                            label = {
+                                Text(
+                                    stringResource(
+                                        R.string.email_candidate_amount_label,
+                                        selectedAccount?.currency.orEmpty()
+                                    )
+                                )
+                            },
+                            singleLine = true,
+                            isError = editedAmount == null,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = when {
+                                editedAmount == null ->
+                                    stringResource(R.string.email_candidate_amount_invalid)
+                                editedAmount != automaticAmount ->
+                                    stringResource(R.string.email_candidate_amount_edited)
+                                else -> stringResource(R.string.email_candidate_amount_help)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (editedAmount == null) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
                     Text(
@@ -278,10 +321,14 @@ fun EmailConnectionsScreen(
                             candidate.id,
                             accountId,
                             categoryId,
-                            selectedDateMillis
+                            selectedDateMillis,
+                            editedAmount
                         )
                     },
-                    enabled = accountId.isNotBlank() && (categoryId.isNotBlank() || bookedTransaction != null)
+                    enabled = accountId.isNotBlank() &&
+                        (categoryId.isNotBlank() || bookedTransaction != null) &&
+                        // Un importe escrito a medias no debe poder guardarse.
+                        (bookedTransaction != null || automaticAmount == null || editedAmount != null)
                 ) { Text(stringResource(R.string.email_candidate_add_movement)) }
             },
             dismissButton = {

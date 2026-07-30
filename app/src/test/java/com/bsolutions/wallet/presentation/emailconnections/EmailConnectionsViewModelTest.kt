@@ -155,6 +155,54 @@ class EmailConnectionsViewModelTest {
     }
 
     @Test
+    fun `a corrected amount replaces the estimated one`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
+            candidates = listOf(financialCandidate())
+        }
+        val transactions = FakeTransactionRepository()
+        val viewModel = createViewModel(repository, transactionRepository = transactions)
+        advanceUntilIdle()
+
+        // El banco cobro 2100.00 y no los 3250.00 que estimaba el correo.
+        viewModel.classify("candidate-1", "account-1", "cat_alimentacion", null, 210000)
+        advanceUntilIdle()
+
+        assertEquals(210000, transactions.added.single().amount)
+    }
+
+    @Test
+    fun `an unusable corrected amount falls back to the estimated one`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
+            candidates = listOf(financialCandidate())
+        }
+        val transactions = FakeTransactionRepository()
+        val viewModel = createViewModel(repository, transactionRepository = transactions)
+        advanceUntilIdle()
+
+        viewModel.classify("candidate-1", "account-1", "cat_alimentacion", null, 0)
+        advanceUntilIdle()
+
+        assertEquals(325000, transactions.added.single().amount)
+    }
+
+    @Test
+    fun `editing an amount reads what a person actually types`() {
+        assertEquals("20658.23", formatAmountForEditing(2065823))
+        assertEquals(2065823L, parseEditedAmountMinor("20658.23"))
+        // Con separador de miles, y con coma decimal.
+        assertEquals(2065823L, parseEditedAmountMinor("20,658.23"))
+        assertEquals(2065823L, parseEditedAmountMinor("20658,23"))
+        assertEquals(2065800L, parseEditedAmountMinor(" 20658 "))
+        // Mas decimales de los que caben en centavos: se redondea.
+        assertEquals(2065823L, parseEditedAmountMinor("20658.229"))
+        // Nada que se pueda guardar.
+        assertNull(parseEditedAmountMinor(""))
+        assertNull(parseEditedAmountMinor("0"))
+        assertNull(parseEditedAmountMinor("-15"))
+        assertNull(parseEditedAmountMinor("abc"))
+    }
+
+    @Test
     fun `classifying candidate calls backend and removes reviewed item`() = runTest {
         val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
             candidates = listOf(financialCandidate())
