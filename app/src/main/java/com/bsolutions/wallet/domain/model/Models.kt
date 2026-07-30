@@ -13,6 +13,9 @@ data class Account(
     val creditLimit: Long? = null // minor units (cents)
 )
 
+/** Categoría de las dos patas de una transferencia; ninguna es gasto ni ingreso. */
+const val TRANSFER_CATEGORY_ID = "cat_transferencias"
+
 data class Transaction(
     val id: String,
     val accountId: String,
@@ -36,7 +39,7 @@ data class Transaction(
      * Toda suma de gastos o ingresos debe filtrar por aquí; está en el modelo justamente
      * para que no se olvide al añadir una gráfica nueva.
      */
-    val isConsumption: Boolean get() = debtId == null
+    val isConsumption: Boolean get() = debtId == null && categoryId != TRANSFER_CATEGORY_ID
 }
 
 data class Category(

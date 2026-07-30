@@ -33,6 +33,9 @@ object DefaultCategories {
         // "BOTH" a proposito: el dinero sale al prestarlo y vuelve al cobrarlo, y con la
         // misma etiqueta en las dos patas se netea en vez de inflar gastos e ingresos.
         Seed("cat_prestamos_terceros", "Préstamos a terceros", "payments", "#9575CD", "BOTH"),
+        // "BOTH" porque una transferencia sale de una cuenta y entra en otra: las dos
+        // patas llevan la misma etiqueta y se anulan entre si.
+        Seed("cat_transferencias", "Transferencias", "payments", "#78909C", "BOTH"),
         Seed("cat_otros", "Otros", "card_giftcard", "#90A4AE", "BOTH"),
     )
 

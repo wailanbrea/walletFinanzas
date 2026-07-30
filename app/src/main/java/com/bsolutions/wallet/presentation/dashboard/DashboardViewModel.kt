@@ -12,6 +12,7 @@ import com.bsolutions.wallet.core.common.MoneyFormat
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.data.preferences.UserProfilePreferences
+import com.bsolutions.wallet.domain.model.TRANSFER_CATEGORY_ID
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.repository.CategoryRepository
@@ -328,18 +329,36 @@ class DashboardViewModel @Inject constructor(
             val now = System.currentTimeMillis()
             val label = note.ifBlank { "Transferencia ${from.name} → ${to.name}" }
 
-            transactionRepository.executeTransfer(
-                fromAccountId = fromAccountId,
-                toAccountId = toAccountId,
-                amount = amount,
-                transaction = Transaction(
-                    id = UUID.randomUUID().toString(),
+            // Dos movimientos y no uno. El servidor no tiene el concepto de
+            // transferencia: solo movimientos con importe sobre una cuenta. Con uno solo
+            // la operacion nunca llegaba, y al sincronizar los saldos volvian del
+            // servidor como si no se hubiera hecho.
+            //
+            // Van por addTransactionWithBalance, que ajusta el saldo y encola la subida;
+            // executeTransfer escribia en local sin encolar nada, que era el fallo.
+            val base = UUID.randomUUID().toString()
+            transactionRepository.addTransactionWithBalance(
+                Transaction(
+                    id = "$base-out",
                     accountId = fromAccountId,
                     amount = amount,
-                    type = "TRANSFER",
-                    categoryId = "",
+                    type = "EXPENSE",
+                    categoryId = TRANSFER_CATEGORY_ID,
                     date = now,
-                    note = label
+                    note = label,
+                    currency = from.currency
+                )
+            )
+            transactionRepository.addTransactionWithBalance(
+                Transaction(
+                    id = "$base-in",
+                    accountId = toAccountId,
+                    amount = amount,
+                    type = "INCOME",
+                    categoryId = TRANSFER_CATEGORY_ID,
+                    date = now,
+                    note = label,
+                    currency = to.currency
                 )
             )
         }

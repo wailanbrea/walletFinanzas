@@ -70,9 +70,10 @@ class DashboardViewModelTest {
         categories: List<Category> = listOf(Category("food", "Alimentación", "restaurant", "#1B873F")),
         preferences: FakeUserProfilePreferences = FakeUserProfilePreferences(),
         debts: List<Debt> = emptyList(),
-        goals: List<Goal> = emptyList()
+        goals: List<Goal> = emptyList(),
+        accounts: List<Account> = listOf(Account("acc-1", "Cuenta", "BANK", 50_000L, "DOP"))
     ): DashboardViewModel = DashboardViewModel(
-        FakeAccountRepository(Account("acc-1", "Cuenta", "BANK", 50_000L, "DOP")),
+        FakeAccountRepository(accounts),
         FakeTransactionRepository(transactions),
         FakeCategoryRepository(categories),
         preferences,
@@ -335,7 +336,7 @@ class DashboardViewModelTest {
         val deletedIds = DefaultCategories.seeds.mapTo(mutableSetOf()) { it.id }
         val categories = FakeCategoryRepository(emptyList(), deletedIds)
         DashboardViewModel(
-            FakeAccountRepository(Account("acc-1", "Cuenta", "BANK", 0L, "DOP")),
+            FakeAccountRepository(listOf(Account("acc-1", "Cuenta", "BANK", 0L, "DOP"))),
             FakeTransactionRepository(emptyList()),
             categories,
             FakeUserProfilePreferences(),
@@ -350,8 +351,8 @@ class DashboardViewModelTest {
 
     // --- Fakes ---
 
-    private class FakeAccountRepository(account: Account) : AccountRepository {
-        private val accounts = MutableStateFlow(listOf(account))
+    private class FakeAccountRepository(initial: List<Account>) : AccountRepository {
+        private val accounts = MutableStateFlow(initial)
         override fun getAccounts(): Flow<List<Account>> = accounts
         override suspend fun getAccount(id: String): Account? = accounts.value.firstOrNull { it.id == id }
         override suspend fun addAccount(account: Account) { accounts.value += account }
