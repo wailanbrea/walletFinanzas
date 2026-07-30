@@ -198,22 +198,27 @@ class DashboardViewModel @Inject constructor(
             .filter { effectiveCategoryId == null || it.categoryId == effectiveCategoryId }
         val thisMonthTx = filteredTransactions
             .filter { it.currency == MoneyFormat.DEFAULT_CURRENCY }
-        val income = thisMonthTx.filter { it.type == "INCOME" }.sumOf { it.amount }
-        val expenses = thisMonthTx.filter { it.type == "EXPENSE" }.sumOf { it.amount }
+        // Prestar dinero y cobrarlo no es consumo: el patrimonio no cambia, se cambia
+        // efectivo por un derecho de cobro. Si contara, el mes en que prestas se veria
+        // como un gasto enorme y el mes en que te pagan como un ingreso que no ganaste.
+        // El saldo de la cuenta si se movio, y eso lo refleja el balance, no estos totales.
+        val consumptionTx = thisMonthTx.filter { it.isConsumption }
+        val income = consumptionTx.filter { it.type == "INCOME" }.sumOf { it.amount }
+        val expenses = consumptionTx.filter { it.type == "EXPENSE" }.sumOf { it.amount }
 
         // Tendencia real: gasto de este mes vs el mes anterior
         val prevExpenses = transactions
             .filter { inMonth(it.date, prev.get(Calendar.MONTH), prev.get(Calendar.YEAR)) }
             .filter { effectiveCategoryId == null || it.categoryId == effectiveCategoryId }
             .filter { it.currency == MoneyFormat.DEFAULT_CURRENCY }
-            .filter { it.type == "EXPENSE" }
+            .filter { it.isConsumption && it.type == "EXPENSE" }
             .sumOf { it.amount }
         val trend = if (activeFilters.period == DashboardPeriodFilter.THIS_MONTH && prevExpenses > 0) {
             (((expenses - prevExpenses).toDouble() / prevExpenses) * 100).toInt()
         } else null
 
         // Gasto filtrado por categoría (para el donut del dashboard)
-        val spending = thisMonthTx
+        val spending = consumptionTx
             .filter { it.type == "EXPENSE" }
             .groupBy { CategoryPlaceholders.aggregateId(it.categoryId, categoryMap) }
             .map { (catId, txs) ->

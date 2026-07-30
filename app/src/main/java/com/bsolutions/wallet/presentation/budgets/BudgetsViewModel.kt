@@ -54,7 +54,8 @@ class BudgetsViewModel @Inject constructor(
         // Gasto por categoría del mes en curso (los presupuestos son mensuales)
         val now = Calendar.getInstance()
         val spentByCategory = transactions
-            .filter { it.type == "EXPENSE" }
+            // Prestar dinero no gasta tu presupuesto: te lo van a devolver.
+            .filter { it.isConsumption && it.type == "EXPENSE" }
             .filter {
                 val cal = Calendar.getInstance().apply { timeInMillis = it.date }
                 cal.get(Calendar.MONTH) == now.get(Calendar.MONTH) &&

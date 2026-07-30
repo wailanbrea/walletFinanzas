@@ -79,6 +79,25 @@ class DebtsViewModel @Inject constructor(
      * cobrado se calcula de esos movimientos, asi que este lado y la pantalla de
      * movimientos no pueden contradecirse.
      */
+    /**
+     * Suma un cargo nuevo a [debt]: dinero que sale ahora por lo mismo que ya prestaste,
+     * como el currier de lo que compraste. Sube lo que te deben en vez de abrir otra deuda.
+     */
+    fun addCharge(debt: Debt, amount: Long, accountId: String, note: String = "") {
+        if (amount <= 0L || accountId.isBlank()) return
+        viewModelScope.launch {
+            val account = uiState.value.accounts.firstOrNull { it.id == accountId } ?: return@launch
+            debtLedger.addCharge(
+                debt = debt,
+                amount = amount,
+                accountId = account.id,
+                currency = account.currency,
+                dateMillis = System.currentTimeMillis(),
+                note = note
+            )
+        }
+    }
+
     fun recordPayment(debt: Debt, amount: Long, accountId: String) {
         if (amount <= 0L || accountId.isBlank()) return
         viewModelScope.launch {

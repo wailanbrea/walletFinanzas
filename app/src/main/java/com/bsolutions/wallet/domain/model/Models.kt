@@ -24,7 +24,20 @@ data class Transaction(
     val currency: String = "DOP", // moneda del movimiento (la de su cuenta)
     /** Deuda a la que pertenece: el gasto que la origino o un abono recibido. */
     val debtId: String? = null
-)
+) {
+    /**
+     * Si cuenta como gasto o ingreso propio en los totales y las gráficas.
+     *
+     * Un movimiento atado a una deuda no lo es: prestar dinero y cobrarlo no cambia el
+     * patrimonio, se cambia efectivo por un derecho de cobro. Contarlo haría que el mes
+     * en que prestas parezca un gasto enorme y el mes en que te pagan un ingreso que no
+     * ganaste. El saldo de la cuenta sí se movió, y eso lo refleja el balance.
+     *
+     * Toda suma de gastos o ingresos debe filtrar por aquí; está en el modelo justamente
+     * para que no se olvide al añadir una gráfica nueva.
+     */
+    val isConsumption: Boolean get() = debtId == null
+}
 
 data class Category(
     val id: String,

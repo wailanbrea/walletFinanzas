@@ -44,8 +44,10 @@ class ReportsViewModel @Inject constructor(
     ) { transactions, categories ->
         val categoryMap = categories.associateBy { it.id }
 
-        // Filter out expenses
-        val expenses = transactions.filter { it.type == "EXPENSE" }
+        // Los movimientos atados a una deuda quedan fuera de las estadísticas: prestar y
+        // cobrar no es consumo ni ingreso propio, y los distorsionaría en ambos sentidos.
+        val ownMovements = transactions.filter { it.isConsumption }
+        val expenses = ownMovements.filter { it.type == "EXPENSE" }
         val totalExp = expenses.sumOf { it.amount }
 
         // Spent per category
@@ -68,7 +70,7 @@ class ReportsViewModel @Inject constructor(
             val targetMonth = target.get(Calendar.MONTH)
             val targetYear = target.get(Calendar.YEAR)
 
-            val monthTransactions = transactions.filter {
+            val monthTransactions = ownMovements.filter {
                 val cal = Calendar.getInstance().apply { timeInMillis = it.date }
                 cal.get(Calendar.MONTH) == targetMonth && cal.get(Calendar.YEAR) == targetYear
             }

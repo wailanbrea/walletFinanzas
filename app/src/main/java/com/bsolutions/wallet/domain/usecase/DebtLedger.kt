@@ -93,53 +93,108 @@ class DebtLedger @Inject constructor(
             debtId = debt.id
         )
         transactions.addTransactionWithBalance(payment)
-        refreshPaidAmount(debt.id)
+        applyDelta(debt.id, payment.type, payment.amount)
         return true
     }
 
-    /** Aplica un movimiento ya existente a [debtId] (abono registrado desde Registros). */
+    /**
+     * Ata un movimiento ya existente a [debtId].
+     *
+     * Segun su direccion se interpreta solo: un ingreso es un abono y baja lo que
+     * falta; un gasto es un cargo nuevo y sube lo que deben. Asi el currier de algo
+     * que ya prestaste se suma a la misma deuda en vez de abrir otra.
+     */
     suspend fun applyExistingTransaction(transaction: Transaction, debtId: String): Boolean {
         val debt = debts.getDebt(debtId) ?: return false
+        if (transaction.debtId == debtId) return true
         transactions.updateTransaction(
             transaction.copy(debtId = debt.id, categoryId = LOAN_CATEGORY_ID)
         )
-        refreshPaidAmount(debt.id)
+        applyDelta(debt.id, transaction.type, transaction.amount)
         return true
     }
 
-    /** Desata un movimiento de su deuda y vuelve a cuadrar lo cobrado. */
+    /**
+     * Anade un cargo nuevo a [debt]: dinero que sale ahora y engorda lo que te deben.
+     * El gasto se registra de verdad en [accountId], no es solo subir el total.
+     */
+    suspend fun addCharge(
+        debt: Debt,
+        amount: Long,
+        accountId: String,
+        currency: String,
+        dateMillis: Long,
+        note: String = ""
+    ): Boolean {
+        if (amount <= 0L || accountId.isBlank()) return false
+        val charge = Transaction(
+            id = UUID.randomUUID().toString(),
+            accountId = accountId,
+            amount = amount,
+            type = if (debt.direction == DEBT_OWED_TO_ME) "EXPENSE" else "INCOME",
+            categoryId = LOAN_CATEGORY_ID,
+            date = dateMillis,
+            note = note.ifBlank { "Cargo de ${debt.name}" },
+            currency = currency,
+            debtId = debt.id
+        )
+        transactions.addTransactionWithBalance(charge)
+        applyDelta(debt.id, charge.type, charge.amount)
+        return true
+    }
+
+    /**
+     * Ajusta la deuda por un movimiento que se creo ya atado a ella.
+     *
+     * Lo usa la clasificacion de correos: el movimiento nace con su deuda puesta, asi
+     * que no hay que atarlo despues, solo mover la deuda.
+     */
+    suspend fun onLinkedTransactionAdded(transaction: Transaction) {
+        val debtId = transaction.debtId ?: return
+        applyDelta(debtId, transaction.type, transaction.amount)
+    }
+
+    /** Desata un movimiento de su deuda y deshace su efecto. */
     suspend fun unlink(transaction: Transaction) {
         val debtId = transaction.debtId ?: return
         transactions.updateTransaction(transaction.copy(debtId = null))
-        refreshPaidAmount(debtId)
+        applyDelta(debtId, transaction.type, -transaction.amount)
+    }
+
+    /** Deshace el efecto de un movimiento borrado. */
+    suspend fun onTransactionDeleted(transaction: Transaction) {
+        val debtId = transaction.debtId ?: return
+        applyDelta(debtId, transaction.type, -transaction.amount)
+    }
+
+    /** Ajusta la deuda por la diferencia cuando se edita el monto de un movimiento atado. */
+    suspend fun onAmountEdited(transaction: Transaction, oldAmount: Long) {
+        val debtId = transaction.debtId ?: return
+        applyDelta(debtId, transaction.type, transaction.amount - oldAmount)
     }
 
     /**
-     * Recalcula lo cobrado de [debtId] desde los movimientos atados.
+     * Mueve la deuda en [delta] segun la direccion del movimiento.
      *
-     * Se llama despues de cualquier cambio para que los dos lados cuenten lo mismo.
+     * Se ajusta por diferencia y no se recalcula desde los movimientos a proposito: hay
+     * deudas creadas a mano cuyo historial nunca fue un movimiento, y recalcular las
+     * dejaria en cero. Con deltas, lo escrito a mano y lo que viene de movimientos
+     * conviven.
      */
-    suspend fun refreshPaidAmount(debtId: String) {
+    private suspend fun applyDelta(debtId: String, transactionType: String, delta: Long) {
         val debt = debts.getDebt(debtId) ?: return
-        val paid = paidFromTransactions(debtId, debt)
-        if (paid == debt.paidAmount && (paid >= debt.totalAmount) == debt.isClosed) return
+        val isPayment = transactionType == paymentTypeFor(debt)
+        val moved = if (isPayment) {
+            debt.copy(paidAmount = (debt.paidAmount + delta).coerceAtLeast(0L))
+        } else {
+            debt.copy(totalAmount = (debt.totalAmount + delta).coerceAtLeast(0L))
+        }
         debts.updateDebt(
-            debt.copy(
-                paidAmount = paid,
-                isClosed = paid >= debt.totalAmount
-            )
+            moved.copy(isClosed = moved.totalAmount > 0L && moved.paidAmount >= moved.totalAmount)
         )
     }
 
-    /**
-     * Suma los abonos de [debtId]. El movimiento que origino la deuda va en direccion
-     * contraria al abono, asi que se excluye solo, sin necesidad de marcarlo aparte.
-     */
-    private suspend fun paidFromTransactions(debtId: String, debt: Debt): Long {
-        val paymentType = if (debt.direction == DEBT_OWED_TO_ME) "INCOME" else "EXPENSE"
-        return transactions.getTransactionsForDebt(debtId)
-            .filter { it.type == paymentType }
-            .sumOf { it.amount }
-            .coerceAtMost(debt.totalAmount)
-    }
+    /** La direccion en la que un movimiento cuenta como pago de esta deuda. */
+    private fun paymentTypeFor(debt: Debt): String =
+        if (debt.direction == DEBT_OWED_TO_ME) "INCOME" else "EXPENSE"
 }

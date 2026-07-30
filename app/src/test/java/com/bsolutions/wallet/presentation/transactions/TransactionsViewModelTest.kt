@@ -167,6 +167,97 @@ class TransactionsViewModelTest {
     }
 
     @Test
+    fun `a new charge for the same thing grows the existing debt`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 100_000L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        val purchase = Transaction("tx-1", "account-1", 20_000L, "EXPENSE", "cat_otros", 1L, "La mica")
+        transactionRepository.addTransaction(purchase)
+        val debtRepository = FakeDebtRepository()
+        val viewModel = createViewModel(transactionRepository, accountRepository, debtRepository)
+        viewModel.markAsLoan(purchase, "David")
+        advanceUntilIdle()
+        val debtId = debtRepository.debts.value.single().id
+
+        // El currier de esa misma mica: no abre otra deuda, engorda la que hay.
+        val courier = Transaction("tx-2", "account-1", 5_000L, "EXPENSE", "cat_otros", 2L, "Currier")
+        transactionRepository.addTransaction(courier)
+        viewModel.applyToDebt(courier, debtId)
+        advanceUntilIdle()
+
+        val debt = debtRepository.debts.value.single()
+        assertEquals(25_000L, debt.totalAmount)
+        assertEquals(25_000L, debt.remainingAmount)
+        assertEquals(0L, debt.paidAmount)
+        assertEquals(false, debt.isClosed)
+    }
+
+    @Test
+    fun `linking to a hand made debt keeps what was already written by hand`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 100_000L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        val debtRepository = FakeDebtRepository()
+        // Como la deuda de Samuel: 600 en total y 380.01 abonados a mano, sin ningun
+        // movimiento detras. Recalcular desde los movimientos la dejaria en cero.
+        debtRepository.addDebt(
+            Debt("d-1", "Samuel", "Cena", "OWED_TO_ME", 60_000L, 38_001L, null, false)
+        )
+        val viewModel = createViewModel(transactionRepository, accountRepository, debtRepository)
+
+        val extra = Transaction("tx-9", "account-1", 10_000L, "EXPENSE", "cat_otros", 5L, "Otro gasto")
+        transactionRepository.addTransaction(extra)
+        viewModel.applyToDebt(extra, "d-1")
+        advanceUntilIdle()
+
+        val debt = debtRepository.debts.value.single()
+        assertEquals(70_000L, debt.totalAmount)
+        // Lo abonado a mano sobrevive.
+        assertEquals(38_001L, debt.paidAmount)
+    }
+
+    @Test
+    fun `unlinking a charge takes it back off the debt`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 100_000L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        val purchase = Transaction("tx-1", "account-1", 20_000L, "EXPENSE", "cat_otros", 1L, "La mica")
+        transactionRepository.addTransaction(purchase)
+        val debtRepository = FakeDebtRepository()
+        val viewModel = createViewModel(transactionRepository, accountRepository, debtRepository)
+        viewModel.markAsLoan(purchase, "David")
+        advanceUntilIdle()
+        val debtId = debtRepository.debts.value.single().id
+
+        val courier = Transaction("tx-2", "account-1", 5_000L, "EXPENSE", "cat_otros", 2L, "Currier")
+        transactionRepository.addTransaction(courier)
+        viewModel.applyToDebt(courier, debtId)
+        advanceUntilIdle()
+        assertEquals(25_000L, debtRepository.debts.value.single().totalAmount)
+
+        viewModel.unlinkFromDebt(transactionRepository.getTransaction("tx-2")!!)
+        advanceUntilIdle()
+
+        assertEquals(20_000L, debtRepository.debts.value.single().totalAmount)
+    }
+
+    @Test
+    fun `editing a charge moves the debt by the difference only`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 100_000L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        val purchase = Transaction("tx-1", "account-1", 20_000L, "EXPENSE", "cat_otros", 1L, "La mica")
+        transactionRepository.addTransaction(purchase)
+        val debtRepository = FakeDebtRepository()
+        val viewModel = createViewModel(transactionRepository, accountRepository, debtRepository)
+        viewModel.markAsLoan(purchase, "David")
+        advanceUntilIdle()
+
+        // El currier salio mas caro de lo anotado: 20.000 -> 23.000, no 43.000.
+        val linked = transactionRepository.getTransaction("tx-1")!!
+        viewModel.updateTransaction(linked, newAmount = 23_000L, newCategoryId = "", newNote = "La mica")
+        advanceUntilIdle()
+
+        assertEquals(23_000L, debtRepository.debts.value.single().totalAmount)
+    }
+
+    @Test
     fun `the loan expense itself is never counted as a payment`() = runTest {
         val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 0L, "DOP"))
         val transactionRepository = FakeTransactionRepository(accountRepository)

@@ -6,7 +6,12 @@ import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
+import com.bsolutions.wallet.domain.model.Debt
 import com.bsolutions.wallet.domain.repository.CategoryRepository
+import com.bsolutions.wallet.domain.repository.DebtRepository
+import com.bsolutions.wallet.domain.usecase.DEBT_OWED_TO_ME
+import com.bsolutions.wallet.domain.usecase.DebtLedger
+import com.bsolutions.wallet.domain.usecase.LOAN_CATEGORY_ID
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import com.bsolutions.wallet.data.repository.EmailCandidate
 import com.bsolutions.wallet.data.repository.EmailConnection
@@ -36,6 +41,8 @@ data class EmailConnectionsUiState(
     val candidates: List<EmailCandidate> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val categories: List<Category> = emptyList(),
+    /** Deudas por cobrar abiertas: un cargo del correo se les puede sumar. */
+    val openReceivables: List<Debt> = emptyList(),
     val bookedCandidates: Map<String, Transaction> = emptyMap(),
     val actionProvider: EmailProvider? = null,
     val reviewCandidateId: String? = null,
@@ -124,7 +131,9 @@ class EmailConnectionsViewModel @Inject constructor(
     private val repository: EmailConnectionsRepository,
     private val categoryRepository: CategoryRepository,
     private val accountRepository: AccountRepository,
-    private val transactionRepository: TransactionRepository
+    private val transactionRepository: TransactionRepository,
+    private val debtRepository: DebtRepository,
+    private val debtLedger: DebtLedger
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(EmailConnectionsUiState())
     val uiState: StateFlow<EmailConnectionsUiState> = _uiState.asStateFlow()
@@ -138,6 +147,13 @@ class EmailConnectionsViewModel @Inject constructor(
         viewModelScope.launch {
             accountRepository.getAccounts().collect { accounts ->
                 _uiState.value = _uiState.value.copy(accounts = accounts.sortedBy { it.name })
+            }
+        }
+        viewModelScope.launch {
+            debtRepository.getDebts().collect { debts ->
+                _uiState.value = _uiState.value.copy(
+                    openReceivables = debts.filter { it.direction == DEBT_OWED_TO_ME && !it.isClosed }
+                )
             }
         }
         viewModelScope.launch {
@@ -253,11 +269,15 @@ class EmailConnectionsViewModel @Inject constructor(
         accountId: String,
         categoryId: String,
         selectedDateMillis: Long? = null,
-        overrideAmountMinor: Long? = null
+        overrideAmountMinor: Long? = null,
+        /** Deuda a la que se le carga el monto, si el correo es por algo que prestaste. */
+        debtId: String? = null
     ) {
         val bookedTransaction = _uiState.value.bookedCandidates[candidateId]
+        // Con deuda no hace falta categoria: se usa la de prestamos.
         if (
-            accountId.isBlank() || (categoryId.isBlank() && bookedTransaction == null) ||
+            accountId.isBlank() ||
+            (categoryId.isBlank() && bookedTransaction == null && debtId == null) ||
             _uiState.value.reviewCandidateId != null || _uiState.value.actionProvider != null
         ) return
         _uiState.value = _uiState.value.copy(reviewCandidateId = candidateId, message = null)
@@ -278,7 +298,13 @@ class EmailConnectionsViewModel @Inject constructor(
                     accountName = accountRepository.getAccount(existing.accountId)?.name ?: "la cuenta original"
                 } else {
                     val account = checkNotNull(accountRepository.getAccount(accountId))
-                    val category = checkNotNull(_uiState.value.categories.firstOrNull { it.id == categoryId })
+                    // Con deuda la categoria es la de prestamos: es lo que hace que la ida
+                    // y la vuelta se neteen en vez de contarse como consumo. Se resuelve
+                    // por id y no exigiendo el objeto, porque el movimiento debe poder
+                    // crearse aunque esa categoria aun no este sembrada.
+                    val debt = debtId?.let { debtRepository.getDebt(it) }
+                    val chosenCategory = _uiState.value.categories.firstOrNull { it.id == categoryId }
+                    val finalCategoryId = if (debt != null) LOAN_CATEGORY_ID else checkNotNull(chosenCategory).id
                     val amount = overrideAmountMinor?.takeIf { it > 0L }
                         ?: checkNotNull(candidateAmountForAccount(candidate, account))
                     val type = when (candidate.direction) {
@@ -291,7 +317,7 @@ class EmailConnectionsViewModel @Inject constructor(
                         accountId = account.id,
                         amount = amount,
                         type = type,
-                        categoryId = category.id,
+                        categoryId = finalCategoryId,
                         date = checkNotNull(
                             candidateTransactionDateMillis(
                                 occurredAt = candidate.occurredAt,
@@ -299,14 +325,19 @@ class EmailConnectionsViewModel @Inject constructor(
                             )
                         ),
                         note = candidate.merchant ?: candidate.subject ?: "Movimiento detectado por correo",
-                        currency = account.currency
+                        currency = account.currency,
+                        debtId = debt?.id
                     )
-                    categoryName = category.name
+                    categoryName = _uiState.value.categories.firstOrNull { it.id == finalCategoryId }?.name
+                        ?: chosenCategory?.name
+                        ?: "Préstamos a terceros"
                     accountName = account.name
                     transactionRepository.addTransactionWithBalance(transaction)
                     check(transactionRepository.getTransaction(transaction.id) == transaction) {
                         "No se pudo verificar el movimiento guardado"
                     }
+                    // Nace ya atado, asi que solo hay que mover la deuda.
+                    debtLedger.onLinkedTransactionAdded(transaction)
                 }
                 movementReady = true
                 repository.reviewCandidate(candidateId, "categorize", categoryName)

@@ -10,7 +10,10 @@ import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
+import com.bsolutions.wallet.domain.model.Debt
 import com.bsolutions.wallet.domain.repository.CategoryRepository
+import com.bsolutions.wallet.domain.repository.DebtRepository
+import com.bsolutions.wallet.domain.usecase.DebtLedger
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -152,6 +155,30 @@ class EmailConnectionsViewModelTest {
         assertEquals("pending" to "el-original", repository.duplicateTargets.single())
         assertEquals(emptyList<EmailCandidate>(), viewModel.uiState.value.candidates)
         assertEquals("Marcado como duplicado. Se conserva el otro movimiento.", viewModel.uiState.value.message)
+    }
+
+    @Test
+    fun `a charge from an email can be added to an existing debt`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
+            candidates = listOf(financialCandidate())
+        }
+        val transactions = FakeTransactionRepository()
+        val debts = FakeDebtRepository()
+        // El currier de la mica que le prestaste a David llega por correo.
+        debts.addDebt(Debt("d-1", "David", "La mica", "OWED_TO_ME", 20_000L, 0L, null, false))
+        val viewModel = createViewModel(repository, transactionRepository = transactions, debtRepository = debts)
+        advanceUntilIdle()
+
+        viewModel.classify("candidate-1", "account-1", "", null, null, "d-1")
+        advanceUntilIdle()
+
+        val booked = transactions.added.single()
+        assertEquals("d-1", booked.debtId)
+        // No es consumo propio: queda fuera de gastos y con la categoria de prestamos.
+        assertEquals("cat_prestamos_terceros", booked.categoryId)
+        assertEquals(false, booked.isConsumption)
+        // Y la deuda crece por ese monto.
+        assertEquals(20_000L + booked.amount, debts.debts.value.single().totalAmount)
     }
 
     @Test
@@ -429,8 +456,29 @@ class EmailConnectionsViewModelTest {
     private fun createViewModel(
         repository: EmailConnectionsRepository,
         accountRepository: AccountRepository = FakeAccountRepository(),
-        transactionRepository: TransactionRepository = FakeTransactionRepository()
-    ) = EmailConnectionsViewModel(repository, FakeCategoryRepository(), accountRepository, transactionRepository)
+        transactionRepository: TransactionRepository = FakeTransactionRepository(),
+        debtRepository: DebtRepository = FakeDebtRepository()
+    ) = EmailConnectionsViewModel(
+        repository,
+        FakeCategoryRepository(),
+        accountRepository,
+        transactionRepository,
+        debtRepository,
+        DebtLedger(transactionRepository, debtRepository)
+    )
+
+    private class FakeDebtRepository : DebtRepository {
+        val debts = MutableStateFlow<List<Debt>>(emptyList())
+        override fun getDebts(): Flow<List<Debt>> = debts
+        override suspend fun getDebt(id: String): Debt? = debts.value.firstOrNull { it.id == id }
+        override suspend fun addDebt(debt: Debt) { debts.value = debts.value + debt }
+        override suspend fun updateDebt(debt: Debt) {
+            debts.value = debts.value.map { if (it.id == debt.id) debt else it }
+        }
+        override suspend fun deleteDebt(id: String) {
+            debts.value = debts.value.filterNot { it.id == id }
+        }
+    }
 
     @Test
     fun `the usd charge offers to be marked as duplicate of the dop one`() {

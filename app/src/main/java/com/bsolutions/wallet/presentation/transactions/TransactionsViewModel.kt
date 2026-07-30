@@ -166,8 +166,11 @@ class TransactionsViewModel @Inject constructor(
                 original.copy(amount = newAmount, categoryId = finalCategoryId, note = newNote),
                 oldAmount = original.amount
             )
-            // Cambiar el monto de un abono cambia cuanto se ha cobrado.
-            original.debtId?.let { debtLedger.refreshPaidAmount(it) }
+            // Cambiar el monto de un movimiento atado mueve la deuda por la diferencia.
+            debtLedger.onAmountEdited(
+                original.copy(amount = newAmount, categoryId = finalCategoryId, note = newNote),
+                oldAmount = original.amount
+            )
         }
     }
 
@@ -180,8 +183,8 @@ class TransactionsViewModel @Inject constructor(
             } else {
                 transactionRepository.deleteTransactionWithBalance(transaction)
             }
-            // Borrar un abono devuelve la deuda a lo que queda realmente por cobrar.
-            transaction.debtId?.let { debtLedger.refreshPaidAmount(it) }
+            // Borrar un movimiento atado deshace su efecto en la deuda.
+            debtLedger.onTransactionDeleted(transaction)
         }
     }
 }

@@ -216,6 +216,12 @@
     <string name="debts_payment_amount">Monto del abono (%1$s)</string>
     <string name="debts_payment_action">Registrar Abono</string>
     <string name="debts_payment_account">¿En qué cuenta entra el dinero?</string>
+    <string name="debts_add_charge">Agregar cargo</string>
+    <string name="debts_charge_to">Agregar cargo a %1$s</string>
+    <string name="debts_charge_help">Un gasto nuevo por lo mismo, como el currier. Se suma a lo que te deben (ahora %1$s).</string>
+    <string name="debts_charge_amount">Monto del cargo (%1$s)</string>
+    <string name="debts_charge_concept">¿De qué es el cargo?</string>
+    <string name="debts_charge_account">¿De qué cuenta sale el dinero?</string>
     <string name="debts_payment_no_accounts">Necesitas una cuenta para registrar el abono.</string>
 
     <!-- Pagos planificados -->
@@ -347,6 +353,8 @@
     <string name="tx_loan_person">¿A quién le prestaste?</string>
     <string name="tx_loan_note">Comentario (opcional)</string>
     <string name="tx_apply_to_debt">Aplicar como abono a una deuda</string>
+    <string name="tx_add_to_debt">Sumar a una deuda existente</string>
+    <string name="tx_add_to_debt_help">Este gasto se sumará a lo que te deben, en vez de abrir otra deuda.</string>
     <string name="tx_apply_to_debt_help">Este ingreso se descontará de lo que te deben.</string>
     <string name="tx_debt_linked">Préstamo a</string>
     <string name="tx_debt_remaining">Falta por cobrar</string>
@@ -504,6 +512,8 @@
     <string name="email_candidate_conversion_unavailable">Conversión a DOP no disponible. Se conserva el importe original en USD.</string>
     <string name="email_candidate_classify">Clasificar</string>
     <string name="email_candidate_not_movement">No es movimiento</string>
+    <string name="email_candidate_debt_label">¿Es por algo que prestaste? (opcional)</string>
+    <string name="email_candidate_debt_help">Se sumará a esa deuda y no contará como tu gasto.</string>
     <string name="email_candidate_amount_label">Monto en %1$s</string>
     <string name="email_candidate_amount_help">Es el monto estimado del correo. Puedes corregirlo.</string>
     <string name="email_candidate_amount_edited">Se guardará con el monto que escribiste, no con el estimado.</string>

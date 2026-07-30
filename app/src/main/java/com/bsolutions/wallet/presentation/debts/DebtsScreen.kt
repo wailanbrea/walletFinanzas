@@ -80,6 +80,7 @@ fun DebtsScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showCreateSheet by remember { mutableStateOf(false) }
     var paymentDebt by remember { mutableStateOf<Debt?>(null) }
+    var sheetIsCharge by remember { mutableStateOf(false) }
 
     if (showCreateSheet) {
         CreateDebtSheet(
@@ -95,9 +96,14 @@ fun DebtsScreen(
         RecordPaymentSheet(
             debt = debt,
             accounts = uiState.accounts,
+            isCharge = sheetIsCharge,
             onDismiss = { paymentDebt = null },
-            onSave = { amount, accountId ->
-                viewModel.recordPayment(debt, amount, accountId)
+            onSave = { amount, accountId, note ->
+                if (sheetIsCharge) {
+                    viewModel.addCharge(debt, amount, accountId, note)
+                } else {
+                    viewModel.recordPayment(debt, amount, accountId)
+                }
                 paymentDebt = null
             }
         )
@@ -228,7 +234,8 @@ fun DebtsScreen(
                 items(shown.sortedBy { it.isClosed }, key = { it.id }) { debt ->
                     DebtCard(
                         debt = debt,
-                        onRecordPayment = { paymentDebt = debt },
+                        onRecordPayment = { paymentDebt = debt; sheetIsCharge = false },
+                        onAddCharge = { paymentDebt = debt; sheetIsCharge = true },
                         onDelete = { viewModel.deleteDebt(debt.id) }
                     )
                 }
@@ -314,6 +321,7 @@ private fun SummaryCard(
 private fun DebtCard(
     debt: Debt,
     onRecordPayment: () -> Unit,
+    onAddCharge: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -406,6 +414,19 @@ private fun DebtCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
+                    // Un gasto nuevo por lo mismo (el currier de lo que compraste) engorda
+                    // esta deuda; abrir otra por cada cargo la partiria en pedazos.
+                    Text(
+                        text = stringResource(R.string.debts_add_charge),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onAddCharge)
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
                     Text(
                         text = stringResource(R.string.debts_record_payment),
                         style = MaterialTheme.typography.labelLarge,
@@ -505,10 +526,13 @@ private fun CreateDebtSheet(
 private fun RecordPaymentSheet(
     debt: Debt,
     accounts: List<Account>,
+    /** true: se anade un cargo nuevo. false: se registra un abono. */
+    isCharge: Boolean,
     onDismiss: () -> Unit,
-    onSave: (amount: Long, accountId: String) -> Unit
+    onSave: (amount: Long, accountId: String, note: String) -> Unit
 ) {
     var amountStr by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
     var selectedAccountId by remember(accounts) { mutableStateOf(accounts.firstOrNull()?.id.orEmpty()) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -520,27 +544,52 @@ private fun RecordPaymentSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = stringResource(R.string.debts_payment_to, debt.name),
+                text = stringResource(
+                    if (isCharge) R.string.debts_charge_to else R.string.debts_payment_to,
+                    debt.name
+                ),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = stringResource(R.string.debts_remaining, formatMoney(debt.remainingAmount)),
+                text = stringResource(
+                    if (isCharge) R.string.debts_charge_help else R.string.debts_remaining,
+                    formatMoney(debt.remainingAmount)
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             OutlinedTextField(
                 value = amountStr,
                 onValueChange = { amountStr = it.filter { c -> c.isDigit() || c == '.' } },
-                label = { Text(stringResource(R.string.debts_payment_amount, MoneyFormat.symbol())) },
+                label = {
+                    Text(
+                        stringResource(
+                            if (isCharge) R.string.debts_charge_amount else R.string.debts_payment_amount,
+                            MoneyFormat.symbol()
+                        )
+                    )
+                },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
-            // El dinero cobrado tiene que entrar en algún lado: sin cuenta, el abono
-            // sería solo un contador y el saldo se quedaría corto.
+            if (isCharge) {
+                // Para acordarse de por que subio: "currier de la mica" y no un monto suelto.
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text(stringResource(R.string.debts_charge_concept)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            // El dinero tiene que salir o entrar en algún lado: sin cuenta, esto sería
+            // solo un contador y el saldo se quedaría descuadrado.
             Text(
-                text = stringResource(R.string.debts_payment_account),
+                text = stringResource(
+                    if (isCharge) R.string.debts_charge_account else R.string.debts_payment_account
+                ),
                 style = MaterialTheme.typography.labelLarge
             )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -563,7 +612,7 @@ private fun RecordPaymentSheet(
                 onClick = {
                     val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
                     if (amount > 0L && selectedAccountId.isNotBlank()) {
-                        onSave(amount, selectedAccountId)
+                        onSave(amount, selectedAccountId, note)
                     }
                 },
                 enabled = (MoneyParser.parseMinorUnits(amountStr) ?: 0L) > 0L &&
@@ -573,7 +622,12 @@ private fun RecordPaymentSheet(
                     .height(48.dp),
                 shape = RoundedCornerShape(24.dp)
             ) {
-                Text(stringResource(R.string.debts_payment_action), fontWeight = FontWeight.Bold)
+                Text(
+                    text = stringResource(
+                        if (isCharge) R.string.debts_add_charge else R.string.debts_payment_action
+                    ),
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

@@ -375,6 +375,13 @@ fun TransactionDetailSheet(
                         TextButton(onClick = { askLoanName = true }) {
                             Text(stringResource(R.string.tx_mark_as_loan))
                         }
+                        // Un gasto por algo que ya prestaste (el currier de la mica) no
+                        // abre otra deuda: engorda la que ya existe.
+                        if (openReceivables.isNotEmpty()) {
+                            TextButton(onClick = { pickDebt = true }) {
+                                Text(stringResource(R.string.tx_add_to_debt))
+                            }
+                        }
                     }
                     transaction.type == "INCOME" && openReceivables.isNotEmpty() -> {
                         TextButton(onClick = { pickDebt = true }) {
@@ -431,11 +438,21 @@ fun TransactionDetailSheet(
     if (pickDebt) {
         AlertDialog(
             onDismissRequest = { pickDebt = false },
-            title = { Text(stringResource(R.string.tx_apply_to_debt)) },
+            title = {
+                Text(
+                    stringResource(
+                        if (transaction.type == "EXPENSE") R.string.tx_add_to_debt
+                        else R.string.tx_apply_to_debt
+                    )
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        stringResource(R.string.tx_apply_to_debt_help),
+                        stringResource(
+                            if (transaction.type == "EXPENSE") R.string.tx_add_to_debt_help
+                            else R.string.tx_apply_to_debt_help
+                        ),
                         style = MaterialTheme.typography.bodySmall
                     )
                     openReceivables.forEach { debt ->

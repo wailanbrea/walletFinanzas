@@ -163,6 +163,7 @@ fun EmailConnectionsScreen(
             mutableStateOf(automaticAmount?.let { formatAmountForEditing(it) }.orEmpty())
         }
         val editedAmount = parseEditedAmountMinor(amountText)
+        var chargeToDebtId by remember(candidate.id) { mutableStateOf<String?>(null) }
         var showDatePicker by remember(candidate.id) { mutableStateOf(false) }
         if (showDatePicker && bookedTransaction == null) {
             val datePickerState = rememberDatePickerState(
@@ -250,6 +251,32 @@ fun EmailConnectionsScreen(
                             }
                         )
                     }
+                    // Si el cargo es por algo que le prestaste a alguien, se le suma a esa
+                    // deuda en vez de contarse como consumo propio.
+                    if (bookedTransaction == null && state.openReceivables.isNotEmpty()) {
+                        Text(
+                            text = stringResource(R.string.email_candidate_debt_label),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(state.openReceivables, key = { it.id }) { debt ->
+                                FilterChip(
+                                    selected = chargeToDebtId == debt.id,
+                                    onClick = {
+                                        chargeToDebtId = if (chargeToDebtId == debt.id) null else debt.id
+                                    },
+                                    label = { Text(debt.name) }
+                                )
+                            }
+                        }
+                        if (chargeToDebtId != null) {
+                            Text(
+                                text = stringResource(R.string.email_candidate_debt_help),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     Text(
                         text = stringResource(R.string.email_candidate_category_label),
                         style = MaterialTheme.typography.labelLarge
@@ -322,11 +349,12 @@ fun EmailConnectionsScreen(
                             accountId,
                             categoryId,
                             selectedDateMillis,
-                            editedAmount
+                            editedAmount,
+                            chargeToDebtId
                         )
                     },
                     enabled = accountId.isNotBlank() &&
-                        (categoryId.isNotBlank() || bookedTransaction != null) &&
+                        (categoryId.isNotBlank() || bookedTransaction != null || chargeToDebtId != null) &&
                         // Un importe escrito a medias no debe poder guardarse.
                         (bookedTransaction != null || automaticAmount == null || editedAmount != null)
                 ) { Text(stringResource(R.string.email_candidate_add_movement)) }
