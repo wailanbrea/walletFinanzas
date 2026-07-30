@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -82,6 +83,18 @@ fun WaterSurface(
                 endY = size.height
             )
         )
+
+        // Las gotas se leen para que el dibujo se rehaga mientras haya alguna en el aire.
+        water.splashTick.value
+        for (drop in water.droplets) {
+            // Nacen en la superficie: se parte del nivel y se le suma su propia caida.
+            val originY = surfaceY - slope + slope * 2f * drop.x
+            drawCircle(
+                color = color.copy(alpha = 0.55f * drop.life.coerceIn(0f, 1f)),
+                radius = drop.size * size.width,
+                center = Offset(drop.x * size.width, originY + drop.y * size.height)
+            )
+        }
     }
 }
 
@@ -123,6 +136,21 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
     drawPath(path, brush)
 }
 
+/**
+ * Una gota que se separó de la masa.
+ *
+ * Posición y velocidad van en fracción de la tarjeta y no en píxeles: el estado se
+ * actualiza en el sensor, que no sabe de qué tamaño se está dibujando.
+ */
+private class Droplet(
+    var x: Float,
+    var y: Float,
+    var vx: Float,
+    var vy: Float,
+    var life: Float = 1f,
+    val size: Float
+)
+
 /** Estado del líquido: hacia dónde se inclina y cuánto chapotea. */
 private class WaterMotion {
     /** Inclinación actual de la superficie, de -1 a 1. */
@@ -139,6 +167,58 @@ private class WaterMotion {
     var bobVelocity = 0f
 
     var lastEventNanos = 0L
+
+    /**
+     * Gotas en el aire. Acotadas porque cada una se dibuja aparte, y a partir de unas
+     * pocas decenas no se distinguen pero sí se pagan.
+     */
+    val droplets = mutableListOf<Droplet>()
+    /** Sube en cada paso: sin esto las gotas se congelarían al calmarse el chapoteo. */
+    val splashTick = mutableFloatStateOf(0f)
+}
+
+private const val MAX_DROPLETS = 20
+
+/**
+ * Mueve las gotas y lanza nuevas cuando el chapoteo da para ello.
+ *
+ * Una salpicadura es masa que se separa, asi que no puede salir de la curva: son cuerpos
+ * aparte con su propia gravedad. Nacen solo por encima de cierta agitacion, porque de
+ * otro modo el agua estaria escupiendo gotas todo el rato y dejaria de leerse como agua.
+ */
+private fun advanceDroplets(water: WaterMotion, dt: Float, stirred: Float) {
+    val gravity = 2.4f
+    val iterator = water.droplets.iterator()
+    while (iterator.hasNext()) {
+        val drop = iterator.next()
+        drop.vy += gravity * dt
+        drop.x += drop.vx * dt
+        drop.y += drop.vy * dt
+        drop.life -= dt * 1.1f
+        // Se retira al apagarse o al volver a la masa: seguir dibujandola bajo la
+        // superficie la haria verse como una burbuja.
+        if (drop.life <= 0f || drop.y > 1.05f) iterator.remove()
+    }
+
+    if (stirred > 0.55f && water.droplets.size < MAX_DROPLETS) {
+        // Cuantas mas, cuanto mas fuerte el meneo; nunca mas de tres por lectura para
+        // que un golpe seco no vacie el presupuesto de gotas de una vez.
+        val count = (1 + (stirred * 2.5f).toInt()).coerceAtMost(3)
+        repeat(count) {
+            val fromLeft = Math.random().toFloat()
+            water.droplets += Droplet(
+                x = fromLeft,
+                y = 0f,
+                // Salen hacia donde va la superficie: si el agua sube por la derecha,
+                // las gotas salen hacia la derecha.
+                vx = (water.velocity * 0.35f) + (Math.random().toFloat() - 0.5f) * 0.35f,
+                vy = -(0.5f + stirred * 0.9f) * (0.7f + Math.random().toFloat() * 0.6f),
+                size = 0.006f + Math.random().toFloat() * 0.010f
+            )
+        }
+    }
+
+    if (water.droplets.isNotEmpty()) water.splashTick.floatValue += dt
 }
 
 /**
@@ -202,6 +282,8 @@ private fun rememberWaterMotion(): WaterMotion {
                 ).coerceAtMost(1f)
                 val decay = kotlin.math.exp(-1.6f * dt)
                 water.energy.floatValue = maxOf(water.energy.floatValue * decay, stirred)
+                advanceDroplets(water, dt, stirred)
+
                 if (water.energy.floatValue < 0.01f) {
                     water.energy.floatValue = 0f
                     water.velocity *= 0.5f
