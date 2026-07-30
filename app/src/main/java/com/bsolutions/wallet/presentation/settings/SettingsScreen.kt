@@ -233,13 +233,8 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     onClick = { syncViewModel.syncNow() }
                 )
-                SettingsItem(
-                    title = stringResource(R.string.settings_import),
-                    subtitle = stringResource(R.string.settings_import_sub),
-                    icon = Icons.Default.Download,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    onClick = onNavigateToImportCsv
-                )
+                // Importar CSV queda oculto por ahora: ver AppDrawer. La pantalla y su
+                // ruta siguen existiendo, solo se retira la entrada.
                 SettingsItem(
                     title = stringResource(R.string.settings_export),
                     subtitle = stringResource(R.string.settings_export_sub),

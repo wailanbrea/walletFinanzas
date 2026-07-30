@@ -103,7 +103,9 @@ val drawerItems = listOf(
     DrawerItem("debts", R.string.drawer_debts, Icons.Outlined.MonetizationOn, IconRed),
     DrawerItem("goals", R.string.drawer_goals, Icons.Outlined.TrackChanges, IconTeal),
     DrawerItem("email_connections", R.string.drawer_email_sync, Icons.Outlined.Email, IconBlue),
-    DrawerItem("import_csv", R.string.drawer_imports, Icons.Outlined.SaveAlt, IconBlue),
+    // La importacion de CSV queda fuera del menu: no esta en uso y su via de guardado
+    // es la unica que no encola para el servidor, asi que lo importado en un telefono no
+    // llegaria a los demas. Se reactiva cuando esa via encole.
     DrawerItem("settings", R.string.common_settings, Icons.Outlined.Settings, IconGray, showDividerBefore = true)
 )
 
