@@ -90,15 +90,28 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
     amplitude: Float,
     brush: Brush
 ) {
+    fun surfaceAt(t: Float): Float {
+        // Dos senoidales de distinta longitud: una sola da una ondulación regular que se
+        // nota artificial, y superpuestas nunca repiten el mismo perfil.
+        val principal = sin(phase + t * 2f * PI.toFloat())
+        val secundaria = sin(phase * 1.7f + t * 3.4f * PI.toFloat()) * 0.35f
+
+        return surfaceY - slope + slope * 2f * t + (principal + secundaria) * amplitude
+    }
+
     val path = Path().apply {
-        moveTo(0f, surfaceY - slope)
-        // Doce tramos bastan para que la curva se vea suave a este tamaño.
-        val steps = 12
+        moveTo(0f, surfaceAt(0f))
+        // Curvas y no segmentos rectos: con tramos largos la superficie se ve poligonal,
+        // y subir el número de rectas para disimularlo cuesta más que interpolar.
+        val steps = 24
         for (i in 1..steps) {
-            val t = i / steps.toFloat()
-            val x = size.width * t
-            val y = surfaceY - slope + slope * 2f * t + sin(phase + t * 2f * PI.toFloat()) * amplitude
-            lineTo(x, y)
+            val previous = (i - 1) / steps.toFloat()
+            val current = i / steps.toFloat()
+            val middle = (previous + current) / 2f
+            // El punto de control se sitúa de forma que la curva pase por el punto medio
+            // real de la onda, y no por la cuerda entre extremos.
+            val controlY = 2f * surfaceAt(middle) - (surfaceAt(previous) + surfaceAt(current)) / 2f
+            quadraticTo(size.width * middle, controlY, size.width * current, surfaceAt(current))
         }
         lineTo(size.width, size.height)
         lineTo(0f, size.height)
@@ -109,10 +122,15 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
 
 /** Estado del líquido: hacia dónde se inclina y cuánto chapotea. */
 private class WaterMotion {
+    /** Inclinación actual de la superficie, de -1 a 1. */
     val tilt = mutableFloatStateOf(0f)
     /** De 0 a 1: cuánto queda del chapoteo. En 0 la superficie es una línea recta. */
     val energy = mutableFloatStateOf(0f)
     val phase = mutableFloatStateOf(0f)
+
+    /** Velocidad con la que la superficie se mueve; es lo que la hace pasarse de largo. */
+    var velocity = 0f
+    var lastEventNanos = 0L
 }
 
 /**
@@ -140,20 +158,38 @@ private fun rememberWaterMotion(): WaterMotion {
         val accelerometer = sensors?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
+                // Segundos reales entre lecturas: los eventos no llegan a intervalos
+                // iguales, y avanzar un paso fijo por evento es lo que se ve a tirones.
+                val previous = water.lastEventNanos
+                water.lastEventNanos = event.timestamp
+                if (previous == 0L) return
+                val dt = ((event.timestamp - previous) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
+
                 // El eje X es el giro lateral. Se amplifica porque en la mano el teléfono
                 // se inclina poco: nadie lo pone de costado para mirar el saldo.
                 val target = (event.values[0] / 4.5f).coerceIn(-1f, 1f)
-                val change = target - water.tilt.floatValue
-                water.tilt.floatValue += change * 0.35f
 
-                // Lo que agita el agua es el cambio, no la posición: sostenerlo inclinado
-                // y quieto deja la superficie en diagonal pero sin olas.
-                val stirred = (kotlin.math.abs(change) * 14f).coerceAtMost(1f)
-                water.energy.floatValue = maxOf(water.energy.floatValue * 0.94f, stirred)
+                // Resorte amortiguado en vez de perseguir la gravedad con retardo: la
+                // superficie se pasa de largo y vuelve, que es lo que hace que se lea como
+                // líquido y no como una barra que se acomoda. Subamortiguado a propósito.
+                val stiffness = 26f
+                val damping = 4.2f
+                val acceleration = (target - water.tilt.floatValue) * stiffness - water.velocity * damping
+                water.velocity += acceleration * dt
+                water.tilt.floatValue += water.velocity * dt
+
+                // Las olas viven de lo rápido que se mueve la superficie, no de dónde
+                // está: quieto en diagonal queda inclinado y liso.
+                val stirred = (kotlin.math.abs(water.velocity) * 0.5f).coerceAtMost(1f)
+                val decay = kotlin.math.exp(-1.6f * dt)
+                water.energy.floatValue = maxOf(water.energy.floatValue * decay, stirred)
                 if (water.energy.floatValue < 0.01f) {
                     water.energy.floatValue = 0f
+                    water.velocity *= 0.5f
                 } else {
-                    water.phase.floatValue += 0.25f + water.energy.floatValue * 0.5f
+                    // Avanza con el tiempo, no por evento, para que la ola no acelere
+                    // cuando el sensor reporta más seguido.
+                    water.phase.floatValue += (5.5f + water.energy.floatValue * 5f) * dt
                 }
             }
 
