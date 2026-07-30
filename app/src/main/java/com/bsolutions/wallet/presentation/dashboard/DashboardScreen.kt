@@ -747,7 +747,11 @@ fun TotalBalanceCard(
         WaterSurface(
             level = waterLevel,
             color = Color.White,
-            modifier = Modifier.matchParentSize()
+            modifier = Modifier.matchParentSize(),
+            // El fondo se pasa por fórmula y no se captura: es el mismo degradado que
+            // pinta la tarjeta, así que el shader puede recalcularlo y desviarlo.
+            backgroundTop = gradientStart,
+            backgroundBottom = gradientEnd
         )
         // Círculos decorativos translúcidos
         Box(

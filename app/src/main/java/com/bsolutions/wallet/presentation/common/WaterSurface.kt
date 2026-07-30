@@ -17,7 +17,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import kotlin.math.PI
@@ -36,7 +39,10 @@ import kotlin.math.sin
 fun WaterSurface(
     level: Float,
     color: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Colores del fondo que hay detrás, para que las gotas puedan refractarlo. */
+    backgroundTop: Color? = null,
+    backgroundBottom: Color? = null
 ) {
     val water = rememberWaterMotion()  // se lee dentro del Canvas, no aquí
     // El nivel se anima para que al cambiar de meta el agua suba en vez de saltar.
@@ -46,7 +52,15 @@ fun WaterSurface(
         label = "nivel"
     )
 
-    Canvas(modifier = modifier) {
+    // Las gotas refractan el fondo donde hay AGSL (Android 13+). Por debajo se quedan
+    // dibujadas a mano, que es lo que ya se veía.
+    val refraction = if (backgroundTop != null && backgroundBottom != null) {
+        rememberDropletRefraction(water, backgroundTop, backgroundBottom)
+    } else {
+        null
+    }
+
+    Canvas(modifier = if (refraction != null) modifier.then(refraction) else modifier) {
         if (filled <= 0f) return@Canvas
         // El rebote mueve todo el nivel, no solo la ola: es lo que se ve al sacudirlo a
         // lo largo. Acotado para que no se salga de la tarjeta.
@@ -86,7 +100,7 @@ fun WaterSurface(
 
         // Las gotas se leen para que el dibujo se rehaga mientras haya alguna en el aire.
         water.splashTick.value
-        for (drop in water.droplets) {
+        for (drop in if (refraction != null) emptyList() else water.droplets) {
             // Nacen en la superficie: se parte del nivel y se le suma su propia caida.
             val originY = surfaceY - slope + slope * 2f * drop.x
             val centerY = if (drop.stuck) {
@@ -400,3 +414,48 @@ private fun rememberWaterMotion(): WaterMotion {
  * que es la que está más cerca de cumplirse y la que más motiva ver subir.
  */
 fun waterLevelFor(goalProgress: Float?): Float = goalProgress?.coerceIn(0f, 1f) ?: 0.5f
+
+/**
+ * Capa que refracta el fondo a través de las gotas.
+ *
+ * Devuelve null donde no hay AGSL: por debajo de Android 13 las gotas se siguen pintando
+ * a mano, que es peor pero funciona.
+ *
+ * El shader se crea una sola vez y solo se le reescriben los uniforms; recrearlo en cada
+ * fotograma recompilaría el programa y costaría más que todo lo demás junto.
+ */
+@Composable
+private fun rememberDropletRefraction(
+    water: WaterMotion,
+    backgroundTop: Color,
+    backgroundBottom: Color
+): Modifier? {
+    if (!WaterRefraction.isSupported) return null
+    val shader = remember { WaterRefraction.createShader() }
+
+    return Modifier.drawWithCache {
+        onDrawBehind {
+            // Se lee para que la capa se rehaga mientras haya gotas moviéndose.
+            water.splashTick.value
+            val visible = water.droplets.take(WaterRefraction.MAX_DROPS)
+            if (visible.isEmpty()) return@onDrawBehind
+
+            shader.setFloatUniform("size", size.width, size.height)
+            shader.setColorUniform("topColor", backgroundTop.toArgb())
+            shader.setColorUniform("bottomColor", backgroundBottom.toArgb())
+            shader.setFloatUniform("dropCount", visible.size.toFloat())
+
+            val packed = FloatArray(WaterRefraction.MAX_DROPS * 4)
+            visible.forEachIndexed { index, drop ->
+                val base = index * 4
+                packed[base] = drop.x * size.width
+                packed[base + 1] = (if (drop.stuck) drop.glassY else drop.y) * size.height
+                packed[base + 2] = drop.size * size.width * (if (drop.stuck) 0.85f else 1f)
+                packed[base + 3] = drop.life.coerceIn(0f, 1f)
+            }
+            shader.setFloatUniform("drops", packed)
+
+            drawRect(brush = ShaderBrush(shader))
+        }
+    }
+}
