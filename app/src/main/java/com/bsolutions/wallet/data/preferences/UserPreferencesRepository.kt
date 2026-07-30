@@ -31,11 +31,17 @@ val DEFAULT_DASHBOARD_CARD_IDS: Set<String> = setOf(
 )
 
 /**
- * Versión del respaldo de sincronización. Subirla hace que se repita una vez: la
- * primera versión no encolaba las cuentas borradas, así que sus lápidas nunca
+ * Versión del respaldo de sincronización. Subirla hace que se repita una vez.
+ *
+ * v2: la primera versión no encolaba las cuentas borradas, así que sus lápidas nunca
  * llegaban al servidor y un borrado hecho en un teléfono no se replicaba.
+ *
+ * v3: los movimientos atados a una deuda se subieron cuando el servidor todavía no
+ * guardaba ese vínculo, así que allá quedaron sueltos y ya no había operación pendiente
+ * que los reenviara. Sin repetir el respaldo, el enlace se quedaría para siempre en el
+ * teléfono donde se creó.
  */
-const val SYNC_BACKFILL_VERSION = 2
+const val SYNC_BACKFILL_VERSION = 3
 
 /** Nombre mostrado mientras el perfil no traiga uno real del backend. */
 const val DEFAULT_USER_NAME = "Mi Perfil"
