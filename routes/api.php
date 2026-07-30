@@ -28,6 +28,8 @@ Route::prefix('v1')->group(function (): void {
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
+        Route::get('/user', [AuthController::class, 'profile']);
+        Route::patch('/user', [AuthController::class, 'updateProfile']);
         Route::get('/accounts', [AccountController::class, 'index']);
         Route::post('/accounts', [AccountController::class, 'store']);
         Route::get('/transactions', [TransactionController::class, 'index']);

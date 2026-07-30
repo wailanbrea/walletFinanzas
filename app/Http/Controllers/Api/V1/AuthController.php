@@ -58,6 +58,31 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Perfil del usuario autenticado.
+     *
+     * Existe porque el nombre solo vivia en las preferencias del telefono: al abrir la
+     * sesion en otro dispositivo se veia el del registro y no el que el usuario habia
+     * puesto, sin ninguna ruta por la que pudiera viajar.
+     */
+    public function profile(Request $request): JsonResponse
+    {
+        return response()->json(['data' => $request->user()->only(['id', 'name', 'email'])]);
+    }
+
+    /** Cambia el nombre visible. El correo no se toca: es la credencial de acceso. */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'min:1', 'max:120'],
+        ]);
+
+        $user = $request->user();
+        $user->forceFill(['name' => trim($validated['name'])])->save();
+
+        return response()->json(['data' => $user->only(['id', 'name', 'email'])]);
+    }
+
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()?->delete();
