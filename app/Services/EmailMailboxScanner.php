@@ -103,7 +103,7 @@ class EmailMailboxScanner
     }
 
     /**
-     * Adjunta la conversion a DOP si el cargo viene en USD.
+     * Adjunta la conversion a DOP si el cargo no viene ya en pesos.
      *
      * Si la tasa no esta disponible el candidato se guarda igual, sin conversion: es
      * mejor mostrar el gasto y que no se pueda clasificar todavia que perderlo.
@@ -113,10 +113,12 @@ class EmailMailboxScanner
      */
     private function withConversion(array $candidate): array
     {
-        if (($candidate['currency'] ?? null) !== 'USD') {
+        $currency = $candidate['currency'] ?? null;
+        if ($currency === null || $currency === 'DOP') {
             return $candidate;
         }
-        $conversion = $this->exchangeRates->convertMinor(
+        $conversion = $this->exchangeRates->convertFrom(
+            $currency,
             (int) $candidate['amount'],
             CarbonImmutable::parse($candidate['occurred_at']),
         );
