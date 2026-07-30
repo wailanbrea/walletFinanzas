@@ -62,10 +62,55 @@ data class EmailConnectionsUiState(
             .distinct()
             .sortedDescending()
 
+    /**
+     * Otro candidato que parece el mismo cargo visto por el otro buzon.
+     *
+     * Se compara en la divisa base y con la misma ventana y tolerancia que usa el
+     * servidor, para que la app no proponga emparejamientos que el backend rechazaria.
+     * Devuelve el que conviene conservar: el que ya esta en pesos.
+     */
+    fun duplicateCandidateFor(candidate: EmailCandidate): EmailCandidate? {
+        val mine = candidate.baseAmount() ?: return null
+        val myDay = candidateLocalDate(candidate.occurredAt) ?: return null
+
+        return visibleCandidates.firstOrNull { other ->
+            if (other.id == candidate.id || other.provider == candidate.provider) return@firstOrNull false
+            if (other.direction != candidate.direction) return@firstOrNull false
+            val theirs = other.baseAmount() ?: return@firstOrNull false
+            val theirDay = candidateLocalDate(other.occurredAt) ?: return@firstOrNull false
+            if (kotlin.math.abs(myDay.toEpochDay() - theirDay.toEpochDay()) > DUPLICATE_WINDOW_DAYS) {
+                return@firstOrNull false
+            }
+            val reference = maxOf(kotlin.math.abs(mine), kotlin.math.abs(theirs))
+            if (reference == 0L) return@firstOrNull false
+            val drift = kotlin.math.abs(kotlin.math.abs(mine) - kotlin.math.abs(theirs)).toDouble() / reference
+            // Solo tiene sentido proponer marcar este si el otro es el que se conserva.
+            drift <= DUPLICATE_TOLERANCE && other.currency == BASE_CURRENCY && candidate.currency != BASE_CURRENCY
+        }
+    }
+
     private val visibleCandidates: List<EmailCandidate>
-        get() = selectedDate?.let { day ->
-            candidates.filter { candidateLocalDate(it.occurredAt) == day }
-        } ?: candidates
+        get() {
+            // Un duplicado ya esta representado por el candidato que se conserva:
+            // mostrarlo contaria el mismo gasto dos veces.
+            val active = candidates.filterNot { it.status == "duplicate" }
+
+            return selectedDate?.let { day ->
+                active.filter { candidateLocalDate(it.occurredAt) == day }
+            } ?: active
+        }
+}
+
+private const val BASE_CURRENCY = "DOP"
+/** Misma ventana y tolerancia que el servidor, para no proponer lo que rechazaria. */
+private const val DUPLICATE_WINDOW_DAYS = 3L
+private const val DUPLICATE_TOLERANCE = 0.03
+
+/** Importe en la divisa base, o null si el cargo no se puede comparar. */
+private fun EmailCandidate.baseAmount(): Long? = when {
+    currency == BASE_CURRENCY -> amount
+    convertedCurrency == BASE_CURRENCY -> convertedAmount
+    else -> null
 }
 
 /** Día local del correo; null si la fecha viene ilegible. */
@@ -309,6 +354,36 @@ class EmailConnectionsViewModel @Inject constructor(
                 },
                 reviewCandidateId = null,
                 message = if (outcome) null else "No se pudo quitar el correo. Inténtalo de nuevo."
+            )
+        }
+    }
+
+    /**
+     * Marca [candidateId] como duplicado de [originalId].
+     *
+     * No usa 'dismiss' a proposito: descartar le ensena al clasificador que ese
+     * remitente no manda movimientos, y si manda: solo que ese cargo ya llego por
+     * otro buzon. Aprender de aqui envenenaria las detecciones futuras.
+     */
+    fun markAsDuplicate(candidateId: String, originalId: String) {
+        if (_uiState.value.reviewCandidateId != null || _uiState.value.actionProvider != null) return
+        _uiState.value = _uiState.value.copy(reviewCandidateId = candidateId, message = null)
+        viewModelScope.launch {
+            val ok = runCatching {
+                repository.reviewCandidate(candidateId, "duplicate", null, originalId)
+            }.isSuccess
+            _uiState.value = _uiState.value.copy(
+                candidates = if (ok) {
+                    _uiState.value.candidates.filterNot { it.id == candidateId }
+                } else {
+                    _uiState.value.candidates
+                },
+                reviewCandidateId = null,
+                message = if (ok) {
+                    "Marcado como duplicado. Se conserva el otro movimiento."
+                } else {
+                    "No se pudo marcar como duplicado. Intentalo de nuevo."
+                }
             )
         }
     }

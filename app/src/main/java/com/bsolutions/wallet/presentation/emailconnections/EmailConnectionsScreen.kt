@@ -98,6 +98,7 @@ fun EmailConnectionsScreen(
     var dismissCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
     var confirmClearAll by remember { mutableStateOf(false) }
     var showDateFilter by remember { mutableStateOf(false) }
+    var duplicatePair by remember { mutableStateOf<Pair<EmailCandidate, EmailCandidate>?>(null) }
 
     LaunchedEffect(oauthReturnNonce) {
         if (oauthReturnNonce > 0L) viewModel.onAuthorizationReturn()
@@ -285,6 +286,35 @@ fun EmailConnectionsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { classifyCandidate = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    duplicatePair?.let { (candidate, original) ->
+        AlertDialog(
+            onDismissRequest = { duplicatePair = null },
+            title = { Text(stringResource(R.string.email_candidate_mark_duplicate)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.email_candidate_mark_duplicate_confirm,
+                        formatCandidateAmount(candidate.amount, candidate.currency, candidate.direction),
+                        formatCandidateAmount(original.amount, original.currency, original.direction)
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.markAsDuplicate(candidate.id, original.id)
+                    duplicatePair = null
+                }) {
+                    Text(stringResource(R.string.email_candidate_mark_duplicate))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { duplicatePair = null }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -556,7 +586,11 @@ fun EmailConnectionsScreen(
                                     isReviewing = state.reviewCandidateId != null || state.actionProvider != null,
                                     onClassify = { classifyCandidate = candidate },
                                     onDismiss = { dismissCandidate = candidate },
-                                    onRemove = { viewModel.remove(candidate.id) }
+                                    onRemove = { viewModel.remove(candidate.id) },
+                                    // Solo se ofrece si hay otro candidato con el que
+                                    // emparejar: sin pareja, marcar duplicado no dice nada.
+                                    onMarkDuplicate = state.duplicateCandidateFor(candidate)
+                                        ?.let { original -> { duplicatePair = candidate to original } }
                                 )
                             }
                         }
@@ -703,7 +737,8 @@ private fun CandidateCard(
     isReviewing: Boolean,
     onClassify: () -> Unit,
     onDismiss: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onMarkDuplicate: (() -> Unit)? = null
 ) {
     val uriHandler = LocalUriHandler.current
     val providerAccent = providerAccent(candidate.provider)
@@ -834,6 +869,11 @@ private fun CandidateCard(
                         stringResource(R.string.email_candidate_not_movement),
                         color = MaterialTheme.colorScheme.error
                     )
+                }
+            }
+            onMarkDuplicate?.let { markDuplicate ->
+                TextButton(onClick = markDuplicate, enabled = !isReviewing) {
+                    Text(stringResource(R.string.email_candidate_mark_duplicate))
                 }
             }
         }

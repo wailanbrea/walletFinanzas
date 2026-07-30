@@ -93,6 +93,7 @@ data class EmailCandidateDto(
     val confidence: Int,
     val status: String,
     val subject: String?,
+    @SerializedName("duplicate_of_id") val duplicateOfId: String? = null,
     @SerializedName("converted_amount") val convertedAmount: Long? = null,
     @SerializedName("converted_currency") val convertedCurrency: String? = null,
     @SerializedName("exchange_rate_micros") val exchangeRateMicros: Long? = null,
@@ -105,7 +106,9 @@ data class EmailCandidateDto(
 data class EmailCandidateReviewRequest(
     val action: String,
     val category: String? = null,
-    val learn: Boolean = true
+    val learn: Boolean = true,
+    /** Cual es el candidato bueno cuando se marca este como duplicado. */
+    @SerializedName("duplicate_of_id") val duplicateOfId: String? = null
 )
 
 data class MessageResponse(val message: String)

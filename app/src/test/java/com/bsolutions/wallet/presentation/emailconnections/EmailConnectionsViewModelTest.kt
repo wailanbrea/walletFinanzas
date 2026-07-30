@@ -361,6 +361,59 @@ class EmailConnectionsViewModelTest {
         transactionRepository: TransactionRepository = FakeTransactionRepository()
     ) = EmailConnectionsViewModel(repository, FakeCategoryRepository(), accountRepository, transactionRepository)
 
+    @Test
+    fun `the usd charge offers to be marked as duplicate of the dop one`() {
+        // Caso real: PayPal avisa USD 355 y el banco emisor RD$21,000 del mismo consumo.
+        val paypal = financialCandidate(id = "usd", provider = EmailProvider.GMAIL).copy(
+            amount = -35_500,
+            currency = "USD",
+            convertedAmount = -2_100_000,
+            convertedCurrency = "DOP",
+            occurredAt = "2026-07-20T18:30:00Z"
+        )
+        val qik = financialCandidate(id = "dop", provider = EmailProvider.MICROSOFT).copy(
+            amount = -2_100_000,
+            currency = "DOP",
+            occurredAt = "2026-07-20T18:35:00Z"
+        )
+        val state = EmailConnectionsUiState(candidates = listOf(paypal, qik))
+
+        // Se propone marcar el USD, conservando el que ya está en pesos.
+        assertEquals("dop", state.duplicateCandidateFor(paypal)?.id)
+        assertNull(state.duplicateCandidateFor(qik))
+    }
+
+    @Test
+    fun `a usd charge without conversion is never offered as duplicate`() {
+        val paypal = financialCandidate(id = "usd", provider = EmailProvider.GMAIL).copy(
+            amount = -35_500,
+            currency = "USD",
+            convertedAmount = null,
+            convertedCurrency = null,
+            occurredAt = "2026-07-20T18:30:00Z"
+        )
+        val qik = financialCandidate(id = "dop", provider = EmailProvider.MICROSOFT).copy(
+            amount = -2_100_000,
+            currency = "DOP",
+            occurredAt = "2026-07-20T18:35:00Z"
+        )
+
+        // Sin conversión no hay forma de saber si es el mismo cargo.
+        assertNull(EmailConnectionsUiState(candidates = listOf(paypal, qik)).duplicateCandidateFor(paypal))
+    }
+
+    @Test
+    fun `a candidate marked duplicate disappears from the list`() {
+        val kept = financialCandidate(id = "dop", provider = EmailProvider.MICROSOFT).copy(currency = "DOP")
+        val hidden = financialCandidate(id = "usd", provider = EmailProvider.GMAIL).copy(status = "duplicate")
+
+        val visible = EmailConnectionsUiState(candidates = listOf(kept, hidden)).candidatesByDate
+            .values.flatten().map { it.id }
+
+        // Mostrarlo contaría el mismo gasto dos veces.
+        assertEquals(listOf("dop"), visible)
+    }
+
     private fun financialCandidate(
         id: String = "candidate-1",
         provider: EmailProvider = EmailProvider.GMAIL
@@ -405,7 +458,12 @@ class EmailConnectionsViewModelTest {
             return EmailSyncResult(messagesDiscovered = 1, messagesCreated = 1, candidatesCreated = 1)
         }
 
-        override suspend fun reviewCandidate(id: String, action: String, category: String?): EmailCandidate {
+        override suspend fun reviewCandidate(
+            id: String,
+            action: String,
+            category: String?,
+            duplicateOfId: String?
+        ): EmailCandidate {
             if (reviewError) error("network")
             reviews += Triple(id, action, category)
             val current = candidates.first { it.id == id }

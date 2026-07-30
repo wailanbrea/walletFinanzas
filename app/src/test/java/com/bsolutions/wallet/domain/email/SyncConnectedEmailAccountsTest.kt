@@ -69,7 +69,12 @@ private class FakeEmailConnectionsRepository(
         if (provider == failingProvider) error("provider failure")
         return EmailSyncResult(0, 0, 0)
     }
-    override suspend fun reviewCandidate(id: String, action: String, category: String?): EmailCandidate =
+    override suspend fun reviewCandidate(
+        id: String,
+        action: String,
+        category: String?,
+        duplicateOfId: String?
+    ): EmailCandidate =
         error("Not used")
     override suspend fun disconnect(provider: EmailProvider) = Unit
 }

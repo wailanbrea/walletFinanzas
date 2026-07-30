@@ -52,6 +52,8 @@ data class EmailCandidate(
     val confidence: Int,
     val status: String,
     val subject: String?,
+    /** Id del candidato que se conserva cuando este quedo marcado como duplicado. */
+    val duplicateOfId: String? = null,
     val convertedAmount: Long? = null,
     val convertedCurrency: String? = null,
     val exchangeRateMicros: Long? = null,
@@ -66,7 +68,12 @@ interface EmailConnectionsRepository {
     suspend fun getCandidates(): List<EmailCandidate>
     suspend fun getAuthorizationUrl(provider: EmailProvider): String
     suspend fun sync(provider: EmailProvider): EmailSyncResult
-    suspend fun reviewCandidate(id: String, action: String, category: String?): EmailCandidate
+    suspend fun reviewCandidate(
+        id: String,
+        action: String,
+        category: String?,
+        duplicateOfId: String? = null
+    ): EmailCandidate
     suspend fun disconnect(provider: EmailProvider)
 }
 
@@ -119,10 +126,17 @@ class DefaultEmailConnectionsRepository(
         run.toDomain()
     }
 
-    override suspend fun reviewCandidate(id: String, action: String, category: String?): EmailCandidate =
-        authenticatedCall {
-            api.reviewEmailCandidate(id, EmailCandidateReviewRequest(action, category)).data.toDomain()
-        }
+    override suspend fun reviewCandidate(
+        id: String,
+        action: String,
+        category: String?,
+        duplicateOfId: String?
+    ): EmailCandidate = authenticatedCall {
+        api.reviewEmailCandidate(
+            id,
+            EmailCandidateReviewRequest(action, category, duplicateOfId = duplicateOfId)
+        ).data.toDomain()
+    }
 
     override suspend fun disconnect(provider: EmailProvider) {
         authenticatedCall { api.deleteEmailConnection(provider.apiValue) }
@@ -173,6 +187,7 @@ private fun EmailCandidateDto.toDomain() = EmailCandidate(
     confidence = confidence,
     status = status,
     subject = subject,
+    duplicateOfId = duplicateOfId,
     convertedAmount = convertedAmount,
     convertedCurrency = convertedCurrency,
     exchangeRateMicros = exchangeRateMicros,
