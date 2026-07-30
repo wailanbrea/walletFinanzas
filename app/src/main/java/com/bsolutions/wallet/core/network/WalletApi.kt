@@ -134,6 +134,11 @@ data class UpdateTransactionRequest(
     val amount: Long,
     val description: String?,
     @SerializedName("category_id") val categoryId: String?,
+    /**
+     * Se envía siempre, también en null: el servidor distingue omitir de enviar null,
+     * y omitirlo dejaría el movimiento atado a una deuda de la que ya se desató.
+     */
+    @SerializedName("debt_id") val debtId: String?,
     val timestamp: String
 )
 
@@ -144,6 +149,8 @@ data class CreateTransactionRequest(
     val currency: String,
     val description: String?,
     @SerializedName("category_id") val categoryId: String?,
+    /** Deuda a la que pertenece; null cuando el movimiento es propio. */
+    @SerializedName("debt_id") val debtId: String? = null,
     val timestamp: String, // ISO-8601 UTC
     val status: String = "completed"
 )
@@ -222,6 +229,7 @@ data class TransactionDto(
     val currency: String,
     val description: String?,
     @SerializedName("category_id") val categoryId: String?,
+    @SerializedName("debt_id") val debtId: String? = null,
     val timestamp: String?,
     val status: String?,
     @SerializedName("updated_at") val updatedAt: String?

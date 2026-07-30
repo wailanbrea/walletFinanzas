@@ -16,6 +16,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -28,9 +29,19 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object WalletApiModule {
 
+    /**
+     * Gson que sí escribe los nulls.
+     *
+     * Hace falta porque el PATCH de movimientos distingue omitir un campo (conservar lo
+     * que hay) de enviarlo en null (borrarlo): sin esto, desatar un movimiento de su
+     * deuda no llegaría nunca al servidor, porque el campo se omitiría.
+     *
+     * Los dos únicos campos con regla 'sometimes' sin 'nullable' —el id y is_active de
+     * las cuentas— se envían siempre con valor, así que ninguno pasa a rechazarse.
+     */
     @Provides
     @Singleton
-    fun provideGson(): Gson = Gson()
+    fun provideGson(): Gson = GsonBuilder().serializeNulls().create()
 
     @Provides
     @Singleton

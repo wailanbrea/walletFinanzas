@@ -26,7 +26,9 @@ class WalletSyncContractTest {
         server.start()
         api = Retrofit.Builder()
             .baseUrl(server.url("/api/v1/"))
-            .addConverterFactory(GsonConverterFactory.create())
+            // El mismo Gson que usa la app: con el de por defecto este test no probaba
+            // la serializacion real, y los nulls que el contrato necesita se omitian.
+            .addConverterFactory(GsonConverterFactory.create(WalletApiModule.provideGson()))
             .build()
             .create(WalletApi::class.java)
     }
@@ -135,6 +137,7 @@ class WalletSyncContractTest {
                 amount = -3000,
                 description = "Reloj",
                 categoryId = "cat_compras",
+                debtId = null,
                 timestamp = "2026-07-29T00:00:00Z"
             )
         )
@@ -146,6 +149,10 @@ class WalletSyncContractTest {
         val body = JsonParser.parseString(patch.body.readUtf8()).asJsonObject
         assertEquals(-3000L, body.get("amount").asLong)
         assertEquals("cat_compras", body.get("category_id").asString)
+        // El null tiene que ir escrito: el servidor distingue omitir de enviar null, y si
+        // se omitiera, desatar un movimiento de su deuda no llegaria nunca.
+        assertEquals(true, body.has("debt_id"))
+        assertEquals(true, body.get("debt_id").isJsonNull)
 
         server.enqueue(MockResponse().setResponseCode(204))
         val deleted = api.deleteTransaction("tx-local-1")

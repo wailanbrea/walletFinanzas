@@ -279,6 +279,7 @@ class SyncRepository @Inject constructor(
             currency = t.currency,
             description = t.note.ifBlank { null },
             categoryId = validCategoryId,
+            debtId = t.debtId,
             timestamp = isoUtc(t.date),
             status = "completed"
         )
@@ -294,6 +295,8 @@ class SyncRepository @Inject constructor(
                     amount = signedAmount,
                     description = request.description,
                     categoryId = validCategoryId,
+                    // Se manda tambien cuando es null: asi el desatar de una deuda llega.
+                    debtId = t.debtId,
                     timestamp = request.timestamp
                 )
             )
@@ -400,10 +403,10 @@ class SyncRepository @Inject constructor(
                         date = parseIso(dto.timestamp),
                         note = dto.description.orEmpty(),
                         currency = dto.currency,
-                        // El servidor todavia no guarda el vinculo con la deuda, asi que
-                        // se conserva el local: sin esto, el primer pull despues de
-                        // prestar dinero desharia el enlace en silencio.
-                        debtId = existing?.debtId,
+                        // El servidor ya guarda el vinculo, asi que manda el suyo. Se cae
+                        // al local solo si viene vacio, para no perder el enlace de un
+                        // movimiento creado antes de que el backend supiera de deudas.
+                        debtId = dto.debtId ?: existing?.debtId,
                         ownerId = ownerId
                     )
                 )
