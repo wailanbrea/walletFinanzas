@@ -47,7 +47,10 @@ fun WaterSurface(
 
     Canvas(modifier = modifier) {
         if (filled <= 0f) return@Canvas
-        val surfaceY = size.height * (1f - filled)
+        // El rebote mueve todo el nivel, no solo la ola: es lo que se ve al sacudirlo a
+        // lo largo. Acotado para que no se salga de la tarjeta.
+        val bobbed = (filled + water.bob.value * 0.07f).coerceIn(0f, 1f)
+        val surfaceY = size.height * (1f - bobbed)
         // Desnivel entre un extremo y el otro. Va contra el ancho y no contra el alto:
         // la superficie cruza la tarjeta a lo largo, así que un desnivel medido en la
         // altura quedaba en unos pocos píxeles y no se veía nada.
@@ -130,6 +133,11 @@ private class WaterMotion {
 
     /** Velocidad con la que la superficie se mueve; es lo que la hace pasarse de largo. */
     var velocity = 0f
+
+    /** Cuánto sube o baja el nivel al sacudir el teléfono a lo largo, de -1 a 1. */
+    val bob = mutableFloatStateOf(0f)
+    var bobVelocity = 0f
+
     var lastEventNanos = 0L
 }
 
@@ -180,12 +188,24 @@ private fun rememberWaterMotion(): WaterMotion {
 
                 // Las olas viven de lo rápido que se mueve la superficie, no de dónde
                 // está: quieto en diagonal queda inclinado y liso.
-                val stirred = (kotlin.math.abs(water.velocity) * 0.5f).coerceAtMost(1f)
+                // Sacudirlo a lo largo comprime el liquido contra el fondo y la
+                // superficie rebota. El eje Y trae la gravedad cuando esta derecho, asi
+                // que lo que importa es cuanto se aparta de ella, no su valor.
+                val verticalPush = ((event.values[1] - 9.8f) / 9.8f).coerceIn(-1f, 1f)
+                val bobAcceleration = (verticalPush - water.bob.floatValue) * 30f - water.bobVelocity * 5f
+                water.bobVelocity += bobAcceleration * dt
+                water.bob.floatValue = (water.bob.floatValue + water.bobVelocity * dt).coerceIn(-1f, 1f)
+
+                val stirred = maxOf(
+                    kotlin.math.abs(water.velocity) * 0.5f,
+                    kotlin.math.abs(water.bobVelocity) * 0.35f
+                ).coerceAtMost(1f)
                 val decay = kotlin.math.exp(-1.6f * dt)
                 water.energy.floatValue = maxOf(water.energy.floatValue * decay, stirred)
                 if (water.energy.floatValue < 0.01f) {
                     water.energy.floatValue = 0f
                     water.velocity *= 0.5f
+                    water.bobVelocity *= 0.5f
                 } else {
                     // Avanza con el tiempo, no por evento, para que la ola no acelere
                     // cuando el sensor reporta más seguido.
