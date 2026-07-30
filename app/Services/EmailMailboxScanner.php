@@ -13,7 +13,12 @@ use Throwable;
 
 class EmailMailboxScanner
 {
-    public function __construct(private EmailOAuthService $oauth, private FinancialEmailExtractor $extractor) {}
+    public function __construct(
+        private EmailOAuthService $oauth,
+        private FinancialEmailExtractor $extractor,
+        private UsdDopExchangeRateService $exchangeRates,
+        private DuplicateEmailCandidateDetector $duplicates,
+    ) {}
 
     public function scan(EmailConnection $connection): array
     {
@@ -69,6 +74,7 @@ class EmailMailboxScanner
                     ->value('category');
                 $candidate['category_suggestion'] = $learnedCategory ?: $candidate['category_suggestion'];
             }
+            $candidate = $this->withConversion($candidate);
             if ($existingCandidate) {
                 if ($existingCandidate->status === 'pending') {
                     $existingCandidate->update($candidate);
@@ -84,7 +90,38 @@ class EmailMailboxScanner
         }
         $connection->update(['last_synced_at' => now(), 'status' => 'connected']);
 
-        return ['messages_discovered' => count($messages), 'messages_created' => $created, 'candidates_created' => $candidates];
+        // Al final del barrido, no por cada mensaje: el gemelo puede haber llegado por
+        // el otro buzon y solo se le puede emparejar cuando ya esta guardado.
+        $duplicates = $this->duplicates->reconcile($connection->user);
+
+        return [
+            'messages_discovered' => count($messages),
+            'messages_created' => $created,
+            'candidates_created' => $candidates,
+            'duplicates_marked' => $duplicates,
+        ];
+    }
+
+    /**
+     * Adjunta la conversion a DOP si el cargo viene en USD.
+     *
+     * Si la tasa no esta disponible el candidato se guarda igual, sin conversion: es
+     * mejor mostrar el gasto y que no se pueda clasificar todavia que perderlo.
+     *
+     * @param  array<string, mixed>  $candidate
+     * @return array<string, mixed>
+     */
+    private function withConversion(array $candidate): array
+    {
+        if (($candidate['currency'] ?? null) !== 'USD') {
+            return $candidate;
+        }
+        $conversion = $this->exchangeRates->convertMinor(
+            (int) $candidate['amount'],
+            CarbonImmutable::parse($candidate['occurred_at']),
+        );
+
+        return $conversion ? $candidate + $conversion : $candidate;
     }
 
     private function gmail(string $token): array
