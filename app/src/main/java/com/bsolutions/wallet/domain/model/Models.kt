@@ -9,7 +9,8 @@ data class Account(
     val countryCode: String = "DO",
     val institutionName: String? = null,
     /** Solo los últimos cuatro dígitos; nunca se almacena el número completo de tarjeta. */
-    val cardLastFour: String? = null
+    val cardLastFour: String? = null,
+    val creditLimit: Long? = null // minor units (cents)
 )
 
 data class Transaction(
@@ -27,7 +28,9 @@ data class Category(
     val id: String,
     val name: String,
     val icon: String,
-    val colorHex: String
+    val colorHex: String,
+    /** "EXPENSE", "INCOME" o "BOTH". Un gasto no debe poder etiquetarse "Salario". */
+    val type: String = "EXPENSE"
 )
 
 data class Budget(

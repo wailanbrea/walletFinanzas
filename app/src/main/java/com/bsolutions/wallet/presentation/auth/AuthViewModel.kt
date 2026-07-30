@@ -2,6 +2,8 @@ package com.bsolutions.wallet.presentation.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bsolutions.wallet.core.sync.SyncScheduler
+import com.bsolutions.wallet.data.preferences.DEFAULT_USER_NAME
 import com.bsolutions.wallet.data.preferences.UserPreferencesRepository
 import com.bsolutions.wallet.data.repository.AuthResult
 import com.bsolutions.wallet.data.repository.WalletAuthRepository
@@ -25,7 +27,8 @@ data class AuthUiState(
 @HiltViewModel
 class AuthViewModel @Inject constructor(
     private val authRepository: WalletAuthRepository,
-    private val userPreferencesRepository: UserPreferencesRepository
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val syncScheduler: SyncScheduler
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -80,16 +83,29 @@ class AuthViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null, success = false)
             when (val result = block()) {
                 is AuthResult.Success -> {
-                    // Guardar el correo en el perfil local si aún no hay uno
+                    // El perfil del backend manda sobre los valores por defecto locales: al
+                    // entrar en un teléfono nuevo el menú debe decir el nombre y el correo
+                    // reales, no "Mi Perfil". Un nombre que el usuario ya personalizó aquí
+                    // se respeta.
                     if (result.user.email.isNotBlank()) {
                         val profile = userPreferencesRepository.profile.first()
-                        if (profile.email.isBlank()) {
+                        val keepsDefaultName = profile.userName.isBlank() ||
+                            profile.userName == DEFAULT_USER_NAME
+                        val resolvedName = result.user.name
+                            .takeIf { it.isNotBlank() && keepsDefaultName }
+                            ?: profile.userName
+                        if (profile.email != result.user.email || resolvedName != profile.userName) {
                             userPreferencesRepository.saveProfile(
-                                userName = profile.userName,
+                                userName = resolvedName,
                                 email = result.user.email,
-                                walletName = profile.walletName
+                                walletName = profile.walletName,
+                                financialCountryCode = profile.financialCountryCode
                             )
                         }
+                    }
+                    // Con sesión nueva, sube de inmediato lo pendiente y baja lo del servidor.
+                    if (authRepository.currentUser != null) {
+                        syncScheduler.requestSyncNow()
                     }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,

@@ -87,7 +87,8 @@ class WalletAuthRepositoryTest {
         )
         assertEquals("token-123", session.token)
         assertEquals("1", isolation.activeUserId)
-        assertEquals(AuthUser("1", "ada@example.com"), session.user)
+        // El nombre viaja hasta la sesión: sin él el menú lateral seguiría diciendo "Mi Perfil".
+        assertEquals(AuthUser("1", "ada@example.com", "Ada Lovelace"), session.user)
     }
 
     @Test
@@ -206,6 +207,8 @@ private class FakeWalletApi : WalletApi {
     override suspend fun accounts(): ApiEnvelope<List<AccountDto>> = error("Not used")
     override suspend fun createAccount(request: com.bsolutions.wallet.core.network.CreateAccountRequest): ApiEnvelope<AccountDto> = error("Not used")
     override suspend fun createTransaction(request: com.bsolutions.wallet.core.network.CreateTransactionRequest): ApiEnvelope<com.bsolutions.wallet.core.network.TransactionDto> = error("Not used")
+    override suspend fun updateTransaction(id: String, request: com.bsolutions.wallet.core.network.UpdateTransactionRequest): ApiEnvelope<com.bsolutions.wallet.core.network.TransactionDto> = error("Not used")
+    override suspend fun deleteTransaction(id: String): retrofit2.Response<Unit> = error("Not used")
     override suspend fun createCategory(request: com.bsolutions.wallet.core.network.CreateCategoryRequest): ApiEnvelope<com.bsolutions.wallet.core.network.CategoryDto> = error("Not used")
     override suspend fun pullAccounts(updatedSince: String?, cursor: String?, perPage: Int): com.bsolutions.wallet.core.network.CursorPage<AccountDto> = error("Not used")
     override suspend fun pullTransactions(updatedSince: String?, cursor: String?, perPage: Int): com.bsolutions.wallet.core.network.CursorPage<com.bsolutions.wallet.core.network.TransactionDto> = error("Not used")

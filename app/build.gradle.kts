@@ -139,8 +139,9 @@ dependencies {
     implementation(libs.retrofit.converter.gson)
     implementation(libs.okhttp.logging.interceptor)
 
-    // Coil for image loading
+    // Coil for image loading (coil-svg: los logos oficiales de la SB son SVG)
     implementation(libs.coil.compose)
+    implementation(libs.coil.svg)
 
     // Test
     testImplementation(libs.junit)

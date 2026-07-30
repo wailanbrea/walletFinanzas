@@ -46,7 +46,13 @@ data class AccountDto(
     @SerializedName("institution_name") val institutionName: String?,
     @SerializedName("country_code") val countryCode: String,
     @SerializedName("card_last_four") val cardLastFour: String?,
-    @SerializedName("is_active") val isActive: Boolean
+    @SerializedName("is_active") val isActive: Boolean,
+    // Nullable a proposito: un backend anterior a la migracion de type/credit_limit no
+    // envia estas claves. Gson no aplica los valores por defecto de Kotlin (instancia
+    // con Unsafe, saltandose el constructor), asi que un `= "BANK"` aqui llegaria como
+    // null y reventaria al construir AccountEntity. El defecto se aplica al mapear.
+    val type: String? = null,
+    @SerializedName("credit_limit") val creditLimit: Long? = null
 )
 
 data class EmailConnectionDto(
@@ -78,6 +84,7 @@ data class EmailCandidateDto(
     val id: String,
     val provider: String,
     val merchant: String?,
+    @SerializedName("card_last_four") val cardLastFour: String? = null,
     val amount: Long,
     val currency: String,
     val direction: String,
@@ -86,6 +93,7 @@ data class EmailCandidateDto(
     val confidence: Int,
     val status: String,
     val subject: String?,
+    @SerializedName("duplicate_of_id") val duplicateOfId: String? = null,
     @SerializedName("converted_amount") val convertedAmount: Long? = null,
     @SerializedName("converted_currency") val convertedCurrency: String? = null,
     @SerializedName("exchange_rate_micros") val exchangeRateMicros: Long? = null,
@@ -98,7 +106,9 @@ data class EmailCandidateDto(
 data class EmailCandidateReviewRequest(
     val action: String,
     val category: String? = null,
-    val learn: Boolean = true
+    val learn: Boolean = true,
+    /** Cual es el candidato bueno cuando se marca este como duplicado. */
+    @SerializedName("duplicate_of_id") val duplicateOfId: String? = null
 )
 
 data class MessageResponse(val message: String)
@@ -112,7 +122,19 @@ data class CreateAccountRequest(
     val currency: String,
     @SerializedName("institution_name") val institutionName: String?,
     @SerializedName("country_code") val countryCode: String,
-    @SerializedName("card_last_four") val cardLastFour: String?
+    @SerializedName("card_last_four") val cardLastFour: String?,
+    val type: String = "BANK",
+    @SerializedName("credit_limit") val creditLimit: Long? = null,
+    // Una cuenta borrada se sube como inactiva: el backend hace updateOrCreate por id,
+    // asi que esto es la lapida que replica el borrado en los demas dispositivos.
+    @SerializedName("is_active") val isActive: Boolean = true
+)
+
+data class UpdateTransactionRequest(
+    val amount: Long,
+    val description: String?,
+    @SerializedName("category_id") val categoryId: String?,
+    val timestamp: String
 )
 
 data class CreateTransactionRequest(
@@ -237,6 +259,17 @@ interface WalletApi {
 
     @POST("transactions")
     suspend fun createTransaction(@Body request: CreateTransactionRequest): ApiEnvelope<TransactionDto>
+
+    // Corregir y borrar necesitan su propia puerta: createTransaction es inmutable y
+    // responde 409 si la misma clave de idempotencia vuelve con otros valores.
+    @PATCH("transactions/{id}")
+    suspend fun updateTransaction(
+        @Path("id") id: String,
+        @Body request: UpdateTransactionRequest
+    ): ApiEnvelope<TransactionDto>
+
+    @DELETE("transactions/{id}")
+    suspend fun deleteTransaction(@Path("id") id: String): retrofit2.Response<Unit>
 
     @POST("categories")
     suspend fun createCategory(@Body request: CreateCategoryRequest): ApiEnvelope<CategoryDto>

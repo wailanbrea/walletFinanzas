@@ -26,6 +26,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
+import java.time.Instant
+import java.time.ZoneId
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EmailConnectionsViewModelTest {
@@ -142,12 +144,14 @@ class EmailConnectionsViewModelTest {
 
         assertEquals(listOf("pending"), viewModel.uiState.value.candidates.map { it.id })
 
-        viewModel.markDuplicate("pending")
+        viewModel.markAsDuplicate("pending", "el-original")
         advanceUntilIdle()
 
         assertEquals(Triple("pending", "duplicate", null), repository.reviews.single())
+        // Se registra de cual es duplicado: sin el original, el backend no sabe cual conservar.
+        assertEquals("pending" to "el-original", repository.duplicateTargets.single())
         assertEquals(emptyList<EmailCandidate>(), viewModel.uiState.value.candidates)
-        assertEquals("Movimiento marcado como duplicado.", viewModel.uiState.value.message)
+        assertEquals("Marcado como duplicado. Se conserva el otro movimiento.", viewModel.uiState.value.message)
     }
 
     @Test
@@ -272,6 +276,54 @@ class EmailConnectionsViewModelTest {
     }
 
     @Test
+    fun `preselects the card whose last four digits match the email`() {
+        val efectivo = Account("acc-cash", "Efectivo", "CASH", 0, "DOP")
+        val visa = Account("acc-visa", "Visa", "CREDIT_CARD", 0, "DOP", cardLastFour = "1234")
+        val master = Account("acc-master", "Mastercard", "CREDIT_CARD", 0, "DOP", cardLastFour = "5678")
+        val accounts = listOf(efectivo, visa, master)
+
+        assertEquals(
+            "acc-master",
+            preselectedAccountId(financialCandidate().copy(cardLastFour = "5678"), accounts)
+        )
+
+        // Sin digitos en el correo se mantiene la primera cuenta compatible.
+        assertEquals("acc-cash", preselectedAccountId(financialCandidate(), accounts))
+
+        // Digitos que no coinciden con ninguna cuenta tampoco fuerzan una eleccion rara.
+        assertEquals(
+            "acc-cash",
+            preselectedAccountId(financialCandidate().copy(cardLastFour = "9999"), accounts)
+        )
+    }
+
+    @Test
+    fun `does not guess when two cards share the same last four digits`() {
+        val primera = Account("acc-1", "Visa", "CREDIT_CARD", 0, "DOP", cardLastFour = "1234")
+        val segunda = Account("acc-2", "Visa adicional", "CREDIT_CARD", 0, "DOP", cardLastFour = "1234")
+
+        assertEquals(
+            "acc-1",
+            preselectedAccountId(financialCandidate().copy(cardLastFour = "1234"), listOf(primera, segunda))
+        )
+    }
+
+    @Test
+    fun `ignores a card match whose currency cannot hold the amount`() {
+        // Coincide el final pero la divisa no cuadra: registrarlo ahi daria un importe erroneo.
+        val visaUsd = Account("acc-usd", "Visa USD", "CREDIT_CARD", 0, "USD", cardLastFour = "1234")
+        val cuentaDop = Account("acc-dop", "Cuenta", "BANK", 0, "DOP")
+
+        assertEquals(
+            "acc-dop",
+            preselectedAccountId(
+                financialCandidate().copy(cardLastFour = "1234", currency = "DOP"),
+                listOf(visaUsd, cuentaDop)
+            )
+        )
+    }
+
+    @Test
     fun `converted amount is required when account currency differs`() {
         val account = Account("account-1", "Cuenta", "BANK", 0, "DOP")
 
@@ -286,6 +338,34 @@ class EmailConnectionsViewModelTest {
         assertNull(candidateAmountForAccount(financialCandidate().copy(amount = 0), account))
         assertNull(candidateAmountForAccount(financialCandidate().copy(amount = Long.MIN_VALUE), account))
         assertNull(candidateOccurredAtMillis("not-a-date"))
+    }
+
+    @Test
+    fun `transaction date uses exact email instant unless user selects another day`() {
+        val occurredAt = "2026-07-20T14:30:00Z"
+        val selectedDay = Instant.parse("2026-08-05T00:00:00Z").toEpochMilli()
+        val santoDomingo = ZoneId.of("America/Santo_Domingo")
+
+        assertEquals(
+            Instant.parse(occurredAt).toEpochMilli(),
+            candidateTransactionDateMillis(occurredAt, null, santoDomingo)
+        )
+        assertEquals(
+            Instant.parse("2026-08-05T14:30:00Z").toEpochMilli(),
+            candidateTransactionDateMillis(occurredAt, selectedDay, santoDomingo)
+        )
+        assertNull(candidateTransactionDateMillis("not-a-date", selectedDay, santoDomingo))
+    }
+
+    @Test
+    fun `date picker opens on the email local calendar day`() {
+        val santoDomingo = ZoneId.of("America/Santo_Domingo")
+
+        assertEquals(
+            Instant.parse("2026-07-19T00:00:00Z").toEpochMilli(),
+            candidateDatePickerInitialMillis("2026-07-20T02:30:00Z", santoDomingo)
+        )
+        assertNull(candidateDatePickerInitialMillis("not-a-date", santoDomingo))
     }
 
     private fun gmailConnected() = EmailConnection(
@@ -303,6 +383,59 @@ class EmailConnectionsViewModelTest {
         accountRepository: AccountRepository = FakeAccountRepository(),
         transactionRepository: TransactionRepository = FakeTransactionRepository()
     ) = EmailConnectionsViewModel(repository, FakeCategoryRepository(), accountRepository, transactionRepository)
+
+    @Test
+    fun `the usd charge offers to be marked as duplicate of the dop one`() {
+        // Caso real: PayPal avisa USD 355 y el banco emisor RD$21,000 del mismo consumo.
+        val paypal = financialCandidate(id = "usd", provider = EmailProvider.GMAIL).copy(
+            amount = -35_500,
+            currency = "USD",
+            convertedAmount = -2_100_000,
+            convertedCurrency = "DOP",
+            occurredAt = "2026-07-20T18:30:00Z"
+        )
+        val qik = financialCandidate(id = "dop", provider = EmailProvider.MICROSOFT).copy(
+            amount = -2_100_000,
+            currency = "DOP",
+            occurredAt = "2026-07-20T18:35:00Z"
+        )
+        val state = EmailConnectionsUiState(candidates = listOf(paypal, qik))
+
+        // Se propone marcar el USD, conservando el que ya está en pesos.
+        assertEquals("dop", state.duplicateCandidateFor(paypal)?.id)
+        assertNull(state.duplicateCandidateFor(qik))
+    }
+
+    @Test
+    fun `a usd charge without conversion is never offered as duplicate`() {
+        val paypal = financialCandidate(id = "usd", provider = EmailProvider.GMAIL).copy(
+            amount = -35_500,
+            currency = "USD",
+            convertedAmount = null,
+            convertedCurrency = null,
+            occurredAt = "2026-07-20T18:30:00Z"
+        )
+        val qik = financialCandidate(id = "dop", provider = EmailProvider.MICROSOFT).copy(
+            amount = -2_100_000,
+            currency = "DOP",
+            occurredAt = "2026-07-20T18:35:00Z"
+        )
+
+        // Sin conversión no hay forma de saber si es el mismo cargo.
+        assertNull(EmailConnectionsUiState(candidates = listOf(paypal, qik)).duplicateCandidateFor(paypal))
+    }
+
+    @Test
+    fun `a candidate marked duplicate disappears from the list`() {
+        val kept = financialCandidate(id = "dop", provider = EmailProvider.MICROSOFT).copy(currency = "DOP")
+        val hidden = financialCandidate(id = "usd", provider = EmailProvider.GMAIL).copy(status = "duplicate")
+
+        val visible = EmailConnectionsUiState(candidates = listOf(kept, hidden)).candidatesByDate
+            .values.flatten().map { it.id }
+
+        // Mostrarlo contaría el mismo gasto dos veces.
+        assertEquals(listOf("dop"), visible)
+    }
 
     private fun financialCandidate(
         id: String = "candidate-1",
@@ -331,6 +464,9 @@ class EmailConnectionsViewModelTest {
         val disconnected = mutableListOf<EmailProvider>()
         val synced = mutableListOf<EmailProvider>()
         val reviews = mutableListOf<Triple<String, String, String?>>()
+
+        /** (candidato, original) de cada marcado como duplicado. */
+        val duplicateTargets = mutableListOf<Pair<String, String?>>()
         var candidates: List<EmailCandidate> = emptyList()
 
         override suspend fun getConnections(): List<EmailConnection> {
@@ -348,9 +484,15 @@ class EmailConnectionsViewModelTest {
             return EmailSyncResult(messagesDiscovered = 1, messagesCreated = 1, candidatesCreated = 1)
         }
 
-        override suspend fun reviewCandidate(id: String, action: String, category: String?): EmailCandidate {
+        override suspend fun reviewCandidate(
+            id: String,
+            action: String,
+            category: String?,
+            duplicateOfId: String?
+        ): EmailCandidate {
             if (reviewError) error("network")
             reviews += Triple(id, action, category)
+            if (action == "duplicate") duplicateTargets += id to duplicateOfId
             val current = candidates.first { it.id == id }
             val reviewed = current.copy(
                 status = if (action == "dismiss") "dismissed" else "classified",

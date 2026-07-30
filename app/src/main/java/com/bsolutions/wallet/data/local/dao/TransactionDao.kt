@@ -10,6 +10,10 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND isDeleted = 0 ORDER BY date DESC")
     fun getAllTransactions(ownerId: String): Flow<List<TransactionEntity>>
     
+    /** Lectura puntual para el respaldo de sincronización (no reactiva). */
+    @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND isDeleted = 0")
+    suspend fun getAllTransactionsOnce(ownerId: String): List<TransactionEntity>
+
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND accountId = :accountId AND isDeleted = 0 ORDER BY date DESC")
     fun getTransactionsByAccount(ownerId: String, accountId: String): Flow<List<TransactionEntity>>
     
@@ -108,6 +112,22 @@ interface TransactionDao {
      * Actualiza un movimiento ajustando el saldo por la diferencia de monto, atómicamente.
      * Asume que la cuenta y el tipo no cambian (solo monto/categoría/nota).
      */
+    @Transaction
+    suspend fun updateWithBalanceAndOp(
+        updated: TransactionEntity,
+        oldAmount: Long,
+        op: PendingOperationEntity?
+    ) {
+        updateWithBalance(updated, oldAmount)
+        op?.let { insertPendingOp(it) }
+    }
+
+    @Transaction
+    suspend fun softDeleteWithBalanceAndOp(transaction: TransactionEntity, op: PendingOperationEntity?) {
+        softDeleteWithBalance(transaction)
+        op?.let { insertPendingOp(it) }
+    }
+
     @Transaction
     suspend fun updateWithBalance(updated: TransactionEntity, oldAmount: Long) {
         require(updated.amount > 0L) { "El monto debe ser mayor que cero" }

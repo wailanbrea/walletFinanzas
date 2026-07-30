@@ -42,6 +42,8 @@ data class EmailCandidate(
     val id: String,
     val provider: EmailProvider,
     val merchant: String?,
+    /** Ultimos cuatro digitos de la tarjeta que origino el movimiento, si el correo los trae. */
+    val cardLastFour: String? = null,
     val amount: Long,
     val currency: String,
     val direction: String,
@@ -50,6 +52,8 @@ data class EmailCandidate(
     val confidence: Int,
     val status: String,
     val subject: String?,
+    /** Id del candidato que se conserva cuando este quedo marcado como duplicado. */
+    val duplicateOfId: String? = null,
     val convertedAmount: Long? = null,
     val convertedCurrency: String? = null,
     val exchangeRateMicros: Long? = null,
@@ -64,11 +68,24 @@ interface EmailConnectionsRepository {
     suspend fun getCandidates(): List<EmailCandidate>
     suspend fun getAuthorizationUrl(provider: EmailProvider): String
     suspend fun sync(provider: EmailProvider): EmailSyncResult
-    suspend fun reviewCandidate(id: String, action: String, category: String?): EmailCandidate
+    suspend fun reviewCandidate(
+        id: String,
+        action: String,
+        category: String?,
+        duplicateOfId: String? = null
+    ): EmailCandidate
     suspend fun disconnect(provider: EmailProvider)
 }
 
 class EmailSessionExpiredException : Exception("La sesión venció.")
+
+/**
+ * El sync sigue en la cola del servidor y se agotó la espera. Se distingue del fallo
+ * porque no hay nada roto: falta que un worker procese el trabajo. Antes se devolvía
+ * el run con sus contadores en cero y la pantalla lo mostraba como un éxito sin
+ * correos, que es justo lo contrario de lo que pasaba.
+ */
+class EmailSyncStillQueuedException : Exception("La sincronización sigue en cola en el servidor.")
 
 /** El sync de correos encolado terminó en estado 'failed'. */
 class EmailSyncFailedException(val errorCode: String?) :
@@ -103,13 +120,23 @@ class DefaultEmailConnectionsRepository(
         if (run.status == "failed") {
             throw EmailSyncFailedException(run.errorCode)
         }
+        if (run.status != "completed") {
+            throw EmailSyncStillQueuedException()
+        }
         run.toDomain()
     }
 
-    override suspend fun reviewCandidate(id: String, action: String, category: String?): EmailCandidate =
-        authenticatedCall {
-            api.reviewEmailCandidate(id, EmailCandidateReviewRequest(action, category)).data.toDomain()
-        }
+    override suspend fun reviewCandidate(
+        id: String,
+        action: String,
+        category: String?,
+        duplicateOfId: String?
+    ): EmailCandidate = authenticatedCall {
+        api.reviewEmailCandidate(
+            id,
+            EmailCandidateReviewRequest(action, category, duplicateOfId = duplicateOfId)
+        ).data.toDomain()
+    }
 
     override suspend fun disconnect(provider: EmailProvider) {
         authenticatedCall { api.deleteEmailConnection(provider.apiValue) }
@@ -151,6 +178,7 @@ private fun EmailCandidateDto.toDomain() = EmailCandidate(
     id = id,
     provider = EmailProvider.fromApi(provider),
     merchant = merchant,
+    cardLastFour = cardLastFour,
     amount = amount,
     currency = currency,
     direction = direction,
@@ -159,6 +187,7 @@ private fun EmailCandidateDto.toDomain() = EmailCandidate(
     confidence = confidence,
     status = status,
     subject = subject,
+    duplicateOfId = duplicateOfId,
     convertedAmount = convertedAmount,
     convertedCurrency = convertedCurrency,
     exchangeRateMicros = exchangeRateMicros,

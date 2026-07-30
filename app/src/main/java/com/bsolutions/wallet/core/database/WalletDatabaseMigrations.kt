@@ -271,4 +271,26 @@ object WalletDatabaseMigrations {
             database.execSQL("DROP TABLE $legacy")
         }
     }
+
+    /**
+     * v10 -> v11: las categorias distinguen ingreso de gasto. Todas las existentes
+     * quedan como gasto salvo Salario, que es lo unico que se sembraba como ingreso;
+     * asi un gasto deja de poder etiquetarse "Salario" y al reves.
+     */
+    val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE categories ADD COLUMN type TEXT NOT NULL DEFAULT 'EXPENSE'")
+            database.execSQL("UPDATE categories SET type = 'INCOME' WHERE id = 'cat_salario'")
+            database.execSQL("UPDATE categories SET type = 'BOTH' WHERE id = 'cat_otros'")
+            // Se vuelven a subir para que el backend reciba el tipo.
+            database.execSQL("UPDATE categories SET needsSync = 1")
+        }
+    }
+
+    /** v9 -> v10: límite de crédito opcional, expresado en unidades menores. */
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE accounts ADD COLUMN creditLimit INTEGER")
+        }
+    }
 }

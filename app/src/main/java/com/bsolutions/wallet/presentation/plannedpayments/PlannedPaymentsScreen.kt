@@ -89,15 +89,29 @@ fun PlannedPaymentsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showCreateSheet by remember { mutableStateOf(false) }
+    var payingPayment by remember { mutableStateOf<PlannedPayment?>(null) }
 
     if (showCreateSheet) {
         CreatePlannedPaymentSheet(
             accounts = uiState.accounts,
             categories = uiState.categories,
             onDismiss = { showCreateSheet = false },
-            onSave = { name, accountId, categoryId, amount, frequency ->
-                viewModel.addPayment(name, accountId, categoryId, amount, frequency, System.currentTimeMillis())
+            onSave = { name, accountId, categoryId, amount, frequency, type ->
+                viewModel.addPayment(name, accountId, categoryId, amount, frequency, System.currentTimeMillis(), type)
                 showCreateSheet = false
+            }
+        )
+    }
+
+    // Al registrar se confirma el importe: una quincena puede venir distinta de lo
+    // previsto y lo que debe quedar guardado es lo que realmente entro.
+    payingPayment?.let { payment ->
+        ConfirmAmountDialog(
+            payment = payment,
+            onDismiss = { payingPayment = null },
+            onConfirm = { amount ->
+                viewModel.payNow(payment, amount)
+                payingPayment = null
             }
         )
     }
@@ -180,7 +194,7 @@ fun PlannedPaymentsScreen(
                 items(uiState.payments, key = { it.id }) { payment ->
                     PlannedPaymentCard(
                         payment = payment,
-                        onPayNow = { viewModel.payNow(payment) },
+                        onPayNow = { payingPayment = payment },
                         onDelete = { viewModel.deletePayment(payment.id) }
                     )
                 }
@@ -287,11 +301,13 @@ private fun CreatePlannedPaymentSheet(
     accounts: List<Account>,
     categories: List<Category>,
     onDismiss: () -> Unit,
-    onSave: (name: String, accountId: String, categoryId: String, amount: Long, frequency: String) -> Unit
+    onSave: (name: String, accountId: String, categoryId: String, amount: Long, frequency: String, type: String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var amountStr by remember { mutableStateOf("") }
     var frequency by remember { mutableStateOf("MONTHLY") }
+    // Un sueldo tambien es recurrente: sin esto solo se podian planificar gastos.
+    var type by remember { mutableStateOf("EXPENSE") }
     var selectedAccountId by remember { mutableStateOf(accounts.firstOrNull()?.id ?: "") }
     var selectedCategoryId by remember { mutableStateOf("") }
     var expandedAcc by remember { mutableStateOf(false) }
@@ -325,6 +341,20 @@ private fun CreatePlannedPaymentSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            Text(stringResource(R.string.planned_type), style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = type == "EXPENSE",
+                    onClick = { type = "EXPENSE" },
+                    label = { Text(stringResource(R.string.planned_type_expense)) }
+                )
+                FilterChip(
+                    selected = type == "INCOME",
+                    onClick = { type = "INCOME" },
+                    label = { Text(stringResource(R.string.planned_type_income)) }
+                )
+            }
+
             Text(stringResource(R.string.planned_frequency), style = MaterialTheme.typography.labelLarge)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(frequencyLabelRes.entries.toList()) { (key, labelRes) ->
@@ -336,6 +366,14 @@ private fun CreatePlannedPaymentSheet(
                 }
             }
 
+            // Solo se ofrecen las categorias del tipo elegido: un sueldo no puede
+            // etiquetarse "Transporte" ni un gasto "Salario".
+            val categoriesForType = categories.filter { it.type == type || it.type == "BOTH" }
+            // Si se cambia de tipo, una categoria del tipo anterior deja de ser valida.
+            if (selectedCategoryId.isNotBlank() && categoriesForType.none { it.id == selectedCategoryId }) {
+                selectedCategoryId = ""
+            }
+
             Text(stringResource(R.string.common_category), style = MaterialTheme.typography.labelLarge)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
@@ -345,7 +383,7 @@ private fun CreatePlannedPaymentSheet(
                         label = { Text(stringResource(R.string.category_none_auto)) }
                     )
                 }
-                items(categories, key = { it.id }) { category ->
+                items(categoriesForType, key = { it.id }) { category ->
                     FilterChip(
                         selected = selectedCategoryId == category.id,
                         onClick = { selectedCategoryId = category.id },
@@ -392,7 +430,7 @@ private fun CreatePlannedPaymentSheet(
                 onClick = {
                     val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
                     if (name.isNotBlank() && amount > 0L && selectedAccountId.isNotEmpty()) {
-                        onSave(name, selectedAccountId, selectedCategoryId, amount, frequency)
+                        onSave(name, selectedAccountId, selectedCategoryId, amount, frequency, type)
                     }
                 },
                 enabled = name.isNotBlank() &&
@@ -407,4 +445,60 @@ private fun CreatePlannedPaymentSheet(
             }
         }
     }
+}
+
+/**
+ * Confirma el importe antes de registrar la ocurrencia. El plan guarda lo previsto,
+ * pero lo que se anota en la cuenta es lo que realmente entró o salió: una quincena
+ * puede traer horas extra o un descuento sin que el sueldo planificado cambie.
+ */
+@Composable
+private fun ConfirmAmountDialog(
+    payment: PlannedPayment,
+    onDismiss: () -> Unit,
+    onConfirm: (Long) -> Unit
+) {
+    var amountStr by remember(payment.id) {
+        // Se precarga lo previsto: lo normal es confirmarlo tal cual.
+        mutableStateOf((payment.amount / 100.0).toString())
+    }
+    val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
+    val isIncome = payment.type == "INCOME"
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (isIncome) R.string.planned_register_income else R.string.planned_register_expense
+                )
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(payment.name, fontWeight = FontWeight.SemiBold)
+                Text(
+                    stringResource(R.string.planned_amount_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = amountStr,
+                    onValueChange = { amountStr = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text(stringResource(R.string.planned_amount, MoneyFormat.symbol())) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(amount) }, enabled = amount > 0L) {
+                Text(stringResource(R.string.planned_pay_now))
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        }
+    )
 }

@@ -5,12 +5,15 @@ package com.bsolutions.wallet.data.repository
 import com.bsolutions.wallet.core.network.CreateAccountRequest
 import com.bsolutions.wallet.core.network.CreateCategoryRequest
 import com.bsolutions.wallet.core.network.CreateTransactionRequest
+import com.bsolutions.wallet.core.network.UpdateTransactionRequest
+import com.bsolutions.wallet.core.network.AccountDto
 import com.bsolutions.wallet.core.network.BudgetSyncDto
 import com.bsolutions.wallet.core.network.GoalSyncDto
 import com.bsolutions.wallet.core.network.DebtSyncDto
 import com.bsolutions.wallet.core.network.PlannedPaymentSyncDto
 import com.bsolutions.wallet.core.network.WalletApi
 import com.bsolutions.wallet.core.database.WalletOwnerScope
+import com.bsolutions.wallet.data.preferences.UserPreferencesRepository
 import com.bsolutions.wallet.data.local.dao.AccountDao
 import com.bsolutions.wallet.data.local.dao.CategoryDao
 import com.bsolutions.wallet.data.local.dao.PendingOperationDao
@@ -31,6 +34,13 @@ import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -42,8 +52,12 @@ import javax.inject.Singleton
 import kotlin.math.abs
 
 sealed interface SyncOutcome {
-    /** Sincronizado: [pushed] operaciones subidas, [pulled] filas traídas. */
-    data class Success(val pushed: Int, val pulled: Int) : SyncOutcome
+    /**
+     * Sincronizado: [pushed] operaciones subidas, [pulled] filas traídas y [discarded]
+     * descartadas por rechazo repetido del servidor. Un descarte se informa en vez de
+     * pasar en silencio: significa que un cambio del usuario no llegó a la nube.
+     */
+    data class Success(val pushed: Int, val pulled: Int, val discarded: Int = 0) : SyncOutcome
     /** No hay sesión: la app queda local-only (degradación limpia). */
     data object NoSession : SyncOutcome
     data class Error(val message: String) : SyncOutcome
@@ -67,6 +81,7 @@ class SyncRepository @Inject constructor(
     private val debtDao: DebtDao,
     private val plannedPaymentDao: PlannedPaymentDao,
     private val ownerScope: WalletOwnerScope,
+    private val preferences: UserPreferencesRepository,
     private val gson: Gson
 ) {
     val pendingCount: Flow<Int> = ownerScope.ownerId.flatMapLatest { ownerId ->
@@ -80,14 +95,39 @@ class SyncRepository @Inject constructor(
         ) { counts -> counts.sum() }
     }
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val gate = Mutex()
+    private var inFlight: Deferred<SyncOutcome>? = null
+
+    /**
+     * Una sola sincronización a la vez, compartida por quien la pida.
+     *
+     * La piden dos caminos distintos —la subida inmediata tras un cambio y el worker de
+     * WorkManager—, y sin esto ambos hacían las mismas peticiones a la vez: el doble de
+     * red y de batería para el mismo resultado. Quien llegue mientras otra corre espera
+     * su resultado en lugar de lanzar una copia.
+     */
     suspend fun sync(): SyncOutcome {
+        val running = gate.withLock {
+            inFlight?.takeIf { it.isActive } ?: scope.async { runSync() }.also { inFlight = it }
+        }
+        return try {
+            running.await()
+        } finally {
+            gate.withLock { if (inFlight === running && running.isCompleted) inFlight = null }
+        }
+    }
+
+    private suspend fun runSync(): SyncOutcome {
         if (session.token.isNullOrBlank()) return SyncOutcome.NoSession
         return try {
+            backfillLegacyOperations()
             // Las categorías se suben primero porque una transacción solo puede
             // referenciar una categoría activa del mismo usuario en el backend.
+            discardedInLastPush = 0
             val pushed = pushCategories() + push() + pushFinancialPlans()
             val pulled = pull()
-            SyncOutcome.Success(pushed, pulled)
+            SyncOutcome.Success(pushed, pulled, discardedInLastPush)
         } catch (e: SessionExpiredException) {
             SyncOutcome.NoSession
         } catch (e: IOException) {
@@ -95,6 +135,24 @@ class SyncRepository @Inject constructor(
         } catch (e: Exception) {
             SyncOutcome.Error(e.message ?: "Error de sincronización.")
         }
+    }
+
+    /**
+     * Las cuentas y los movimientos solo se encolan al crearse. Todo lo que el usuario ya
+     * tenía antes de que existiera la cola nunca se subió, así que en un segundo teléfono
+     * no aparecía nada. Una sola vez por propietario se encola lo que falte; el push es
+     * idempotente (el id del cliente es la clave), de modo que reencolar no duplica nada.
+     */
+    private suspend fun backfillLegacyOperations() {
+        if (preferences.isSyncBackfillDone()) return
+        val ownerId = ownerScope.currentOwnerId()
+        for (account in accountDao.getAllAccountsIncludingDeletedOnce(ownerId)) {
+            pendingOps.insert(accountOp(gson, account))
+        }
+        for (transaction in transactionDao.getAllTransactionsOnce(ownerId)) {
+            pendingOps.insert(transactionOp(gson, transaction))
+        }
+        preferences.markSyncBackfillDone()
     }
 
     // ---------- PUSH ----------
@@ -147,10 +205,16 @@ class SyncRepository @Inject constructor(
                 }
             }
         }
-        // Descarta lo que el servidor rechaza repetidamente (evita bucles).
+        // Descarta lo que el servidor rechaza repetidamente (evita bucles), pero se
+        // cuenta antes: un descarte es un cambio del usuario que no llegó a la nube y
+        // debe decirse, no desaparecer.
+        discardedInLastPush = pendingOps.countFailed(ownerId, MAX_ATTEMPTS)
         pendingOps.purgeFailed(ownerId, MAX_ATTEMPTS)
         return pushed
     }
+
+    /** Descartes de la última subida, para informarlos en el resultado. */
+    private var discardedInLastPush = 0
 
     private suspend fun pushFinancialPlans(): Int {
         val ownerId = ownerScope.currentOwnerId()
@@ -188,17 +252,7 @@ class SyncRepository @Inject constructor(
 
     private suspend fun pushAccount(op: PendingOperationEntity) {
         val a = gson.fromJson(op.payload, AccountEntity::class.java)
-        api.createAccount(
-            CreateAccountRequest(
-                id = a.id,
-                name = a.name,
-                balance = a.balance,
-                currency = a.currency,
-                institutionName = a.institutionName,
-                countryCode = a.countryCode,
-                cardLastFour = a.cardLastFour
-            )
-        )
+        api.createAccount(a.toCreateAccountRequest())
     }
 
     private suspend fun pushTransaction(op: PendingOperationEntity) {
@@ -208,18 +262,42 @@ class SyncRepository @Inject constructor(
         val validCategoryId = t.categoryId.takeIf { id ->
             id.isNotBlank() && categoryDao.getCategoryById(t.ownerId, id) != null
         }
-        api.createTransaction(
-            CreateTransactionRequest(
-                idempotencyKey = t.id,
-                accountId = t.accountId,
-                amount = signedAmount,
-                currency = t.currency,
-                description = t.note.ifBlank { null },
-                categoryId = validCategoryId,
-                timestamp = isoUtc(t.date),
-                status = "completed"
-            )
+        // Un movimiento borrado se replica como borrado. Un 404 significa que el
+        // servidor ya no lo tiene: la cola no debe atascarse por eso.
+        if (t.isDeleted) {
+            val response = api.deleteTransaction(t.id)
+            if (!response.isSuccessful && response.code() != 404) {
+                throw HttpException(response)
+            }
+            return
+        }
+
+        val request = CreateTransactionRequest(
+            idempotencyKey = t.id,
+            accountId = t.accountId,
+            amount = signedAmount,
+            currency = t.currency,
+            description = t.note.ifBlank { null },
+            categoryId = validCategoryId,
+            timestamp = isoUtc(t.date),
+            status = "completed"
         )
+        try {
+            api.createTransaction(request)
+        } catch (exception: HttpException) {
+            // 409: la clave ya existe con otros valores, o sea que es una edicion.
+            // createTransaction es inmutable a proposito, asi que se corrige por PATCH.
+            if (exception.code() != 409) throw exception
+            api.updateTransaction(
+                id = t.id,
+                request = UpdateTransactionRequest(
+                    amount = signedAmount,
+                    description = request.description,
+                    categoryId = validCategoryId,
+                    timestamp = request.timestamp
+                )
+            )
+        }
     }
 
     // ---------- PULL (delta) ----------
@@ -227,6 +305,18 @@ class SyncRepository @Inject constructor(
     private suspend fun pull(): Int {
         var pulled = 0
         val ownerId = ownerScope.currentOwnerId()
+
+        // Regla de conflicto: gana el servidor, salvo que la fila local tenga un cambio
+        // aun sin subir -ese se respeta porque es lo mas reciente que dijo el usuario-.
+        //
+        // Antes el pull solo insertaba lo que no existia, asi que una correccion hecha en
+        // otro telefono no llegaba nunca: el segundo dispositivo se quedaba con los datos
+        // viejos para siempre.
+        val locallyPending = pendingOps.getAll(ownerId)
+            .groupBy({ it.entityType }, { it.entityId })
+            .mapValues { (_, ids) -> ids.toSet() }
+        val pendingAccounts = locallyPending["ACCOUNT"].orEmpty()
+        val pendingTransactions = locallyPending["TRANSACTION"].orEmpty()
 
         var cursor: String? = null
         do {
@@ -248,25 +338,36 @@ class SyncRepository @Inject constructor(
             cursor = page.meta?.nextCursor
         } while (cursor != null)
 
+        // Una misma cuenta real puede existir con ids distintos en el telefono y en el
+        // servidor (se creo por separado en cada uno). Insertarla a ciegas la duplicaba
+        // y falseaba el Balance Total, asi que primero se busca su equivalente local y,
+        // si aparece, se anota para redirigir hacia ella los movimientos que llegan.
+        val remoteToLocalAccount = mutableMapOf<String, String>()
         cursor = null
         do {
             val page = api.pullAccounts(updatedSince = null, cursor = cursor)
             for (dto in page.data) {
                 // Room sigue siendo autoritativo: una fila local, incluso eliminada,
                 // nunca se pisa ni se resucita durante el pull.
-                if (accountDao.getAccountByIdIncludingDeleted(ownerId, dto.id) == null) accountDao.insertAccount(
-                    AccountEntity(
-                        id = dto.id,
-                        name = dto.name,
-                        type = "BANK",
-                        balance = dto.balance,
-                        currency = dto.currency,
-                        countryCode = dto.countryCode,
-                        institutionName = dto.institutionName,
-                        cardLastFour = dto.cardLastFour,
-                        ownerId = ownerId
+                val local = accountDao.getAccountByIdIncludingDeleted(ownerId, dto.id)
+                when {
+                    local == null -> {
+                        val twin = accountDao.getAllAccountsOnce(ownerId)
+                            .firstOrNull { it.matchesSameRealAccount(dto) }
+                        if (twin != null) {
+                            remoteToLocalAccount[dto.id] = twin.id
+                        } else {
+                            accountDao.insertAccount(dto.toAccountEntity(ownerId))
+                        }
+                    }
+                    // Cambio local sin subir: se respeta, ya viaja en la cola.
+                    dto.id in pendingAccounts -> Unit
+                    else -> accountDao.updateAccount(
+                        // is_active = false es la lapida: borrar en un telefono debe
+                        // borrar en los demas.
+                        dto.toAccountEntity(ownerId).copy(isDeleted = !dto.isActive)
                     )
-                )
+                }
                 pulled++
             }
             cursor = page.meta?.nextCursor
@@ -281,10 +382,18 @@ class SyncRepository @Inject constructor(
                 val validCategoryId = dto.categoryId?.takeIf { id ->
                     categoryDao.getCategoryById(ownerId, id) != null
                 }.orEmpty()
-                if (transactionDao.getTransactionByIdIncludingDeleted(ownerId, dto.idempotencyKey ?: dto.id) == null) transactionDao.insertTransaction(
+                val localId = dto.idempotencyKey ?: dto.id
+                val existing = transactionDao.getTransactionByIdIncludingDeleted(ownerId, localId)
+                // Se copia el estado del servidor tal cual, sin recalcular saldos: el
+                // saldo de la cuenta llega en el mismo pull, asi que ambos quedan
+                // coherentes entre si.
+                if (existing == null || localId !in pendingTransactions) transactionDao.insertTransaction(
                     TransactionEntity(
-                        id = dto.idempotencyKey ?: dto.id,
-                        accountId = dto.accountId,
+                        id = localId,
+                        // Si la cuenta remota se reconcilio con una local, el movimiento
+                        // cuelga de la local: si no, quedaria apuntando a una cuenta
+                        // que nunca se inserto.
+                        accountId = remoteToLocalAccount[dto.accountId] ?: dto.accountId,
                         amount = positive,
                         type = type,
                         categoryId = validCategoryId,
@@ -432,6 +541,66 @@ class SyncRepository @Inject constructor(
             )
     }
 }
+
+internal fun AccountEntity.toCreateAccountRequest() = CreateAccountRequest(
+    id = id,
+    name = name,
+    balance = balance,
+    currency = currency,
+    institutionName = institutionName,
+    countryCode = countryCode,
+    cardLastFour = cardLastFour,
+    type = type,
+    creditLimit = creditLimit,
+    isActive = !isDeleted
+)
+
+/**
+ * Decide si una cuenta que llega del servidor y una local son la misma cuenta real
+ * creada por separado en cada dispositivo.
+ *
+ * Se exige que coincida la divisa y, ademas, una de dos evidencias fuertes: los cuatro
+ * digitos de la tarjeta en la misma institucion, o el mismo nombre en la misma
+ * institucion. Emparejar solo por nombre seria temerario —"Ahorros" existe en varios
+ * bancos— y equivocarse aqui mezcla el dinero de dos cuentas distintas, que es peor
+ * que dejar un duplicado a la vista.
+ */
+internal fun AccountEntity.matchesSameRealAccount(remote: AccountDto): Boolean {
+    if (isDeleted || !currency.equals(remote.currency, ignoreCase = true)) return false
+
+    val sameInstitution = normalizeForMatch(institutionName) == normalizeForMatch(remote.institutionName)
+    if (!sameInstitution) return false
+
+    val localDigits = cardLastFour?.takeIf { it.isNotBlank() }
+    val remoteDigits = remote.cardLastFour?.takeIf { it.isNotBlank() }
+    if (localDigits != null && remoteDigits != null) return localDigits == remoteDigits
+
+    // Sin digitos que comparar, el nombre dentro de la misma institucion es lo unico
+    // que queda. Una institucion vacia a ambos lados no basta como evidencia.
+    if (normalizeForMatch(institutionName).isEmpty()) return false
+    return normalizeForMatch(name) == normalizeForMatch(remote.name)
+}
+
+private fun normalizeForMatch(value: String?): String =
+    value?.trim()?.lowercase()?.replace(Regex("\\s+"), " ").orEmpty()
+
+internal fun AccountDto.toAccountEntity(ownerId: String) = AccountEntity(
+    id = id,
+    name = name,
+    // Un backend sin la migracion de type no manda la clave. Traer un limite de
+    // credito solo tiene sentido en una tarjeta, asi que eso basta para reconocerla;
+    // sin esa pista, toda cuenta remota era bancaria antes de que existiera el campo.
+    // Importa acertar: una tarjeta marcada como banco suma su saldo al Balance Total
+    // como si fuera dinero propio, cuando es credito del banco.
+    type = type ?: if (creditLimit != null) "CREDIT_CARD" else "BANK",
+    balance = balance,
+    currency = currency,
+    countryCode = countryCode,
+    institutionName = institutionName,
+    cardLastFour = cardLastFour,
+    ownerId = ownerId,
+    creditLimit = creditLimit
+)
 
 private fun BudgetEntity.toSyncDto() = BudgetSyncDto(
     id = id,

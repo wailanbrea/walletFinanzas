@@ -71,6 +71,7 @@ Objetivo: app 100% funcional offline con la estética Wallet, sin datos falsos.
 ### Cambios del product owner (16/07/2026) — revisados, mejorados y verificados en emulador
 - [x] **Rediseño del Dashboard estilo Wallet**: header verde (`primary`) con hamburguesa que abre el drawer + campana, y pestañas "Cuentas | Presupuesto y Objetivos"; **bottom bar eliminada** (la navegación ahora es drawer + tabs). Nueva paleta con primary verde `#2E7D46`
 - [x] **Cuentas y tarjetas**: nuevos tipos `DEBIT_CARD`/`CREDIT_CARD` con render de **tarjeta visual** (degradado morado=crédito / verde-azul=débito, `•••• 1234`); campo `institutionName` con dropdown del **catálogo local de entidades RD** (`FinancialInstitutions`: Banreservas, Popular, BHD, APAP, etc. — offline, sin costo, NO habilita sync bancaria) y `cardLastFour` (solo 4 dígitos, nunca el número completo). Room → v4
+- [x] **Logos oficiales de entidades RD**: reemplazados los favicons por los 28 activos publicados en `sb.gob.do`; SVG soportado mediante `coil-svg`, caché local de 16 MiB y monograma como fallback para carga fallida o entidades fuera del catálogo. Verificados 28/28 activos HTTP 200 y render visual en el selector del emulador — 23/07/2026
 - [x] **País financiero** en Perfil (RD / Otro) persistido en DataStore; filtra el catálogo de entidades al crear cuentas
 - [x] **Bloqueo de capturas de pantalla** (FLAG_SECURE) con toggle en Seguridad — cierra el pendiente de seguridad; aplicado reactivamente en MainActivity vía SideEffect
 

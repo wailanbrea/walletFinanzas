@@ -22,7 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -33,6 +35,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -41,9 +45,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -73,7 +79,9 @@ import com.bsolutions.wallet.presentation.common.walletTopBarColors
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,7 +96,9 @@ fun EmailConnectionsScreen(
     var disconnectCandidate by remember { mutableStateOf<EmailProvider?>(null) }
     var classifyCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
     var dismissCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
-    var duplicateCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
+    var confirmClearAll by remember { mutableStateOf(false) }
+    var showDateFilter by remember { mutableStateOf(false) }
+    var duplicatePair by remember { mutableStateOf<Pair<EmailCandidate, EmailCandidate>?>(null) }
 
     LaunchedEffect(oauthReturnNonce) {
         if (oauthReturnNonce > 0L) viewModel.onAuthorizationReturn()
@@ -130,8 +140,7 @@ fun EmailConnectionsScreen(
         val bookedTransaction = state.bookedCandidates[candidate.id]
         var accountId by remember(candidate.id, state.accounts, bookedTransaction) {
             mutableStateOf(
-                bookedTransaction?.accountId
-                    ?: state.accounts.firstOrNull { candidateAmountForAccount(candidate, it) != null }?.id.orEmpty()
+                bookedTransaction?.accountId ?: preselectedAccountId(candidate, state.accounts)
             )
         }
         var categoryId by remember(candidate.id, state.categories, bookedTransaction) {
@@ -140,6 +149,37 @@ fun EmailConnectionsScreen(
                     it.name.equals(candidate.categorySuggestion, ignoreCase = true)
                 }?.id.orEmpty()
             )
+        }
+        var selectedDateMillis by remember(candidate.id, bookedTransaction) {
+            mutableStateOf<Long?>(null)
+        }
+        var showDatePicker by remember(candidate.id) { mutableStateOf(false) }
+        if (showDatePicker && bookedTransaction == null) {
+            val datePickerState = rememberDatePickerState(
+                initialSelectedDateMillis = selectedDateMillis
+                    ?: candidateDatePickerInitialMillis(candidate.occurredAt)
+            )
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            selectedDateMillis = datePickerState.selectedDateMillis
+                            showDatePicker = false
+                        },
+                        enabled = datePickerState.selectedDateMillis != null
+                    ) {
+                        Text(stringResource(R.string.common_accept))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                }
+            ) {
+                DatePicker(state = datePickerState)
+            }
         }
         AlertDialog(
             onDismissRequest = { classifyCandidate = null },
@@ -182,6 +222,46 @@ fun EmailConnectionsScreen(
                         }
                     }
                     Text(
+                        text = stringResource(R.string.email_candidate_transaction_date_label),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    OutlinedButton(
+                        onClick = { showDatePicker = true },
+                        enabled = bookedTransaction == null,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            when {
+                                bookedTransaction != null -> stringResource(
+                                    R.string.email_candidate_booked_date,
+                                    formatTransactionDate(bookedTransaction.date)
+                                )
+                                selectedDateMillis != null -> stringResource(
+                                    R.string.email_candidate_selected_date,
+                                    formatDatePickerSelection(checkNotNull(selectedDateMillis))
+                                )
+                                else -> stringResource(
+                                    R.string.email_candidate_use_email_date,
+                                    formatEmailCandidateDate(candidate.occurredAt)
+                                )
+                            }
+                        )
+                    }
+                    if (selectedDateMillis != null && bookedTransaction == null) {
+                        TextButton(
+                            onClick = { selectedDateMillis = null },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text(stringResource(R.string.email_candidate_reset_date))
+                        }
+                    }
+                    Text(
                         stringResource(
                             if (bookedTransaction == null) R.string.email_candidate_classify_help
                             else R.string.email_candidate_pending_confirmation_help
@@ -194,13 +274,105 @@ fun EmailConnectionsScreen(
                 TextButton(
                     onClick = {
                         classifyCandidate = null
-                        viewModel.classify(candidate.id, accountId, categoryId)
+                        viewModel.classify(
+                            candidate.id,
+                            accountId,
+                            categoryId,
+                            selectedDateMillis
+                        )
                     },
                     enabled = accountId.isNotBlank() && (categoryId.isNotBlank() || bookedTransaction != null)
                 ) { Text(stringResource(R.string.email_candidate_add_movement)) }
             },
             dismissButton = {
                 TextButton(onClick = { classifyCandidate = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    duplicatePair?.let { (candidate, original) ->
+        AlertDialog(
+            onDismissRequest = { duplicatePair = null },
+            title = { Text(stringResource(R.string.email_candidate_mark_duplicate)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.email_candidate_mark_duplicate_confirm,
+                        formatCandidateAmount(candidate.amount, candidate.currency, candidate.direction),
+                        formatCandidateAmount(original.amount, original.currency, original.direction)
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.markAsDuplicate(candidate.id, original.id)
+                    duplicatePair = null
+                }) {
+                    Text(stringResource(R.string.email_candidate_mark_duplicate))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { duplicatePair = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    if (showDateFilter) {
+        val filterState = rememberDatePickerState(
+            initialSelectedDateMillis = state.selectedDate
+                ?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDateFilter = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // El selector devuelve el día en UTC; se lee tal cual porque solo
+                        // interesa la fecha, no la hora.
+                        viewModel.selectDate(
+                            filterState.selectedDateMillis?.let {
+                                Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+                            }
+                        )
+                        showDateFilter = false
+                    },
+                    enabled = filterState.selectedDateMillis != null
+                ) {
+                    Text(stringResource(R.string.common_accept))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.selectDate(null)
+                    showDateFilter = false
+                }) {
+                    Text(stringResource(R.string.email_candidates_all_dates))
+                }
+            }
+        ) {
+            DatePicker(state = filterState)
+        }
+    }
+
+    if (confirmClearAll) {
+        AlertDialog(
+            onDismissRequest = { confirmClearAll = false },
+            title = { Text(stringResource(R.string.email_candidates_clear_all)) },
+            text = { Text(stringResource(R.string.email_candidates_clear_all_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearAll = false
+                    viewModel.removeAll()
+                }) {
+                    Text(stringResource(R.string.email_candidates_clear_all))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearAll = false }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -222,27 +394,6 @@ fun EmailConnectionsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { dismissCandidate = null }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-            }
-        )
-    }
-
-    duplicateCandidate?.let { candidate ->
-        AlertDialog(
-            onDismissRequest = { duplicateCandidate = null },
-            title = { Text(stringResource(R.string.email_candidate_duplicate_title)) },
-            text = { Text(stringResource(R.string.email_candidate_duplicate_confirm)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    duplicateCandidate = null
-                    viewModel.markDuplicate(candidate.id)
-                }) {
-                    Text(stringResource(R.string.email_candidate_duplicate))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { duplicateCandidate = null }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -367,28 +518,78 @@ fun EmailConnectionsScreen(
                             modifier = Modifier.padding(top = 8.dp)
                         )
                     }
-                    EmailProvider.entries.forEach { provider ->
-                        val providerCandidates = state.candidatesByProvider[provider].orEmpty()
-                        if (providerCandidates.isNotEmpty()) {
-                            item {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = { confirmClearAll = true },
+                                enabled = state.actionProvider == null && state.reviewCandidateId == null
+                            ) {
+                                Text(stringResource(R.string.email_candidates_clear_all))
+                            }
+                        }
+                    }
+                    // Filtro por día: un gasto se recuerda por cuándo pasó, no por
+                    // el proveedor de correo que lo trajo.
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(onClick = { showDateFilter = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarMonth,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = stringResource(
-                                        R.string.email_candidates_provider_title,
-                                        providerName(provider)
-                                    ),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold
+                                    state.selectedDate?.let { formatCandidateDay(it) }
+                                        ?: stringResource(R.string.email_candidates_all_dates)
                                 )
                             }
-                            items(providerCandidates, key = { it.id }) { candidate ->
-                                CandidateCard(
-                                    candidate = candidate,
-                                    isReviewing = state.reviewCandidateId != null || state.actionProvider != null,
-                                    onClassify = { classifyCandidate = candidate },
-                                    onDismiss = { dismissCandidate = candidate },
-                                    onDuplicate = { duplicateCandidate = candidate }
-                                )
+                            if (state.selectedDate != null) {
+                                TextButton(onClick = { viewModel.selectDate(null) }) {
+                                    Text(stringResource(R.string.email_candidates_all_dates))
+                                }
                             }
+                        }
+                    }
+
+                    val byDate = state.candidatesByDate
+                    if (byDate.isEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.email_candidates_none_that_day),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    byDate.forEach { (day, dayCandidates) ->
+                        item {
+                            Text(
+                                text = formatCandidateDay(day),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        items(dayCandidates, key = { it.id }) { candidate ->
+                            CandidateCard(
+                                candidate = candidate,
+                                isReviewing = state.reviewCandidateId != null || state.actionProvider != null,
+                                onClassify = { classifyCandidate = candidate },
+                                onDismiss = { dismissCandidate = candidate },
+                                onRemove = { viewModel.remove(candidate.id) },
+                                // Solo se ofrece si hay otro candidato con el que
+                                // emparejar: sin pareja, marcar duplicado no dice nada.
+                                onMarkDuplicate = state.duplicateCandidateFor(candidate)
+                                    ?.let { original -> { duplicatePair = candidate to original } }
+                            )
                         }
                     }
                 } else if (state.syncResult != null) {
@@ -533,15 +734,48 @@ private fun CandidateCard(
     isReviewing: Boolean,
     onClassify: () -> Unit,
     onDismiss: () -> Unit,
-    onDuplicate: () -> Unit
+    onRemove: () -> Unit,
+    onMarkDuplicate: (() -> Unit)? = null
 ) {
     val uriHandler = LocalUriHandler.current
+    val providerAccent = providerAccent(candidate.provider)
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, providerAccent.copy(alpha = 0.35f))
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ProviderBadge(candidate.provider)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(
+                            R.string.email_candidate_received_at,
+                            formatEmailCandidateDate(candidate.occurredAt)
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Quitar de la lista sin abrir diálogo: es la salida rápida del correo.
+                    IconButton(
+                        onClick = onRemove,
+                        enabled = !isReviewing,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.email_candidate_remove),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -552,14 +786,13 @@ private fun CandidateCard(
                     candidate.subject?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(
-                        text = stringResource(
-                            R.string.email_candidate_received_at,
-                            formatEmailCandidateDate(candidate.occurredAt)
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    candidate.cardLastFour?.takeIf { it.isNotBlank() }?.let { last4 ->
+                        Text(
+                            text = stringResource(R.string.email_candidate_card, last4),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
                 Text(
                     text = formatCandidateAmount(candidate.amount, candidate.currency, candidate.direction),
@@ -635,15 +868,45 @@ private fun CandidateCard(
                     )
                 }
             }
-            TextButton(
-                onClick = onDuplicate,
-                enabled = !isReviewing,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.email_candidate_duplicate))
+            onMarkDuplicate?.let { markDuplicate ->
+                TextButton(onClick = markDuplicate, enabled = !isReviewing) {
+                    Text(stringResource(R.string.email_candidate_mark_duplicate))
+                }
             }
         }
     }
+}
+
+@Composable
+private fun ProviderBadge(provider: EmailProvider) {
+    val accent = providerAccent(provider)
+    Surface(
+        color = accent.copy(alpha = 0.12f),
+        contentColor = accent,
+        shape = RoundedCornerShape(50)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Email,
+                contentDescription = null,
+                modifier = Modifier.size(15.dp)
+            )
+            Text(
+                text = providerName(provider),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+private fun providerAccent(provider: EmailProvider): Color = when (provider) {
+    EmailProvider.GMAIL -> Color(0xFFC5221F)
+    EmailProvider.MICROSOFT -> Color(0xFF0078D4)
 }
 
 private fun formatMinorAmount(amount: Long, currency: String): String {
@@ -678,6 +941,29 @@ internal fun formatEmailCandidateDate(
         .format(Instant.parse(value))
 }.getOrDefault("—")
 
+internal fun candidateDatePickerInitialMillis(
+    occurredAt: String,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): Long? = runCatching {
+    Instant.parse(occurredAt)
+        .atZone(zoneId)
+        .toLocalDate()
+        .atStartOfDay(ZoneOffset.UTC)
+        .toInstant()
+        .toEpochMilli()
+}.getOrNull()
+
+internal fun formatDatePickerSelection(value: Long): String =
+    LocalDate.ofInstant(Instant.ofEpochMilli(value), ZoneOffset.UTC)
+        .format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+
+private fun formatTransactionDate(
+    value: Long,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): String = DateTimeFormatter.ofPattern("dd/MM/yyyy · HH:mm")
+    .withZone(zoneId)
+    .format(Instant.ofEpochMilli(value))
+
 @Composable
 private fun StatusLabel(text: String, icon: ImageVector, color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -706,4 +992,18 @@ private fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier 
 private fun providerName(provider: EmailProvider): String = when (provider) {
     EmailProvider.GMAIL -> stringResource(R.string.email_provider_gmail)
     EmailProvider.MICROSOFT -> stringResource(R.string.email_provider_microsoft)
+}
+
+/**
+ * Encabezado de día en lenguaje corriente: "Hoy" y "Ayer" son como uno piensa las
+ * fechas recientes; el resto lleva día, mes y año.
+ */
+@Composable
+private fun formatCandidateDay(day: LocalDate): String {
+    val today = LocalDate.now()
+    return when (day) {
+        today -> stringResource(R.string.email_candidates_today)
+        today.minusDays(1) -> stringResource(R.string.email_candidates_yesterday)
+        else -> day.format(DateTimeFormatter.ofPattern("d 'de' MMMM yyyy"))
+    }
 }

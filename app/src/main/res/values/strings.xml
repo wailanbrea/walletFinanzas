@@ -58,6 +58,7 @@
     <string name="common_open_menu">Abrir menú</string>
     <string name="common_save">Guardar</string>
     <string name="common_cancel">Cancelar</string>
+    <string name="common_accept">Aceptar</string>
     <string name="common_delete">Eliminar</string>
     <string name="common_edit">Editar</string>
     <string name="common_settings">Ajustes</string>
@@ -219,6 +220,12 @@
     <string name="planned_overdue">Vencido: %1$s</string>
     <string name="planned_inactive">Inactivo</string>
     <string name="planned_pay_now">Pagar ahora</string>
+    <string name="planned_type">Tipo</string>
+    <string name="planned_type_expense">Gasto</string>
+    <string name="planned_type_income">Ingreso</string>
+    <string name="planned_register_income">Registrar ingreso</string>
+    <string name="planned_register_expense">Registrar pago</string>
+    <string name="planned_amount_hint">Confirma el monto real de esta vez. Si vino distinto de lo previsto, corrígelo aquí: el plan no cambia.</string>
     <string name="planned_delete">Eliminar pago</string>
     <string name="planned_create_title">Nuevo Pago Planificado</string>
     <string name="planned_name_hint">Nombre (ej. Renta)</string>
@@ -274,6 +281,8 @@
 
     <!-- Cuentas -->
     <string name="accounts_title">Mis Cuentas</string>
+    <string name="accounts_section_accounts">Cuentas</string>
+    <string name="accounts_section_cards">Tarjetas</string>
     <string name="accounts_detail_title">Detalle de Cuenta</string>
     <string name="accounts_new">Nueva Cuenta</string>
     <string name="accounts_add">Agregar cuenta</string>
@@ -284,6 +293,10 @@
     <string name="accounts_name_hint">Nombre de la Cuenta</string>
     <string name="accounts_type">Tipo de Cuenta</string>
     <string name="accounts_initial_balance">Saldo Inicial (%1$s)</string>
+    <string name="accounts_current_balance">Balance actual (%1$s)</string>
+    <string name="accounts_current_debt">Deuda actual (%1$s)</string>
+    <string name="accounts_credit_limit_input">Límite de crédito (%1$s)</string>
+    <string name="accounts_credit_limit_error">Ingresa un límite mayor que cero.</string>
     <string name="account_type_bank">Banco</string>
     <string name="account_type_cash">Efectivo</string>
     <string name="account_type_debit">Tarjeta de Débito</string>
@@ -291,6 +304,11 @@
     <string name="account_type_credit">Tarjeta de Crédito</string>
     <string name="account_type_checking">Cuenta Corriente</string>
     <string name="accounts_available_balance">Saldo Disponible</string>
+    <string name="accounts_balance_to_date">Balance a la fecha</string>
+    <string name="accounts_credit_limit">Límite de crédito</string>
+    <string name="accounts_credit_available">Disponible</string>
+    <string name="accounts_card_credit">CRÉDITO</string>
+    <string name="accounts_card_debit">DÉBITO</string>
     <string name="accounts_movements">Movimientos</string>
     <string name="accounts_no_transactions">No hay transacciones registradas en esta cuenta.</string>
     <string name="accounts_card_last_four">Últimos 4 dígitos</string>
@@ -440,6 +458,16 @@
     <string name="email_syncing">Sincronizando…</string>
     <string name="email_sync_summary">Revisados: %1$d · nuevos: %2$d · movimientos detectados: %3$d · conversiones actualizadas: %4$d</string>
     <string name="email_candidates_title">Movimientos detectados</string>
+    <string name="email_candidate_remove">Quitar de la lista</string>
+    <string name="email_candidates_all_dates">Todas las fechas</string>
+    <string name="email_candidate_mark_duplicate">Marcar como duplicado</string>
+    <string name="email_candidate_mark_duplicate_confirm">Parece el mismo cargo: %1$s y %2$s. Se conservará el movimiento en pesos y este se ocultará.</string>
+    <string name="email_candidates_today">Hoy</string>
+    <string name="email_candidates_yesterday">Ayer</string>
+    <string name="email_candidates_none_that_day">No hay correos detectados en esa fecha.</string>
+    <string name="email_candidate_card">Tarjeta ····%1$s</string>
+    <string name="email_candidates_clear_all">Limpiar todos</string>
+    <string name="email_candidates_clear_all_confirm">Se quitarán de la lista todos los correos detectados. Los movimientos que ya agregaste a tus cuentas no se borran.</string>
     <string name="email_candidates_empty">No se detectaron movimientos financieros nuevos en los correos revisados.</string>
     <string name="email_candidate_pending">Pendiente de revisión</string>
     <string name="email_candidate_confidence">Confianza: %1$d%%</string>
@@ -452,13 +480,15 @@
     <string name="email_candidate_conversion_unavailable">Conversión a DOP no disponible. Se conserva el importe original en USD.</string>
     <string name="email_candidate_classify">Clasificar</string>
     <string name="email_candidate_not_movement">No es movimiento</string>
-    <string name="email_candidate_duplicate">Marcar como duplicado</string>
-    <string name="email_candidate_duplicate_title">Movimiento duplicado</string>
-    <string name="email_candidate_duplicate_confirm">Este aviso corresponde a un movimiento que ya apareció en otro correo. Se ocultará de la lista sin crear una transacción.</string>
     <string name="email_candidate_classify_title">Clasificar movimiento</string>
     <string name="email_candidate_account_label">Cargar en cuenta</string>
     <string name="email_candidate_no_compatible_account">No tienes una cuenta en la moneda del movimiento ni en su moneda convertida.</string>
     <string name="email_candidate_category_label">Categoría</string>
+    <string name="email_candidate_transaction_date_label">Fecha del movimiento</string>
+    <string name="email_candidate_use_email_date">Usar fecha del correo · %1$s</string>
+    <string name="email_candidate_selected_date">Fecha elegida · %1$s</string>
+    <string name="email_candidate_booked_date">Movimiento guardado · %1$s</string>
+    <string name="email_candidate_reset_date">Usar fecha original del correo</string>
     <string name="email_candidate_classify_help">Se creará el movimiento en la cuenta elegida y la categoría se aprenderá para futuros recibos.</string>
     <string name="email_candidate_pending_confirmation_help">El movimiento ya existe en esta cuenta. Reintenta para completar la confirmación del correo.</string>
     <string name="email_candidate_add_movement">Agregar movimiento</string>

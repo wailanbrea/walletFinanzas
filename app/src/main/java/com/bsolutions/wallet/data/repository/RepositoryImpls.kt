@@ -17,6 +17,7 @@ import com.bsolutions.wallet.data.local.entity.GoalEntity
 import com.bsolutions.wallet.data.local.entity.PlannedPaymentEntity
 import com.bsolutions.wallet.data.local.entity.TransactionEntity
 import com.bsolutions.wallet.core.database.WalletOwnerScope
+import com.bsolutions.wallet.core.sync.SyncScheduler
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Budget
 import com.bsolutions.wallet.domain.model.Category
@@ -38,16 +39,37 @@ import kotlinx.coroutines.flow.flatMapLatest
 import javax.inject.Inject
 
 // Mappers
-fun AccountEntity.toDomain() = Account(id, name, type, balance, currency, countryCode, institutionName, cardLastFour)
-fun Account.toEntity(ownerId: String) =
-    AccountEntity(id, name, type, balance, currency, countryCode, institutionName, cardLastFour, ownerId = ownerId)
+fun AccountEntity.toDomain() = Account(
+    id = id,
+    name = name,
+    type = type,
+    balance = balance,
+    currency = currency,
+    countryCode = countryCode,
+    institutionName = institutionName,
+    cardLastFour = cardLastFour,
+    creditLimit = creditLimit
+)
+
+fun Account.toEntity(ownerId: String) = AccountEntity(
+    id = id,
+    name = name,
+    type = type,
+    balance = balance,
+    currency = currency,
+    countryCode = countryCode,
+    institutionName = institutionName,
+    cardLastFour = cardLastFour,
+    ownerId = ownerId,
+    creditLimit = creditLimit
+)
 
 fun TransactionEntity.toDomain() = Transaction(id, accountId, amount, type, categoryId, date, note, currency)
 fun Transaction.toEntity(ownerId: String) =
     TransactionEntity(id, accountId, amount, type, categoryId, date, note, currency, ownerId = ownerId)
 
-fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex)
-fun Category.toEntity(ownerId: String) = CategoryEntity(id, name, icon, colorHex, ownerId = ownerId)
+fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, type)
+fun Category.toEntity(ownerId: String) = CategoryEntity(id, name, icon, colorHex, type, ownerId = ownerId)
 
 fun BudgetEntity.toDomain() = Budget(id, categoryId, limitAmount, spentAmount, period)
 fun Budget.toEntity(ownerId: String) = BudgetEntity(id, categoryId, limitAmount, spentAmount, period, ownerId = ownerId)
@@ -69,7 +91,10 @@ fun Debt.toEntity(ownerId: String) =
 class AccountRepositoryImpl @Inject constructor(
     private val dao: AccountDao,
     private val gson: Gson,
-    private val ownerScope: WalletOwnerScope
+    private val ownerScope: WalletOwnerScope,
+    // Cada cambio pide subir de inmediato: sin esto habia que esperar al ciclo
+    // periodico de 30 minutos para que el otro telefono se enterara.
+    private val syncScheduler: SyncScheduler
 ) : AccountRepository {
     override fun getAccounts(): Flow<List<Account>> =
         ownerScope.ownerId.flatMapLatest { dao.getAllAccounts(it) }.map { list -> list.map { it.toDomain() } }
@@ -81,19 +106,31 @@ class AccountRepositoryImpl @Inject constructor(
         // Inserta la cuenta y encola su subida al backend en la misma transacción.
         val entity = account.toEntity(ownerScope.currentOwnerId())
         dao.insertWithOp(entity, SyncRepository.accountOp(gson, entity))
+        syncScheduler.requestSyncNow()
     }
 
-    override suspend fun updateAccount(account: Account) =
-        dao.updateAccount(account.toEntity(ownerScope.currentOwnerId()))
+    // Editar y borrar tambien se encolan: antes solo subian las creaciones, asi que
+    // renombrar o eliminar una cuenta se quedaba en este telefono y los demas seguian
+    // viendo la version vieja.
+    override suspend fun updateAccount(account: Account) {
+        val entity = account.toEntity(ownerScope.currentOwnerId())
+        dao.updateWithOp(entity, SyncRepository.accountOp(gson, entity))
+        syncScheduler.requestSyncNow()
+    }
 
-    override suspend fun deleteAccount(id: String) =
-        dao.softDeleteAccount(ownerScope.currentOwnerId(), id)
+    override suspend fun deleteAccount(id: String) {
+        dao.softDeleteWithOp(ownerScope.currentOwnerId(), id) { deleted ->
+            SyncRepository.accountOp(gson, deleted)
+        }
+        syncScheduler.requestSyncNow()
+    }
 }
 
 class TransactionRepositoryImpl @Inject constructor(
     private val dao: TransactionDao,
     private val gson: Gson,
-    private val ownerScope: WalletOwnerScope
+    private val ownerScope: WalletOwnerScope,
+    private val syncScheduler: SyncScheduler
 ) : TransactionRepository {
     override fun getTransactions(): Flow<List<Transaction>> =
         ownerScope.ownerId.flatMapLatest { dao.getAllTransactions(it) }.map { list -> list.map { it.toDomain() } }
@@ -113,6 +150,7 @@ class TransactionRepositoryImpl @Inject constructor(
         // Inserta movimiento + ajusta saldo + encola la subida, todo atómico.
         val entity = transaction.toEntity(ownerScope.currentOwnerId())
         dao.insertWithBalanceAndOp(entity, SyncRepository.transactionOp(gson, entity))
+        syncScheduler.requestSyncNow()
     }
 
     override suspend fun executeTransfer(
@@ -131,15 +169,23 @@ class TransactionRepositoryImpl @Inject constructor(
         dao.updateTransaction(transaction.toEntity(ownerScope.currentOwnerId()))
     }
 
-    override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) =
-        dao.updateWithBalance(transaction.toEntity(ownerScope.currentOwnerId()), oldAmount)
+    // Corregir y borrar tambien se encolan: antes se quedaban en este telefono.
+    override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) {
+        val entity = transaction.toEntity(ownerScope.currentOwnerId())
+        dao.updateWithBalanceAndOp(entity, oldAmount, SyncRepository.transactionOp(gson, entity))
+        syncScheduler.requestSyncNow()
+    }
 
     override suspend fun deleteTransaction(id: String) {
         dao.softDeleteTransaction(ownerScope.currentOwnerId(), id)
     }
 
-    override suspend fun deleteTransactionWithBalance(transaction: Transaction) =
-        dao.softDeleteWithBalance(transaction.toEntity(ownerScope.currentOwnerId()))
+    override suspend fun deleteTransactionWithBalance(transaction: Transaction) {
+        // La lapida lleva isDeleted = 1 para que el push mande el DELETE al servidor.
+        val entity = transaction.toEntity(ownerScope.currentOwnerId()).copy(isDeleted = true)
+        dao.softDeleteWithBalanceAndOp(entity, SyncRepository.transactionOp(gson, entity))
+        syncScheduler.requestSyncNow()
+    }
 }
 
 class CategoryRepositoryImpl @Inject constructor(

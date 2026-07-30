@@ -14,12 +14,16 @@ import com.bsolutions.wallet.data.repository.EmailConnectionsRepository
 import com.bsolutions.wallet.data.repository.EmailProvider
 import com.bsolutions.wallet.data.repository.EmailSessionExpiredException
 import com.bsolutions.wallet.data.repository.EmailSyncResult
+import com.bsolutions.wallet.data.repository.EmailSyncStillQueuedException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
 import javax.inject.Inject
 
 enum class EmailConnectionsPhase { LOADING, CONTENT, EMPTY, ERROR }
@@ -35,11 +39,83 @@ data class EmailConnectionsUiState(
     val reviewCandidateId: String? = null,
     val syncResult: EmailSyncResult? = null,
     val authorizationUrl: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    /** Día elegido para mirar; null muestra todos, del más reciente al más antiguo. */
+    val selectedDate: LocalDate? = null
 ) {
     val candidatesByProvider: Map<EmailProvider, List<EmailCandidate>>
         get() = candidates.groupBy { it.provider }
+
+    /**
+     * Los correos se leen por día, que es como se recuerda un gasto. Agrupados y en
+     * orden descendente para que lo de hoy quede arriba.
+     */
+    val candidatesByDate: Map<LocalDate, List<EmailCandidate>>
+        get() = visibleCandidates
+            .groupBy { candidateLocalDate(it.occurredAt) ?: LocalDate.MIN }
+            .toSortedMap(compareByDescending { it })
+            .mapValues { (_, day) -> day.sortedByDescending { it.occurredAt } }
+
+    /** Días con correos, para poder saltar entre ellos. */
+    val availableDates: List<LocalDate>
+        get() = candidates.mapNotNull { candidateLocalDate(it.occurredAt) }
+            .distinct()
+            .sortedDescending()
+
+    /**
+     * Otro candidato que parece el mismo cargo visto por el otro buzon.
+     *
+     * Se compara en la divisa base y con la misma ventana y tolerancia que usa el
+     * servidor, para que la app no proponga emparejamientos que el backend rechazaria.
+     * Devuelve el que conviene conservar: el que ya esta en pesos.
+     */
+    fun duplicateCandidateFor(candidate: EmailCandidate): EmailCandidate? {
+        val mine = candidate.baseAmount() ?: return null
+        val myDay = candidateLocalDate(candidate.occurredAt) ?: return null
+
+        return visibleCandidates.firstOrNull { other ->
+            if (other.id == candidate.id || other.provider == candidate.provider) return@firstOrNull false
+            if (other.direction != candidate.direction) return@firstOrNull false
+            val theirs = other.baseAmount() ?: return@firstOrNull false
+            val theirDay = candidateLocalDate(other.occurredAt) ?: return@firstOrNull false
+            if (kotlin.math.abs(myDay.toEpochDay() - theirDay.toEpochDay()) > DUPLICATE_WINDOW_DAYS) {
+                return@firstOrNull false
+            }
+            val reference = maxOf(kotlin.math.abs(mine), kotlin.math.abs(theirs))
+            if (reference == 0L) return@firstOrNull false
+            val drift = kotlin.math.abs(kotlin.math.abs(mine) - kotlin.math.abs(theirs)).toDouble() / reference
+            // Solo tiene sentido proponer marcar este si el otro es el que se conserva.
+            drift <= DUPLICATE_TOLERANCE && other.currency == BASE_CURRENCY && candidate.currency != BASE_CURRENCY
+        }
+    }
+
+    private val visibleCandidates: List<EmailCandidate>
+        get() {
+            // Un duplicado ya esta representado por el candidato que se conserva:
+            // mostrarlo contaria el mismo gasto dos veces.
+            val active = candidates.filterNot { it.status == "duplicate" }
+
+            return selectedDate?.let { day ->
+                active.filter { candidateLocalDate(it.occurredAt) == day }
+            } ?: active
+        }
 }
+
+private const val BASE_CURRENCY = "DOP"
+/** Misma ventana y tolerancia que el servidor, para no proponer lo que rechazaria. */
+private const val DUPLICATE_WINDOW_DAYS = 3L
+private const val DUPLICATE_TOLERANCE = 0.03
+
+/** Importe en la divisa base, o null si el cargo no se puede comparar. */
+private fun EmailCandidate.baseAmount(): Long? = when {
+    currency == BASE_CURRENCY -> amount
+    convertedCurrency == BASE_CURRENCY -> convertedAmount
+    else -> null
+}
+
+/** Día local del correo; null si la fecha viene ilegible. */
+internal fun candidateLocalDate(occurredAt: String, zoneId: ZoneId = ZoneId.systemDefault()): LocalDate? =
+    runCatching { Instant.parse(occurredAt).atZone(zoneId).toLocalDate() }.getOrNull()
 
 @HiltViewModel
 class EmailConnectionsViewModel @Inject constructor(
@@ -88,6 +164,11 @@ class EmailConnectionsViewModel @Inject constructor(
 
     fun onAuthorizationReturn() = refresh()
 
+    /** [date] null vuelve a mostrar todos los días. */
+    fun selectDate(date: LocalDate?) {
+        _uiState.value = _uiState.value.copy(selectedDate = date)
+    }
+
     fun connect(provider: EmailProvider) {
         if (_uiState.value.actionProvider != null || _uiState.value.reviewCandidateId != null) return
         _uiState.value = _uiState.value.copy(actionProvider = provider, message = null)
@@ -125,10 +206,12 @@ class EmailConnectionsViewModel @Inject constructor(
             } catch (exception: Exception) {
                 _uiState.value = _uiState.value.copy(
                     actionProvider = null,
-                    message = if (exception is EmailSessionExpiredException) {
-                        "Tu sesión venció. Inicia sesión nuevamente."
-                    } else {
-                        "No se pudieron sincronizar los correos. Inténtalo de nuevo."
+                    message = when (exception) {
+                        is EmailSessionExpiredException -> "Tu sesión venció. Inicia sesión nuevamente."
+                        is EmailSyncStillQueuedException ->
+                            "El servidor recibió la solicitud pero aún no la procesa. " +
+                                "Vuelve a intentarlo en un momento."
+                        else -> "No se pudieron sincronizar los correos. Inténtalo de nuevo."
                     }
                 )
             }
@@ -155,7 +238,12 @@ class EmailConnectionsViewModel @Inject constructor(
         }
     }
 
-    fun classify(candidateId: String, accountId: String, categoryId: String) {
+    fun classify(
+        candidateId: String,
+        accountId: String,
+        categoryId: String,
+        selectedDateMillis: Long? = null
+    ) {
         val bookedTransaction = _uiState.value.bookedCandidates[candidateId]
         if (
             accountId.isBlank() || (categoryId.isBlank() && bookedTransaction == null) ||
@@ -192,7 +280,12 @@ class EmailConnectionsViewModel @Inject constructor(
                         amount = amount,
                         type = type,
                         categoryId = category.id,
-                        date = checkNotNull(candidateOccurredAtMillis(candidate.occurredAt)),
+                        date = checkNotNull(
+                            candidateTransactionDateMillis(
+                                occurredAt = candidate.occurredAt,
+                                selectedDateMillis = selectedDateMillis
+                            )
+                        ),
                         note = candidate.merchant ?: candidate.subject ?: "Movimiento detectado por correo",
                         currency = account.currency
                     )
@@ -242,8 +335,105 @@ class EmailConnectionsViewModel @Inject constructor(
         }
     }
 
-    fun markDuplicate(candidateId: String) {
-        review(candidateId, "duplicate", null)
+    /**
+     * Quita un correo de la lista (la "x" de la tarjeta). Si ya tiene movimiento creado
+     * se confirma como clasificado —no como descartado— para no enseñarle al clasificador
+     * que ese correo no era un movimiento.
+     */
+    fun remove(candidateId: String) {
+        if (_uiState.value.reviewCandidateId != null || _uiState.value.actionProvider != null) return
+        val candidate = _uiState.value.candidates.firstOrNull { it.id == candidateId } ?: return
+        _uiState.value = _uiState.value.copy(reviewCandidateId = candidateId, message = null)
+        viewModelScope.launch {
+            val outcome = confirmCandidate(candidate)
+            _uiState.value = _uiState.value.copy(
+                candidates = if (outcome) {
+                    _uiState.value.candidates.filterNot { it.id == candidateId }
+                } else {
+                    _uiState.value.candidates
+                },
+                reviewCandidateId = null,
+                message = if (outcome) null else "No se pudo quitar el correo. Inténtalo de nuevo."
+            )
+        }
+    }
+
+    /**
+     * Marca [candidateId] como duplicado de [originalId].
+     *
+     * No usa 'dismiss' a proposito: descartar le ensena al clasificador que ese
+     * remitente no manda movimientos, y si manda: solo que ese cargo ya llego por
+     * otro buzon. Aprender de aqui envenenaria las detecciones futuras.
+     */
+    fun markAsDuplicate(candidateId: String, originalId: String) {
+        if (_uiState.value.reviewCandidateId != null || _uiState.value.actionProvider != null) return
+        _uiState.value = _uiState.value.copy(reviewCandidateId = candidateId, message = null)
+        viewModelScope.launch {
+            val ok = runCatching {
+                repository.reviewCandidate(candidateId, "duplicate", null, originalId)
+            }.isSuccess
+            _uiState.value = _uiState.value.copy(
+                candidates = if (ok) {
+                    _uiState.value.candidates.filterNot { it.id == candidateId }
+                } else {
+                    _uiState.value.candidates
+                },
+                reviewCandidateId = null,
+                message = if (ok) {
+                    "Marcado como duplicado. Se conserva el otro movimiento."
+                } else {
+                    "No se pudo marcar como duplicado. Intentalo de nuevo."
+                }
+            )
+        }
+    }
+
+    /** Limpia de una vez todos los correos pendientes que se ven en pantalla. */
+    fun removeAll() {
+        if (_uiState.value.reviewCandidateId != null || _uiState.value.actionProvider != null) return
+        val candidates = _uiState.value.candidates
+        if (candidates.isEmpty()) return
+        _uiState.value = _uiState.value.copy(reviewCandidateId = CLEAR_ALL_LOCK, message = null)
+        viewModelScope.launch {
+            val failed = candidates.filterNot { confirmCandidate(it) }
+            _uiState.value = _uiState.value.copy(
+                candidates = failed,
+                reviewCandidateId = null,
+                message = when {
+                    failed.isEmpty() -> "Se limpió la lista de correos."
+                    else -> "No se pudieron quitar ${failed.size} correos. Inténtalo de nuevo."
+                }
+            )
+        }
+    }
+
+    /**
+     * Marca el correo como revisado en el backend. Devuelve false si la llamada falló,
+     * para que la tarjeta siga en pantalla en vez de desaparecer sin haberse guardado.
+     */
+    private suspend fun confirmCandidate(candidate: EmailCandidate): Boolean {
+        val booked = _uiState.value.bookedCandidates[candidate.id]
+        val action = if (booked != null) "categorize" else "dismiss"
+        val category = booked?.let {
+            categoryRepository.getCategory(it.categoryId)?.name
+                ?: candidate.categorySuggestion
+                ?: "Otros"
+        }
+        return runCatching { repository.reviewCandidate(candidate.id, action, category) }.isSuccess
+    }
+
+    /**
+     * Un correo cuyo movimiento ya se creó localmente pero cuya confirmación al backend
+     * falló (sesión vencida, sin red) sigue "pendiente" en el servidor y reaparece en cada
+     * refresco. Al cargar se reintenta la confirmación y se saca de la lista.
+     */
+    private suspend fun reconcileBookedCandidates(candidates: List<EmailCandidate>): List<EmailCandidate> {
+        val booked = _uiState.value.bookedCandidates
+        if (booked.isEmpty()) return candidates
+        val alreadyBooked = candidates.filter { booked.containsKey(it.id) }
+        if (alreadyBooked.isEmpty()) return candidates
+        val confirmed = alreadyBooked.filter { confirmCandidate(it) }.mapTo(mutableSetOf()) { it.id }
+        return candidates.filterNot { it.id in confirmed }
     }
 
     private fun review(candidateId: String, action: String, category: String?, lockAlreadyHeld: Boolean = false) {
@@ -277,7 +467,11 @@ class EmailConnectionsViewModel @Inject constructor(
     private suspend fun loadConnections(syncResult: EmailSyncResult? = _uiState.value.syncResult) {
         try {
             val connections = repository.getConnections()
-            val candidates = repository.getCandidates().filterNot { it.status == "duplicate" }
+            // Los que el servidor ya emparejo no se bajan a la lista; de los que quedan,
+            // se reintenta confirmar los que tienen movimiento creado pero sin confirmar.
+            val candidates = reconcileBookedCandidates(
+                repository.getCandidates().filterNot { it.status == "duplicate" }
+            )
             _uiState.value = _uiState.value.copy(
                 phase = if (connections.isEmpty()) EmailConnectionsPhase.EMPTY else EmailConnectionsPhase.CONTENT,
                 connections = connections,
@@ -302,6 +496,26 @@ class EmailConnectionsViewModel @Inject constructor(
     }
 }
 
+/**
+ * Cuenta que debe venir preseleccionada al aceptar un correo. Se prefiere la tarjeta
+ * cuyos ultimos cuatro digitos coinciden con los del correo; si el correo no los trae
+ * o ninguna cuenta coincide, se cae a la primera compatible en divisa.
+ *
+ * Una coincidencia de digitos con divisa incompatible se descarta: registrar el
+ * movimiento en esa cuenta daria un importe erroneo.
+ */
+internal fun preselectedAccountId(candidate: EmailCandidate, accounts: List<Account>): String {
+    val compatible = accounts.filter { candidateAmountForAccount(candidate, it) != null }
+    val digits = candidate.cardLastFour?.takeIf { it.isNotBlank() }
+    val byCard = digits?.let { last4 -> compatible.filter { it.cardLastFour == last4 } }
+
+    // Con dos tarjetas del mismo final no se puede decidir: mejor no adivinar.
+    return when {
+        byCard != null && byCard.size == 1 -> byCard.first().id
+        else -> compatible.firstOrNull()?.id.orEmpty()
+    }
+}
+
 internal fun candidateAmountForAccount(candidate: EmailCandidate, account: Account): Long? {
     val amount = when {
         candidate.currency == account.currency -> candidate.amount
@@ -314,7 +528,29 @@ internal fun candidateAmountForAccount(candidate: EmailCandidate, account: Accou
 }
 
 internal fun candidateOccurredAtMillis(value: String): Long? =
-    runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
+    candidateTransactionDateMillis(value, selectedDateMillis = null)
 
+internal fun candidateTransactionDateMillis(
+    occurredAt: String,
+    selectedDateMillis: Long?,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): Long? = runCatching {
+    val originalInstant = Instant.parse(occurredAt)
+    if (selectedDateMillis == null) {
+        return@runCatching originalInstant.toEpochMilli()
+    }
+
+    val selectedDate = Instant.ofEpochMilli(selectedDateMillis)
+        .atZone(ZoneOffset.UTC)
+        .toLocalDate()
+    val originalLocalTime = originalInstant.atZone(zoneId).toLocalTime()
+    selectedDate.atTime(originalLocalTime)
+        .atZone(zoneId)
+        .toInstant()
+        .toEpochMilli()
+}.getOrNull()
+
+/** Id ficticio que bloquea la pantalla mientras se limpia la lista completa. */
+private const val CLEAR_ALL_LOCK = "__clear_all__"
 private const val EMAIL_TRANSACTION_PREFIX = "email_"
 private fun emailTransactionId(candidateId: String) = EMAIL_TRANSACTION_PREFIX + candidateId
