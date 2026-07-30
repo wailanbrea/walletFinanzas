@@ -193,6 +193,40 @@ class EmailMailboxScanner
         return $messages;
     }
 
+    /**
+     * Vuelve a bajar el cuerpo de un mensaje ya guardado y lo devuelve como texto.
+     *
+     * Los mensajes historicos se guardaron cuando solo se pedia la vista previa, y el
+     * dedupe por provider_message_id impide que el barrido normal los vuelva a mirar. Sin
+     * esto habria que esperar correos nuevos para saber si traer el cuerpo sirvio de algo.
+     *
+     * Devuelve null si el proveedor ya no tiene el mensaje o no hay cuerpo legible.
+     */
+    public function refetchBodyText(EmailConnection $connection, string $providerMessageId): ?string
+    {
+        $token = $this->oauth->accessToken($connection);
+
+        if ($connection->provider === 'gmail') {
+            $response = $this->http($token)->get(
+                'https://gmail.googleapis.com/gmail/v1/users/me/messages/'.rawurlencode($providerMessageId),
+                ['format' => 'full']
+            );
+
+            return $response->successful()
+                ? $this->bodyText->fromGmailPayload($response->json('payload'))
+                : null;
+        }
+
+        $response = $this->http($token)->get(
+            'https://graph.microsoft.com/v1.0/me/messages/'.rawurlencode($providerMessageId),
+            ['$select' => 'id,body']
+        );
+
+        return $response->successful()
+            ? $this->bodyText->fromGraphBody($response->json('body'))
+            : null;
+    }
+
     private function http(string $token): PendingRequest
     {
         return Http::acceptJson()->withToken($token)->timeout(20)->retry(2, 200, throw: false);
