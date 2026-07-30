@@ -226,7 +226,9 @@ class DashboardViewModel @Inject constructor(
         val expenses = consumptionTx.filter { it.type == "EXPENSE" }.sumOf { it.amount }
         // Lo prestado sale del bolsillo aunque no sea gasto: sin mostrarlo, el dinero que
         // falta en la cuenta no aparece en ningun lado del flujo y no cuadra.
-        val debtTx = thisMonthTx.filterNot { it.isConsumption }
+        // Solo lo atado a una deuda. Filtrar por "no es consumo" metia aqui tambien las
+        // transferencias, y mover dinero a tu propia tarjeta aparecia como cobrado.
+        val debtTx = thisMonthTx.filter { it.debtId != null }
         val lent = debtTx.filter { it.type == "EXPENSE" }.sumOf { it.amount }
         val collected = debtTx.filter { it.type == "INCOME" }.sumOf { it.amount }
 
