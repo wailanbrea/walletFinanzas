@@ -166,12 +166,35 @@ class FinancialEmailExtractor
      */
     private function merchantFromLabel(string $text): ?string
     {
-        $labels = 'comercio|establecimiento|negocio|afiliado|adquirente|merchant|lugar de consumo|localidad';
-        // Algunos HTML producen "Comercio: | NOMBRE" (dos separadores) y PayPal
-        // produce "Comercio\nNOMBRE" sin puntuacion. Ambos siguen siendo campos
-        // estructurados y no prosa libre.
-        $separator = '(?:(?:\h*[:|]\h*)+\R?|\h*\R+\h*|\h{2,})';
-        if (! preg_match('/\b(?:'.$labels.')\b'.$separator.'(?<value>[^\n|]{2,60})/iu', $text, $match)) {
+        // "localidad" va aparte y de ultima: en Qik ese campo trae el comercio
+        // ("Localidad  OPENAI *CHATGPT SUB"), pero en otros bancos es la ciudad. Si el
+        // aviso trae un rotulo de comercio de verdad, ese gana y la localidad ni se mira.
+        foreach (['comercio|establecimiento|negocio|afiliado|adquirente|merchant|lugar de consumo', 'localidad'] as $labels) {
+            $found = $this->valueForLabels($labels, $text);
+            if ($found !== null) {
+                return $found;
+            }
+        }
+
+        return null;
+    }
+
+    /** Busca el valor de cualquiera de [$labels] en [$text]. */
+    private function valueForLabels(string $labels, string $text): ?string
+    {
+
+        // Con dos puntos o barra hay rotulo explicito y vale en cualquier posicion:
+        // "Establecimiento: PANADERIA" o la celda "Comercio: | PANADERIA".
+        $labelled = '/\b(?:'.$labels.')\b(?:\h*[:|]\h*)+\R?\h*(?<value>[^\n|]{2,60})/iu';
+        // Sin puntuacion el valor va detras del rotulo o en la linea siguiente, y ahi el
+        // rotulo tiene que abrir linea o celda. En prosa, "...aprobada en el comercio\n
+        // Banco Popular le informa" devolvia esa frase entera como nombre del comercio.
+        //
+        // Los espacios de relleno de Qik ("Localidad      OPENAI") no sirven para
+        // reconocerlo: al convertir el cuerpo a texto se colapsan a uno solo.
+        $onItsOwnLine = '/(?:^|\n|\|)\h*(?:'.$labels.')(?:\h*\R+\h*|\h+)(?<value>[^\n|]{2,60})/iu';
+
+        if (! preg_match($labelled, $text, $match) && ! preg_match($onItsOwnLine, $text, $match)) {
             return null;
         }
         $value = trim(preg_replace('/\s+/u', ' ', $match['value']) ?? $match['value']);

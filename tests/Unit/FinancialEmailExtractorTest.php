@@ -184,6 +184,44 @@ class FinancialEmailExtractorTest extends TestCase
         $this->assertSame('4266', $result['card_last_four']);
     }
 
+    public function test_the_word_comercio_inside_a_sentence_is_not_a_label(): void
+    {
+        // Aceptar un salto de linea como separador convertia esta frase en el nombre del
+        // comercio: devolvia "Banco Popular Dominicano le informa".
+        $result = $this->extractor->extract(
+            'Consumo',
+            "Compra aprobada por RD\$500.00 en el comercio\nBanco Popular Dominicano le informa",
+            null
+        );
+
+        $this->assertNull($result['merchant']);
+    }
+
+    public function test_a_label_on_its_own_line_is_still_read(): void
+    {
+        // El mismo formato sin puntuacion, pero abriendo linea: aqui si es un campo.
+        $result = $this->extractor->extract(
+            'Consumo',
+            "Compra aprobada\nComercio\nFERRETERIA OCHOA\nMonto RD\$500.00",
+            null
+        );
+
+        $this->assertSame('FERRETERIA OCHOA', $result['merchant']);
+    }
+
+    public function test_a_real_merchant_label_wins_over_localidad(): void
+    {
+        // En Qik "Localidad" trae el comercio, pero en otros bancos es la ciudad. Cuando
+        // el aviso trae los dos campos, el comercio manda y la ciudad no lo pisa.
+        $result = $this->extractor->extract(
+            'Consumo',
+            'Compra RD$500.00 | Localidad | SANTO DOMINGO | Comercio | FERRETERIA OCHOA',
+            null
+        );
+
+        $this->assertSame('FERRETERIA OCHOA', $result['merchant']);
+    }
+
     public function test_a_number_is_never_taken_as_a_merchant_name(): void
     {
         $result = $this->extractor->extract(
