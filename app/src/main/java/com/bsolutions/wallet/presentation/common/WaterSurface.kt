@@ -95,12 +95,42 @@ fun WaterSurface(
                 originY + drop.y * size.height
             }
             val fade = drop.life.coerceIn(0f, 1f)
-            // La pegada se ve algo mas marcada: en el vidrio concentra la luz.
-            drawCircle(
-                color = color.copy(alpha = (if (drop.stuck) 0.70f else 0.55f) * fade),
-                radius = drop.size * size.width * (if (drop.stuck) 0.85f else 1f),
-                center = Offset(drop.x * size.width, centerY)
-            )
+            val radius = drop.size * size.width
+
+            if (drop.stuck) {
+                // Rastro: una gota que resbala deja mojado el camino, y ese reguero es
+                // lo que se reconoce como cristal con agua. Se afina hacia arriba.
+                val trail = drop.trail * size.height
+                if (trail > 1f) {
+                    drawPath(
+                        path = Path().apply {
+                            moveTo(drop.x * size.width - radius * 0.45f, centerY)
+                            lineTo(drop.x * size.width - radius * 0.12f, centerY - trail)
+                            lineTo(drop.x * size.width + radius * 0.12f, centerY - trail)
+                            lineTo(drop.x * size.width + radius * 0.45f, centerY)
+                            close()
+                        },
+                        color = color.copy(alpha = 0.16f * fade)
+                    )
+                }
+                drawCircle(
+                    color = color.copy(alpha = 0.70f * fade),
+                    radius = radius * 0.85f,
+                    center = Offset(drop.x * size.width, centerY)
+                )
+            } else {
+                // En el aire la gota se estira en la direccion en que va: una esfera
+                // perfecta se lee como una burbuja, no como agua cayendo.
+                val stretch = (1f + kotlin.math.abs(drop.vy) * 0.5f).coerceAtMost(2.2f)
+                drawOval(
+                    color = color.copy(alpha = 0.55f * fade),
+                    topLeft = Offset(
+                        drop.x * size.width - radius,
+                        centerY - radius * stretch
+                    ),
+                    size = androidx.compose.ui.geometry.Size(radius * 2f, radius * 2f * stretch)
+                )
+            }
         }
     }
 }
@@ -113,14 +143,28 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
     amplitude: Float,
     brush: Brush
 ) {
-    fun surfaceAt(t: Float): Float {
-        // Dos senoidales de distinta longitud: una sola da una ondulación regular que se
-        // nota artificial, y superpuestas nunca repiten el mismo perfil.
+    // Perfil de Gerstner y no una senoidal: ademas de subir y bajar, cada punto se
+    // desplaza en horizontal hacia la cresta. Eso agrupa agua arriba y la vacia abajo,
+    // de modo que las crestas salen puntiagudas y los valles anchos. Una senoidal tiene
+    // picos y valles identicos, y es lo que hace que se lea como una tela y no como agua.
+    val sharpness = 0.35f
+
+    fun heightAt(t: Float): Float {
         val principal = sin(phase + t * 2f * PI.toFloat())
         val secundaria = sin(phase * 1.7f + t * 3.4f * PI.toFloat()) * 0.35f
 
-        return surfaceY - slope + slope * 2f * t + (principal + secundaria) * amplitude
+        return (principal + secundaria) * amplitude
     }
+
+    fun shiftAt(t: Float): Float {
+        // El desplazamiento va con el coseno: maximo en las laderas, nulo en la cresta.
+        val principal = kotlin.math.cos(phase + t * 2f * PI.toFloat())
+        val secundaria = kotlin.math.cos(phase * 1.7f + t * 3.4f * PI.toFloat()) * 0.35f
+
+        return (principal + secundaria) * amplitude * sharpness
+    }
+
+    fun surfaceAt(t: Float): Float = surfaceY - slope + slope * 2f * t + heightAt(t)
 
     val path = Path().apply {
         moveTo(0f, surfaceAt(0f))
@@ -134,7 +178,12 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
             // El punto de control se sitúa de forma que la curva pase por el punto medio
             // real de la onda, y no por la cuerda entre extremos.
             val controlY = 2f * surfaceAt(middle) - (surfaceAt(previous) + surfaceAt(current)) / 2f
-            quadraticTo(size.width * middle, controlY, size.width * current, surfaceAt(current))
+            quadraticTo(
+                size.width * middle + shiftAt(middle),
+                controlY,
+                size.width * current + shiftAt(current),
+                surfaceAt(current)
+            )
         }
         lineTo(size.width, size.height)
         lineTo(0f, size.height)
@@ -159,7 +208,9 @@ private class Droplet(
     /** Pegada al cristal: ya no vuela, resbala. */
     var stuck: Boolean = false,
     /** Y absoluta en la tarjeta mientras está pegada, sin depender del nivel del agua. */
-    var glassY: Float = 0f
+    var glassY: Float = 0f,
+    /** Cuánto reguero mojado lleva detrás; crece al resbalar y se seca sola. */
+    var trail: Float = 0f
 )
 
 /** Estado del líquido: hacia dónde se inclina y cuánto chapotea. */
@@ -210,7 +261,9 @@ private fun advanceDroplets(water: WaterMotion, dt: Float, stirred: Float) {
             val releases = Math.random().toFloat() < 0.06f
             if (releases) drop.vy = 0.05f + Math.random().toFloat() * 0.09f
             drop.vy *= 0.90f
-            drop.glassY += drop.vy * dt
+            val slid = drop.vy * dt
+            drop.glassY += slid
+            drop.trail = (drop.trail + slid * 1.6f - dt * 0.05f).coerceIn(0f, 0.35f)
             // Se seca despacio: una gota en el vidrio dura mucho más que una en el aire.
             drop.life -= dt * 0.22f
             if (drop.life <= 0f || drop.glassY > 1.02f) iterator.remove()
