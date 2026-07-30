@@ -14,12 +14,14 @@ import com.bsolutions.wallet.data.repository.EmailConnectionsRepository
 import com.bsolutions.wallet.data.repository.EmailProvider
 import com.bsolutions.wallet.data.repository.EmailSessionExpiredException
 import com.bsolutions.wallet.data.repository.EmailSyncResult
+import com.bsolutions.wallet.data.repository.EmailSyncStillQueuedException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 import javax.inject.Inject
@@ -37,11 +39,38 @@ data class EmailConnectionsUiState(
     val reviewCandidateId: String? = null,
     val syncResult: EmailSyncResult? = null,
     val authorizationUrl: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    /** Día elegido para mirar; null muestra todos, del más reciente al más antiguo. */
+    val selectedDate: LocalDate? = null
 ) {
     val candidatesByProvider: Map<EmailProvider, List<EmailCandidate>>
         get() = candidates.groupBy { it.provider }
+
+    /**
+     * Los correos se leen por día, que es como se recuerda un gasto. Agrupados y en
+     * orden descendente para que lo de hoy quede arriba.
+     */
+    val candidatesByDate: Map<LocalDate, List<EmailCandidate>>
+        get() = visibleCandidates
+            .groupBy { candidateLocalDate(it.occurredAt) ?: LocalDate.MIN }
+            .toSortedMap(compareByDescending { it })
+            .mapValues { (_, day) -> day.sortedByDescending { it.occurredAt } }
+
+    /** Días con correos, para poder saltar entre ellos. */
+    val availableDates: List<LocalDate>
+        get() = candidates.mapNotNull { candidateLocalDate(it.occurredAt) }
+            .distinct()
+            .sortedDescending()
+
+    private val visibleCandidates: List<EmailCandidate>
+        get() = selectedDate?.let { day ->
+            candidates.filter { candidateLocalDate(it.occurredAt) == day }
+        } ?: candidates
 }
+
+/** Día local del correo; null si la fecha viene ilegible. */
+internal fun candidateLocalDate(occurredAt: String, zoneId: ZoneId = ZoneId.systemDefault()): LocalDate? =
+    runCatching { Instant.parse(occurredAt).atZone(zoneId).toLocalDate() }.getOrNull()
 
 @HiltViewModel
 class EmailConnectionsViewModel @Inject constructor(
@@ -90,6 +119,11 @@ class EmailConnectionsViewModel @Inject constructor(
 
     fun onAuthorizationReturn() = refresh()
 
+    /** [date] null vuelve a mostrar todos los días. */
+    fun selectDate(date: LocalDate?) {
+        _uiState.value = _uiState.value.copy(selectedDate = date)
+    }
+
     fun connect(provider: EmailProvider) {
         if (_uiState.value.actionProvider != null || _uiState.value.reviewCandidateId != null) return
         _uiState.value = _uiState.value.copy(actionProvider = provider, message = null)
@@ -127,10 +161,12 @@ class EmailConnectionsViewModel @Inject constructor(
             } catch (exception: Exception) {
                 _uiState.value = _uiState.value.copy(
                     actionProvider = null,
-                    message = if (exception is EmailSessionExpiredException) {
-                        "Tu sesión venció. Inicia sesión nuevamente."
-                    } else {
-                        "No se pudieron sincronizar los correos. Inténtalo de nuevo."
+                    message = when (exception) {
+                        is EmailSessionExpiredException -> "Tu sesión venció. Inicia sesión nuevamente."
+                        is EmailSyncStillQueuedException ->
+                            "El servidor recibió la solicitud pero aún no la procesa. " +
+                                "Vuelve a intentarlo en un momento."
+                        else -> "No se pudieron sincronizar los correos. Inténtalo de nuevo."
                     }
                 )
             }

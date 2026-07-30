@@ -72,6 +72,14 @@ interface EmailConnectionsRepository {
 
 class EmailSessionExpiredException : Exception("La sesión venció.")
 
+/**
+ * El sync sigue en la cola del servidor y se agotó la espera. Se distingue del fallo
+ * porque no hay nada roto: falta que un worker procese el trabajo. Antes se devolvía
+ * el run con sus contadores en cero y la pantalla lo mostraba como un éxito sin
+ * correos, que es justo lo contrario de lo que pasaba.
+ */
+class EmailSyncStillQueuedException : Exception("La sincronización sigue en cola en el servidor.")
+
 /** El sync de correos encolado terminó en estado 'failed'. */
 class EmailSyncFailedException(val errorCode: String?) :
     Exception("La sincronización falló${errorCode?.let { " ($it)" } ?: ""}.")
@@ -104,6 +112,9 @@ class DefaultEmailConnectionsRepository(
         }
         if (run.status == "failed") {
             throw EmailSyncFailedException(run.errorCode)
+        }
+        if (run.status != "completed") {
+            throw EmailSyncStillQueuedException()
         }
         run.toDomain()
     }

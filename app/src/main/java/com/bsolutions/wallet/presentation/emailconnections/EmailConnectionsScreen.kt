@@ -97,6 +97,7 @@ fun EmailConnectionsScreen(
     var classifyCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
     var dismissCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
     var confirmClearAll by remember { mutableStateOf(false) }
+    var showDateFilter by remember { mutableStateOf(false) }
 
     LaunchedEffect(oauthReturnNonce) {
         if (oauthReturnNonce > 0L) viewModel.onAuthorizationReturn()
@@ -290,6 +291,43 @@ fun EmailConnectionsScreen(
         )
     }
 
+    if (showDateFilter) {
+        val filterState = rememberDatePickerState(
+            initialSelectedDateMillis = state.selectedDate
+                ?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDateFilter = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // El selector devuelve el día en UTC; se lee tal cual porque solo
+                        // interesa la fecha, no la hora.
+                        viewModel.selectDate(
+                            filterState.selectedDateMillis?.let {
+                                Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+                            }
+                        )
+                        showDateFilter = false
+                    },
+                    enabled = filterState.selectedDateMillis != null
+                ) {
+                    Text(stringResource(R.string.common_accept))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.selectDate(null)
+                    showDateFilter = false
+                }) {
+                    Text(stringResource(R.string.email_candidates_all_dates))
+                }
+            }
+        ) {
+            DatePicker(state = filterState)
+        }
+    }
+
     if (confirmClearAll) {
         AlertDialog(
             onDismissRequest = { confirmClearAll = false },
@@ -463,19 +501,55 @@ fun EmailConnectionsScreen(
                             }
                         }
                     }
-                    EmailProvider.entries.forEach { provider ->
-                        val providerCandidates = state.candidatesByProvider[provider].orEmpty()
-                        if (providerCandidates.isNotEmpty()) {
-                            item {
+                    // Filtro por día: un gasto se recuerda por cuándo pasó, no por
+                    // el proveedor de correo que lo trajo.
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(onClick = { showDateFilter = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarMonth,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = stringResource(
-                                        R.string.email_candidates_provider_title,
-                                        providerName(provider)
-                                    ),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold
+                                    state.selectedDate?.let { formatCandidateDay(it) }
+                                        ?: stringResource(R.string.email_candidates_all_dates)
                                 )
                             }
+                            if (state.selectedDate != null) {
+                                TextButton(onClick = { viewModel.selectDate(null) }) {
+                                    Text(stringResource(R.string.email_candidates_all_dates))
+                                }
+                            }
+                        }
+                    }
+
+                    val byDate = state.candidatesByDate
+                    if (byDate.isEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.email_candidates_none_that_day),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    byDate.forEach { (day, dayCandidates) ->
+                        item {
+                            Text(
+                                text = formatCandidateDay(day),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        run {
+                            val providerCandidates = dayCandidates
                             items(providerCandidates, key = { it.id }) { candidate ->
                                 CandidateCard(
                                     candidate = candidate,
@@ -881,4 +955,18 @@ private fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier 
 private fun providerName(provider: EmailProvider): String = when (provider) {
     EmailProvider.GMAIL -> stringResource(R.string.email_provider_gmail)
     EmailProvider.MICROSOFT -> stringResource(R.string.email_provider_microsoft)
+}
+
+/**
+ * Encabezado de día en lenguaje corriente: "Hoy" y "Ayer" son como uno piensa las
+ * fechas recientes; el resto lleva día, mes y año.
+ */
+@Composable
+private fun formatCandidateDay(day: LocalDate): String {
+    val today = LocalDate.now()
+    return when (day) {
+        today -> stringResource(R.string.email_candidates_today)
+        today.minusDays(1) -> stringResource(R.string.email_candidates_yesterday)
+        else -> day.format(DateTimeFormatter.ofPattern("d 'de' MMMM yyyy"))
+    }
 }

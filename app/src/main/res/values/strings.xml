@@ -459,6 +459,10 @@
     <string name="email_sync_summary">Revisados: %1$d · nuevos: %2$d · movimientos detectados: %3$d · conversiones actualizadas: %4$d</string>
     <string name="email_candidates_title">Movimientos detectados</string>
     <string name="email_candidate_remove">Quitar de la lista</string>
+    <string name="email_candidates_all_dates">Todas las fechas</string>
+    <string name="email_candidates_today">Hoy</string>
+    <string name="email_candidates_yesterday">Ayer</string>
+    <string name="email_candidates_none_that_day">No hay correos detectados en esa fecha.</string>
     <string name="email_candidate_card">Tarjeta ····%1$s</string>
     <string name="email_candidates_clear_all">Limpiar todos</string>
     <string name="email_candidates_clear_all_confirm">Se quitarán de la lista todos los correos detectados. Los movimientos que ya agregaste a tus cuentas no se borran.</string>
