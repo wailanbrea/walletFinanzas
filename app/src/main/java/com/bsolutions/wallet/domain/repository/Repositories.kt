@@ -21,6 +21,8 @@ interface TransactionRepository {
     fun getTransactions(): Flow<List<Transaction>>
     fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>>
     suspend fun getTransaction(id: String): Transaction?
+    /** Movimientos de una deuda: el gasto que la originó y los abonos recibidos. */
+    suspend fun getTransactionsForDebt(debtId: String): List<Transaction>
     suspend fun addTransaction(transaction: Transaction)
     /** Inserta el movimiento y ajusta el saldo de la cuenta atómicamente (income/gasto). */
     suspend fun addTransactionWithBalance(transaction: Transaction)

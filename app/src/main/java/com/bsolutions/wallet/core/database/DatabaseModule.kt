@@ -50,7 +50,8 @@ object DatabaseModule {
                 WalletDatabaseMigrations.MIGRATION_7_8,
                 WalletDatabaseMigrations.MIGRATION_8_9,
                 WalletDatabaseMigrations.MIGRATION_9_10,
-                WalletDatabaseMigrations.MIGRATION_10_11
+                WalletDatabaseMigrations.MIGRATION_10_11,
+                WalletDatabaseMigrations.MIGRATION_11_12
             )
             // Nunca borrar datos financieros ante un upgrade no cubierto: si faltara una
             // migración preferimos fallar (y verlo) a perder el dinero del usuario en silencio.

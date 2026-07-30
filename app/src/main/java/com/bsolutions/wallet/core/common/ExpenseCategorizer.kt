@@ -30,6 +30,9 @@ object DefaultCategories {
         Seed("cat_deporte", "Deporte", "fitness_center", "#66BB6A"),
         Seed("cat_regalos", "Regalos", "card_giftcard", "#F48FB1"),
         Seed("cat_salario", "Salario", "payments", "#81C784", "INCOME"),
+        // "BOTH" a proposito: el dinero sale al prestarlo y vuelve al cobrarlo, y con la
+        // misma etiqueta en las dos patas se netea en vez de inflar gastos e ingresos.
+        Seed("cat_prestamos_terceros", "Préstamos a terceros", "payments", "#9575CD", "BOTH"),
         Seed("cat_otros", "Otros", "card_giftcard", "#90A4AE", "BOTH"),
     )
 

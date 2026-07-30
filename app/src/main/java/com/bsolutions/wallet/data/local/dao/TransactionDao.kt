@@ -23,6 +23,16 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND id = :id")
     suspend fun getTransactionByIdIncludingDeleted(ownerId: String, id: String): TransactionEntity?
 
+    /**
+     * Movimientos de una deuda: el gasto que la origino y los abonos recibidos.
+     * Es la fuente de verdad de cuanto se ha cobrado.
+     */
+    @Query(
+        "SELECT * FROM transactions WHERE ownerId = :ownerId AND debtId = :debtId " +
+            "AND isDeleted = 0 ORDER BY date ASC"
+    )
+    suspend fun getTransactionsForDebt(ownerId: String, debtId: String): List<TransactionEntity>
+
     @Query("SELECT currency FROM accounts WHERE ownerId = :ownerId AND id = :accountId AND isDeleted = 0")
     suspend fun getAccountCurrency(ownerId: String, accountId: String): String?
 

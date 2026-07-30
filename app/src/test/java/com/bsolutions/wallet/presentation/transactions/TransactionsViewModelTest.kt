@@ -7,6 +7,9 @@ import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import kotlinx.coroutines.Dispatchers
+import com.bsolutions.wallet.domain.model.Debt
+import com.bsolutions.wallet.domain.repository.DebtRepository
+import com.bsolutions.wallet.domain.usecase.DebtLedger
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,7 +41,7 @@ class TransactionsViewModelTest {
     fun `adding an expense decreases account balance and stores transaction`() = runTest {
         val accountRepository = FakeAccountRepository(Account("account-1", "Efectivo", "CASH", 10_000L, "DOP"))
         val transactionRepository = FakeTransactionRepository(accountRepository)
-        val viewModel = TransactionsViewModel(transactionRepository, accountRepository, FakeCategoryRepository())
+        val viewModel = createViewModel(transactionRepository, accountRepository)
 
         viewModel.addTransaction("account-1", 2_500L, "EXPENSE", "food", "Compra")
         advanceUntilIdle()
@@ -54,7 +57,7 @@ class TransactionsViewModelTest {
         val transactionRepository = FakeTransactionRepository(accountRepository)
         val transaction = Transaction("tx-1", "account-1", 2_500L, "EXPENSE", "food", 1L, "Compra")
         transactionRepository.addTransaction(transaction)
-        val viewModel = TransactionsViewModel(transactionRepository, accountRepository, FakeCategoryRepository())
+        val viewModel = createViewModel(transactionRepository, accountRepository)
 
         viewModel.deleteTransaction(transaction)
         advanceUntilIdle()
@@ -69,7 +72,7 @@ class TransactionsViewModelTest {
         val transactionRepository = FakeTransactionRepository(accountRepository)
         val original = Transaction("tx-1", "account-1", 2_500L, "EXPENSE", "food", 1L, "Compra")
         transactionRepository.addTransaction(original)
-        val viewModel = TransactionsViewModel(transactionRepository, accountRepository, FakeCategoryRepository())
+        val viewModel = createViewModel(transactionRepository, accountRepository)
 
         viewModel.updateTransaction(original, newAmount = 4_000L, newCategoryId = "transport", newNote = "Taxi")
         advanceUntilIdle()
@@ -77,6 +80,107 @@ class TransactionsViewModelTest {
         assertEquals(6_000L, accountRepository.getAccount("account-1")!!.balance)
         assertEquals(4_000L, transactionRepository.transactions.value.single().amount)
         assertEquals("transport", transactionRepository.transactions.value.single().categoryId)
+    }
+
+    @Test
+    fun `lending money opens a receivable without touching the amount or the account`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 100_000L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        // El caso real: la compra por Amazon para un amigo.
+        val purchase = Transaction("tx-1", "account-1", 2_186_799L, "EXPENSE", "cat_otros", 1L, "PayPal")
+        transactionRepository.addTransaction(purchase)
+        val debtRepository = FakeDebtRepository()
+        val viewModel = createViewModel(transactionRepository, accountRepository, debtRepository)
+
+        viewModel.markAsLoan(purchase, "Pedro")
+        advanceUntilIdle()
+
+        val debt = debtRepository.debts.value.single()
+        assertEquals("Pedro", debt.name)
+        assertEquals("OWED_TO_ME", debt.direction)
+        assertEquals(2_186_799L, debt.totalAmount)
+        assertEquals(2_186_799L, debt.remainingAmount)
+
+        val linked = transactionRepository.transactions.value.single()
+        assertEquals(debt.id, linked.debtId)
+        // No es consumo: pasa a la categoria de prestamos.
+        assertEquals("cat_prestamos_terceros", linked.categoryId)
+        // El dinero ya habia salido: el saldo no se toca otra vez.
+        assertEquals(100_000L, accountRepository.getAccount("account-1")!!.balance)
+    }
+
+    @Test
+    fun `an income applied to the debt reduces what is owed and closes it when complete`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 0L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        val purchase = Transaction("tx-1", "account-1", 20_000L, "EXPENSE", "cat_otros", 1L, "PayPal")
+        transactionRepository.addTransaction(purchase)
+        val debtRepository = FakeDebtRepository()
+        val viewModel = createViewModel(transactionRepository, accountRepository, debtRepository)
+        viewModel.markAsLoan(purchase, "Pedro")
+        advanceUntilIdle()
+        val debtId = debtRepository.debts.value.single().id
+
+        // Primer abono: la mitad.
+        val first = Transaction("tx-2", "account-1", 12_000L, "INCOME", "cat_otros", 2L, "Me pago Pedro")
+        transactionRepository.addTransaction(first)
+        viewModel.applyToDebt(first, debtId)
+        advanceUntilIdle()
+        assertEquals(12_000L, debtRepository.debts.value.single().paidAmount)
+        assertEquals(8_000L, debtRepository.debts.value.single().remainingAmount)
+        assertEquals(false, debtRepository.debts.value.single().isClosed)
+
+        // Resto: la deuda se cierra sola.
+        val second = Transaction("tx-3", "account-1", 8_000L, "INCOME", "cat_otros", 3L, "Resto")
+        transactionRepository.addTransaction(second)
+        viewModel.applyToDebt(second, debtId)
+        advanceUntilIdle()
+        assertEquals(20_000L, debtRepository.debts.value.single().paidAmount)
+        assertEquals(true, debtRepository.debts.value.single().isClosed)
+    }
+
+    @Test
+    fun `deleting a payment gives the debt back what is still owed`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 0L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        val purchase = Transaction("tx-1", "account-1", 20_000L, "EXPENSE", "cat_otros", 1L, "PayPal")
+        transactionRepository.addTransaction(purchase)
+        val debtRepository = FakeDebtRepository()
+        val viewModel = createViewModel(transactionRepository, accountRepository, debtRepository)
+        viewModel.markAsLoan(purchase, "Pedro")
+        advanceUntilIdle()
+        val debtId = debtRepository.debts.value.single().id
+
+        val payment = Transaction("tx-2", "account-1", 20_000L, "INCOME", "cat_otros", 2L, "Pago")
+        transactionRepository.addTransaction(payment)
+        viewModel.applyToDebt(payment, debtId)
+        advanceUntilIdle()
+        assertEquals(true, debtRepository.debts.value.single().isClosed)
+
+        // Se borra el abono: lo cobrado se recalcula de los movimientos reales.
+        viewModel.deleteTransaction(transactionRepository.getTransaction("tx-2")!!)
+        advanceUntilIdle()
+
+        assertEquals(0L, debtRepository.debts.value.single().paidAmount)
+        assertEquals(20_000L, debtRepository.debts.value.single().remainingAmount)
+        assertEquals(false, debtRepository.debts.value.single().isClosed)
+    }
+
+    @Test
+    fun `the loan expense itself is never counted as a payment`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 0L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        val purchase = Transaction("tx-1", "account-1", 20_000L, "EXPENSE", "cat_otros", 1L, "PayPal")
+        transactionRepository.addTransaction(purchase)
+        val debtRepository = FakeDebtRepository()
+        val viewModel = createViewModel(transactionRepository, accountRepository, debtRepository)
+
+        viewModel.markAsLoan(purchase, "Pedro")
+        advanceUntilIdle()
+
+        // El gasto que origino la deuda tambien esta atado a ella, pero va en la
+        // direccion contraria: si contara como abono, la deuda nacería pagada.
+        assertEquals(0L, debtRepository.debts.value.single().paidAmount)
     }
 
     private class FakeAccountRepository(account: Account) : AccountRepository {
@@ -97,6 +201,9 @@ class TransactionsViewModelTest {
         override fun getTransactions(): Flow<List<Transaction>> = transactions
         override fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>> = transactions
         override suspend fun getTransaction(id: String): Transaction? = transactions.value.firstOrNull { it.id == id }
+
+        override suspend fun getTransactionsForDebt(debtId: String): List<Transaction> =
+            transactions.value.filter { it.debtId == debtId }
         override suspend fun addTransaction(transaction: Transaction) { transactions.value += transaction }
         override suspend fun addTransactionWithBalance(transaction: Transaction) {
             transactions.value += transaction
@@ -132,4 +239,29 @@ class TransactionsViewModelTest {
         override suspend fun addCategory(category: Category) = Unit
         override suspend fun deleteCategory(id: String) = Unit
     }
+
+    private class FakeDebtRepository : DebtRepository {
+        val debts = MutableStateFlow<List<Debt>>(emptyList())
+        override fun getDebts(): Flow<List<Debt>> = debts
+        override suspend fun getDebt(id: String): Debt? = debts.value.firstOrNull { it.id == id }
+        override suspend fun addDebt(debt: Debt) { debts.value = debts.value + debt }
+        override suspend fun updateDebt(debt: Debt) {
+            debts.value = debts.value.map { if (it.id == debt.id) debt else it }
+        }
+        override suspend fun deleteDebt(id: String) {
+            debts.value = debts.value.filterNot { it.id == id }
+        }
+    }
+
+    private fun createViewModel(
+        transactionRepository: TransactionRepository,
+        accountRepository: AccountRepository,
+        debtRepository: DebtRepository = FakeDebtRepository()
+    ) = TransactionsViewModel(
+        transactionRepository,
+        accountRepository,
+        FakeCategoryRepository(),
+        debtRepository,
+        DebtLedger(transactionRepository, debtRepository)
+    )
 }

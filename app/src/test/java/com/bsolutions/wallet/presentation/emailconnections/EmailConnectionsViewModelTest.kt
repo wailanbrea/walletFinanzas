@@ -584,6 +584,9 @@ class EmailConnectionsViewModelTest {
         override fun getTransactions(): Flow<List<Transaction>> = transactions
         override fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>> = transactions
         override suspend fun getTransaction(id: String): Transaction? = transactions.value.firstOrNull { it.id == id }
+
+        override suspend fun getTransactionsForDebt(debtId: String): List<Transaction> =
+            transactions.value.filter { it.debtId == debtId }
         override suspend fun addTransaction(transaction: Transaction) {
             transactions.value += transaction
         }

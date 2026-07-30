@@ -18,6 +18,13 @@ data class CategoriesUiState(
     val categories: List<Category> = emptyList()
 )
 
+/**
+ * Tipos validos de categoria. "BOTH" existe para los casos que tienen dos patas
+ * —prestar dinero y que te lo devuelvan— y necesitan la misma etiqueta en ambas
+ * para que se neteen en vez de inflar gastos e ingresos por separado.
+ */
+val CATEGORY_TYPES = listOf("EXPENSE", "INCOME", "BOTH")
+
 @HiltViewModel
 class CategoriesViewModel @Inject constructor(
     private val categoryRepository: CategoryRepository,
@@ -32,7 +39,7 @@ class CategoriesViewModel @Inject constructor(
             initialValue = CategoriesUiState()
         )
 
-    fun addCategory(name: String, icon: String, colorHex: String) {
+    fun addCategory(name: String, icon: String, colorHex: String, type: String = "EXPENSE") {
         if (name.isBlank()) return
         viewModelScope.launch {
             categoryRepository.addCategory(
@@ -40,18 +47,30 @@ class CategoriesViewModel @Inject constructor(
                     id = UUID.randomUUID().toString(),
                     name = name.trim(),
                     icon = icon,
-                    colorHex = colorHex
+                    colorHex = colorHex,
+                    type = type.takeIf { it in CATEGORY_TYPES } ?: "EXPENSE"
                 )
             )
         }
     }
 
-    fun updateCategory(category: Category, newName: String, newIcon: String, newColorHex: String) {
+    fun updateCategory(
+        category: Category,
+        newName: String,
+        newIcon: String,
+        newColorHex: String,
+        newType: String = category.type
+    ) {
         if (newName.isBlank()) return
         viewModelScope.launch {
             // addCategory usa REPLACE en el DAO, así que sirve como update
             categoryRepository.addCategory(
-                category.copy(name = newName.trim(), icon = newIcon, colorHex = newColorHex)
+                category.copy(
+                    name = newName.trim(),
+                    icon = newIcon,
+                    colorHex = newColorHex,
+                    type = newType.takeIf { it in CATEGORY_TYPES } ?: category.type
+                )
             )
         }
     }

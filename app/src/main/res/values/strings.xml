@@ -209,6 +209,8 @@
     <string name="debts_payment_to">Abono a \"%1$s\"</string>
     <string name="debts_payment_amount">Monto del abono (%1$s)</string>
     <string name="debts_payment_action">Registrar Abono</string>
+    <string name="debts_payment_account">¿En qué cuenta entra el dinero?</string>
+    <string name="debts_payment_no_accounts">Necesitas una cuenta para registrar el abono.</string>
 
     <!-- Pagos planificados -->
     <string name="planned_title">Pagos planificados</string>
@@ -247,6 +249,13 @@
     <string name="categories_name">Nombre</string>
     <string name="categories_icon">Icono</string>
     <string name="categories_color">Color</string>
+    <string name="categories_type">Se usa en</string>
+    <string name="categories_type_expense">Gastos</string>
+    <string name="categories_type_income">Ingresos</string>
+    <string name="categories_type_both">Ambos</string>
+    <string name="categories_type_expense_help">Solo aparecerá al registrar un gasto.</string>
+    <string name="categories_type_income_help">Solo aparecerá al registrar un ingreso.</string>
+    <string name="categories_type_both_help">Aparecerá en gastos y en ingresos. Útil para lo que sale y vuelve, como un préstamo a un tercero: así se netea en vez de inflar gastos e ingresos.</string>
     <string name="categories_delete">Eliminar categoría</string>
     <string name="categories_delete_confirm">Los movimientos existentes conservarán su historial, pero quedarán sin categoría visible. ¿Continuar?</string>
 
@@ -327,6 +336,14 @@
     <string name="tx_note">Nota</string>
     <string name="tx_date">Fecha</string>
     <string name="tx_no_category">Sin categoría</string>
+    <string name="tx_mark_as_loan">Es un préstamo a un tercero</string>
+    <string name="tx_mark_as_loan_help">No es un gasto tuyo: el dinero salió pero te lo van a devolver. Se creará una deuda por cobrar y no contará como consumo.</string>
+    <string name="tx_loan_person">¿A quién le prestaste?</string>
+    <string name="tx_apply_to_debt">Aplicar como abono a una deuda</string>
+    <string name="tx_apply_to_debt_help">Este ingreso se descontará de lo que te deben.</string>
+    <string name="tx_debt_linked">Préstamo a</string>
+    <string name="tx_debt_remaining">Falta por cobrar</string>
+    <string name="tx_debt_unlink">Desvincular de la deuda</string>
     <string name="tx_delete_title">Eliminar movimiento</string>
     <string name="tx_delete_confirm">Se eliminará este movimiento y se revertirá su efecto en el balance de la cuenta. ¿Continuar?</string>
     <string name="tx_add_title">Agregar Movimiento</string>

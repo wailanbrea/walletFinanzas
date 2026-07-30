@@ -50,8 +50,8 @@ fun CategoriesScreen(
             title = stringResource(R.string.categories_create_title),
             initial = null,
             onDismiss = { showCreateDialog = false },
-            onSave = { name, icon, color ->
-                viewModel.addCategory(name, icon, color)
+            onSave = { name, icon, color, type ->
+                viewModel.addCategory(name, icon, color, type)
                 showCreateDialog = false
             },
             onDelete = null
@@ -63,8 +63,8 @@ fun CategoriesScreen(
             title = stringResource(R.string.categories_edit_title),
             initial = cat,
             onDismiss = { editingCategory = null },
-            onSave = { name, icon, color ->
-                viewModel.updateCategory(cat, name, icon, color)
+            onSave = { name, icon, color, type ->
+                viewModel.updateCategory(cat, name, icon, color, type)
                 editingCategory = null
             },
             onDelete = {
@@ -177,17 +177,30 @@ fun CategoriesScreen(
     }
 }
 
+private fun categoryTypeLabel(type: String): Int = when (type) {
+    "INCOME" -> R.string.categories_type_income
+    "BOTH" -> R.string.categories_type_both
+    else -> R.string.categories_type_expense
+}
+
+private fun categoryTypeHelp(type: String): Int = when (type) {
+    "INCOME" -> R.string.categories_type_income_help
+    "BOTH" -> R.string.categories_type_both_help
+    else -> R.string.categories_type_expense_help
+}
+
 @Composable
 private fun CategoryFormDialog(
     title: String,
     initial: Category?,
     onDismiss: () -> Unit,
-    onSave: (name: String, icon: String, colorHex: String) -> Unit,
+    onSave: (name: String, icon: String, colorHex: String, type: String) -> Unit,
     onDelete: (() -> Unit)?
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var selectedIcon by remember { mutableStateOf(initial?.icon ?: categoryIcons.keys.first()) }
     var selectedColor by remember { mutableStateOf(initial?.colorHex ?: presetColors.first()) }
+    var selectedType by remember { mutableStateOf(initial?.type ?: "EXPENSE") }
     var confirmDelete by remember { mutableStateOf(false) }
 
     if (confirmDelete && onDelete != null) {
@@ -271,6 +284,22 @@ private fun CategoryFormDialog(
                     }
                 }
 
+                Text(stringResource(R.string.categories_type), style = MaterialTheme.typography.labelLarge)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(CATEGORY_TYPES) { type ->
+                        FilterChip(
+                            selected = selectedType == type,
+                            onClick = { selectedType = type },
+                            label = { Text(stringResource(categoryTypeLabel(type))) }
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(categoryTypeHelp(selectedType)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
                 if (onDelete != null) {
                     TextButton(onClick = { confirmDelete = true }) {
                         Text(stringResource(R.string.categories_delete), color = MaterialTheme.colorScheme.error)
@@ -280,7 +309,7 @@ private fun CategoryFormDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { if (name.isNotBlank()) onSave(name, selectedIcon, selectedColor) },
+                onClick = { if (name.isNotBlank()) onSave(name, selectedIcon, selectedColor, selectedType) },
                 enabled = name.isNotBlank()
             ) { Text(stringResource(R.string.common_save)) }
         },

@@ -21,7 +21,9 @@ data class Transaction(
     val categoryId: String,
     val date: Long, // Epoch UTC
     val note: String,
-    val currency: String = "DOP" // moneda del movimiento (la de su cuenta)
+    val currency: String = "DOP", // moneda del movimiento (la de su cuenta)
+    /** Deuda a la que pertenece: el gasto que la origino o un abono recibido. */
+    val debtId: String? = null
 )
 
 data class Category(

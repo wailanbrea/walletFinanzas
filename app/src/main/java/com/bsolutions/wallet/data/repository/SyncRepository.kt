@@ -400,6 +400,10 @@ class SyncRepository @Inject constructor(
                         date = parseIso(dto.timestamp),
                         note = dto.description.orEmpty(),
                         currency = dto.currency,
+                        // El servidor todavia no guarda el vinculo con la deuda, asi que
+                        // se conserva el local: sin esto, el primer pull despues de
+                        // prestar dinero desharia el enlace en silencio.
+                        debtId = existing?.debtId,
                         ownerId = ownerId
                     )
                 )

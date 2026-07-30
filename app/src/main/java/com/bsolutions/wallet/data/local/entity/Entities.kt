@@ -30,6 +30,8 @@ data class TransactionEntity(
     val date: Long, // Epoch millis (UTC)
     val note: String = "",
     val currency: String = "DOP", // ISO de la moneda del movimiento (heredada de su cuenta)
+    /** Deuda a la que pertenece: el gasto que la origino o un abono recibido. */
+    val debtId: String? = null,
     val isDeleted: Boolean = false,
     val ownerId: String = WALLET_GUEST_OWNER_ID
 )

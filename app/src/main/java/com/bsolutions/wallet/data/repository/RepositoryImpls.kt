@@ -64,9 +64,10 @@ fun Account.toEntity(ownerId: String) = AccountEntity(
     creditLimit = creditLimit
 )
 
-fun TransactionEntity.toDomain() = Transaction(id, accountId, amount, type, categoryId, date, note, currency)
+fun TransactionEntity.toDomain() =
+    Transaction(id, accountId, amount, type, categoryId, date, note, currency, debtId)
 fun Transaction.toEntity(ownerId: String) =
-    TransactionEntity(id, accountId, amount, type, categoryId, date, note, currency, ownerId = ownerId)
+    TransactionEntity(id, accountId, amount, type, categoryId, date, note, currency, debtId, ownerId = ownerId)
 
 fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, type)
 fun Category.toEntity(ownerId: String) = CategoryEntity(id, name, icon, colorHex, type, ownerId = ownerId)
@@ -141,6 +142,9 @@ class TransactionRepositoryImpl @Inject constructor(
 
     override suspend fun getTransaction(id: String): Transaction? =
         dao.getTransactionById(ownerScope.currentOwnerId(), id)?.toDomain()
+
+    override suspend fun getTransactionsForDebt(debtId: String): List<Transaction> =
+        dao.getTransactionsForDebt(ownerScope.currentOwnerId(), debtId).map { it.toDomain() }
 
     // Las importaciones de proveedores bancarios permanecen solo locales.
     override suspend fun addTransaction(transaction: Transaction) =

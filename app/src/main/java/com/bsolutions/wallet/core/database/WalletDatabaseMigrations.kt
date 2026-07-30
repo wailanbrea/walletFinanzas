@@ -273,6 +273,19 @@ object WalletDatabaseMigrations {
     }
 
     /**
+     * v11 -> v12: un movimiento puede pertenecer a una deuda.
+     *
+     * Es el hilo que une prestar el dinero con cobrarlo: el gasto del prestamo y cada
+     * abono recibido apuntan a la misma deuda, de modo que lo cobrado se calcula de los
+     * movimientos reales en vez de ser un numero que se edita aparte y se desincroniza.
+     */
+    val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE transactions ADD COLUMN debtId TEXT")
+        }
+    }
+
+    /**
      * v10 -> v11: las categorias distinguen ingreso de gasto. Todas las existentes
      * quedan como gasto salvo Salario, que es lo unico que se sembraba como ingreso;
      * asi un gasto deja de poder etiquetarse "Salario" y al reves.

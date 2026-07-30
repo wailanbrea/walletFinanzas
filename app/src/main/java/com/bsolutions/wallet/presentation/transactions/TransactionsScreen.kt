@@ -35,6 +35,7 @@ import com.bsolutions.wallet.core.common.MoneyParser
 import com.bsolutions.wallet.core.designsystem.CurrencyDisplayTextStyle
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
+import com.bsolutions.wallet.domain.model.Debt
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.presentation.dashboard.TransactionItem
 import com.bsolutions.wallet.presentation.dashboard.getIconForName
@@ -64,6 +65,20 @@ fun TransactionsScreen(
             },
             onDelete = {
                 viewModel.deleteTransaction(tx)
+                selectedTransaction = null
+            },
+            linkedDebt = tx.debtId?.let { id -> uiState.receivables.find { it.id == id } },
+            openReceivables = uiState.openReceivables,
+            onMarkAsLoan = { personName ->
+                viewModel.markAsLoan(tx, personName)
+                selectedTransaction = null
+            },
+            onApplyToDebt = { debtId ->
+                viewModel.applyToDebt(tx, debtId)
+                selectedTransaction = null
+            },
+            onUnlinkDebt = {
+                viewModel.unlinkFromDebt(tx)
                 selectedTransaction = null
             }
         )
@@ -207,9 +222,19 @@ fun TransactionDetailSheet(
     categories: List<Category>,
     onDismiss: () -> Unit,
     onUpdate: (newAmount: Long, newCategoryId: String, newNote: String) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    /** Deuda a la que pertenece este movimiento, si ya está atado a una. */
+    linkedDebt: Debt? = null,
+    /** Deudas por cobrar abiertas: a ellas se puede aplicar un ingreso como abono. */
+    openReceivables: List<Debt> = emptyList(),
+    onMarkAsLoan: (personName: String) -> Unit = {},
+    onApplyToDebt: (debtId: String) -> Unit = {},
+    onUnlinkDebt: () -> Unit = {}
 ) {
     var isEditing by remember { mutableStateOf(false) }
+    var askLoanName by remember { mutableStateOf(false) }
+    var pickDebt by remember { mutableStateOf(false) }
+    var loanPersonName by remember { mutableStateOf("") }
     var amountStr by remember { mutableStateOf(String.format(Locale.US, "%.2f", transaction.amount / 100.0)) }
     var note by remember { mutableStateOf(transaction.note) }
     var selectedCategoryId by remember(transaction.id, categories) {
@@ -331,8 +356,96 @@ fun TransactionDetailSheet(
                 if (transaction.note.isNotBlank()) {
                     DetailRow(label = stringResource(R.string.tx_note), value = transaction.note)
                 }
+                when {
+                    linkedDebt != null -> {
+                        DetailRow(
+                            label = stringResource(R.string.tx_debt_linked),
+                            value = linkedDebt.name
+                        )
+                        DetailRow(
+                            label = stringResource(R.string.tx_debt_remaining),
+                            value = MoneyFormat.format(linkedDebt.remainingAmount)
+                        )
+                        TextButton(onClick = onUnlinkDebt) {
+                            Text(stringResource(R.string.tx_debt_unlink))
+                        }
+                    }
+                    transaction.type == "EXPENSE" -> {
+                        TextButton(onClick = { askLoanName = true }) {
+                            Text(stringResource(R.string.tx_mark_as_loan))
+                        }
+                    }
+                    transaction.type == "INCOME" && openReceivables.isNotEmpty() -> {
+                        TextButton(onClick = { pickDebt = true }) {
+                            Text(stringResource(R.string.tx_apply_to_debt))
+                        }
+                    }
+                }
             }
         }
+    }
+
+    if (askLoanName) {
+        AlertDialog(
+            onDismissRequest = { askLoanName = false },
+            title = { Text(stringResource(R.string.tx_mark_as_loan)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        stringResource(R.string.tx_mark_as_loan_help),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = loanPersonName,
+                        onValueChange = { loanPersonName = it },
+                        label = { Text(stringResource(R.string.tx_loan_person)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        askLoanName = false
+                        onMarkAsLoan(loanPersonName)
+                    },
+                    enabled = loanPersonName.isNotBlank()
+                ) { Text(stringResource(R.string.common_save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { askLoanName = false }) { Text(stringResource(R.string.common_cancel)) }
+            }
+        )
+    }
+
+    if (pickDebt) {
+        AlertDialog(
+            onDismissRequest = { pickDebt = false },
+            title = { Text(stringResource(R.string.tx_apply_to_debt)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.tx_apply_to_debt_help),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    openReceivables.forEach { debt ->
+                        OutlinedButton(
+                            onClick = {
+                                pickDebt = false
+                                onApplyToDebt(debt.id)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("${debt.name} · ${MoneyFormat.format(debt.remainingAmount)}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { pickDebt = false }) { Text(stringResource(R.string.common_cancel)) }
+            }
+        )
     }
 
     if (confirmDelete) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,6 +60,7 @@ import com.bsolutions.wallet.R
 import com.bsolutions.wallet.presentation.common.walletTopBarColors
 import com.bsolutions.wallet.core.common.MoneyFormat
 import com.bsolutions.wallet.core.common.MoneyParser
+import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Debt
 import com.bsolutions.wallet.presentation.common.animatedProgress
 
@@ -87,9 +89,10 @@ fun DebtsScreen(
     paymentDebt?.let { debt ->
         RecordPaymentSheet(
             debt = debt,
+            accounts = uiState.accounts,
             onDismiss = { paymentDebt = null },
-            onSave = { amount ->
-                viewModel.recordPayment(debt, amount)
+            onSave = { amount, accountId ->
+                viewModel.recordPayment(debt, amount, accountId)
                 paymentDebt = null
             }
         )
@@ -432,10 +435,12 @@ private fun CreateDebtSheet(
 @Composable
 private fun RecordPaymentSheet(
     debt: Debt,
+    accounts: List<Account>,
     onDismiss: () -> Unit,
-    onSave: (amount: Long) -> Unit
+    onSave: (amount: Long, accountId: String) -> Unit
 ) {
     var amountStr by remember { mutableStateOf("") }
+    var selectedAccountId by remember(accounts) { mutableStateOf(accounts.firstOrNull()?.id.orEmpty()) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -463,12 +468,37 @@ private fun RecordPaymentSheet(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
+            // El dinero cobrado tiene que entrar en algún lado: sin cuenta, el abono
+            // sería solo un contador y el saldo se quedaría corto.
+            Text(
+                text = stringResource(R.string.debts_payment_account),
+                style = MaterialTheme.typography.labelLarge
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(accounts, key = { it.id }) { account ->
+                    FilterChip(
+                        selected = selectedAccountId == account.id,
+                        onClick = { selectedAccountId = account.id },
+                        label = { Text("${account.name} (${account.currency})") }
+                    )
+                }
+            }
+            if (accounts.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.debts_payment_no_accounts),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
             Button(
                 onClick = {
                     val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
-                    if (amount > 0L) onSave(amount)
+                    if (amount > 0L && selectedAccountId.isNotBlank()) {
+                        onSave(amount, selectedAccountId)
+                    }
                 },
-                enabled = (MoneyParser.parseMinorUnits(amountStr) ?: 0L) > 0L,
+                enabled = (MoneyParser.parseMinorUnits(amountStr) ?: 0L) > 0L &&
+                    selectedAccountId.isNotBlank(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
