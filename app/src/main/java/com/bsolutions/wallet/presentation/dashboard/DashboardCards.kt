@@ -2,6 +2,14 @@ package com.bsolutions.wallet.presentation.dashboard
 
 import androidx.compose.foundation.BorderStroke
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -262,14 +270,36 @@ private fun AmountProgressRow(
             fontWeight = FontWeight.SemiBold
         )
     }
-    Spacer(Modifier.height(4.dp))
-    LinearProgressIndicator(
-        progress = { progress.coerceIn(0f, 1f) },
+    Spacer(Modifier.height(6.dp))
+    // Crece al aparecer y al cambiar el periodo: el movimiento deja ver cuánto se movió
+    // la barra, que en un número seco se pierde.
+    val target = progress.coerceIn(0f, 1f)
+    val grown by animateFloatAsState(
+        targetValue = target,
+        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+        label = "barra"
+    )
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(12.dp),
-        color = color
-    )
+            .height(12.dp)
+            .clip(RoundedCornerShape(50))
+            // El canal de fondo en el mismo color, muy tenue: se ve cuánto falta sin
+            // meter un gris que pelee con el tema.
+            .background(color.copy(alpha = 0.14f))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(grown)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(50))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(color.copy(alpha = 0.55f), color)
+                    )
+                )
+        )
+    }
 }
 
 @Composable
