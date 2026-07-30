@@ -9,6 +9,8 @@ import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.Transaction
 
 import com.bsolutions.wallet.domain.model.Debt
+import com.bsolutions.wallet.domain.model.Goal
+import com.bsolutions.wallet.domain.repository.GoalRepository
 import com.bsolutions.wallet.domain.repository.DebtRepository
 import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
@@ -67,13 +69,15 @@ class DashboardViewModelTest {
         transactions: List<Transaction>,
         categories: List<Category> = listOf(Category("food", "Alimentación", "restaurant", "#1B873F")),
         preferences: FakeUserProfilePreferences = FakeUserProfilePreferences(),
-        debts: List<Debt> = emptyList()
+        debts: List<Debt> = emptyList(),
+        goals: List<Goal> = emptyList()
     ): DashboardViewModel = DashboardViewModel(
         FakeAccountRepository(Account("acc-1", "Cuenta", "BANK", 50_000L, "DOP")),
         FakeTransactionRepository(transactions),
         FakeCategoryRepository(categories),
         preferences,
-        FakeDebtRepository(debts)
+        FakeDebtRepository(debts),
+        FakeGoalRepository(goals)
     )
 
     private suspend fun kotlinx.coroutines.test.TestScope.awaitState(viewModel: DashboardViewModel): DashboardUiState {
@@ -335,7 +339,8 @@ class DashboardViewModelTest {
             FakeTransactionRepository(emptyList()),
             categories,
             FakeUserProfilePreferences(),
-            FakeDebtRepository()
+            FakeDebtRepository(),
+            FakeGoalRepository()
         )
 
         advanceUntilIdle()
@@ -384,6 +389,17 @@ class DashboardViewModelTest {
         override suspend fun setDashboardCardIds(cardIds: Set<String>) {
             profile.value = profile.value.copy(dashboardCardIds = cardIds)
         }
+    }
+
+    private class FakeGoalRepository(initial: List<Goal> = emptyList()) : GoalRepository {
+        private val goals = MutableStateFlow(initial)
+        override fun getGoals(): Flow<List<Goal>> = goals
+        override suspend fun getGoal(id: String): Goal? = goals.value.firstOrNull { it.id == id }
+        override suspend fun addGoal(goal: Goal) { goals.value = goals.value + goal }
+        override suspend fun updateGoal(goal: Goal) {
+            goals.value = goals.value.map { if (it.id == goal.id) goal else it }
+        }
+        override suspend fun deleteGoal(id: String) { goals.value = goals.value.filterNot { it.id == id } }
     }
 
     private class FakeDebtRepository(initial: List<Debt> = emptyList()) : DebtRepository {

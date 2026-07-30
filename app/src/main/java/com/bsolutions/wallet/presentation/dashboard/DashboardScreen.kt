@@ -73,6 +73,7 @@ import com.bsolutions.wallet.presentation.common.DonutSegment
 import androidx.compose.ui.platform.LocalContext
 import com.bsolutions.wallet.presentation.common.authenticateBiometric
 import com.bsolutions.wallet.presentation.common.parseHexColor
+import com.bsolutions.wallet.presentation.common.WaterSurface
 import com.bsolutions.wallet.presentation.common.privacyBlur
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -697,6 +698,8 @@ fun TotalBalanceCard(
     foreignSubtitle: String? = null,
     expenseTrendPercent: Int?,
     hidden: Boolean = false,
+    /** Cuánto llena el agua: el avance de la meta elegida, o la mitad si no hay ninguna. */
+    waterLevel: Float = 0.5f,
     onFilterClick: (() -> Unit)? = null
 ) {
     // Estado para forzar la animación en cada entrada a la composición
@@ -739,6 +742,13 @@ fun TotalBalanceCard(
             .clip(RoundedCornerShape(24.dp))
             .background(Brush.linearGradient(colors = listOf(gradientStart, gradientEnd)))
     ) {
+        // El agua va detrás de todo y recortada por la tarjeta, para que se vea contenida
+        // dentro del vaso y no flotando encima del contenido.
+        WaterSurface(
+            level = waterLevel,
+            color = Color.White,
+            modifier = Modifier.matchParentSize()
+        )
         // Círculos decorativos translúcidos
         Box(
             modifier = Modifier

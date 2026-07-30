@@ -16,6 +16,7 @@ import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.DebtRepository
+import com.bsolutions.wallet.domain.repository.GoalRepository
 import com.bsolutions.wallet.domain.usecase.DEBT_OWED_TO_ME
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -103,6 +104,13 @@ data class DashboardUiState(
     val monthlyCollected: Long = 0L,
     /** Lo que sigue pendiente de cobrar, de todas las deudas abiertas. */
     val outstandingReceivable: Long = 0L,
+    /**
+     * Cuánto llena el agua de la tarjeta de balance.
+     *
+     * Sin metas es decorativa y llega a la mitad. Con metas representa el avance de la
+     * más pequeña, que es la que está más cerca de cumplirse.
+     */
+    val waterLevel: Float = 0.5f,
     /** Variación % del gasto de este mes vs el anterior; null si no hay base de comparación. */
     val expenseTrendPercent: Int? = null,
     val categorySpending: List<CategorySpend> = emptyList(),
@@ -123,6 +131,7 @@ class DashboardViewModel @Inject constructor(
     private val categoryRepository: CategoryRepository,
     private val userPreferencesRepository: UserProfilePreferences,
     private val debtRepository: DebtRepository,
+    private val goalRepository: GoalRepository,
     // Default para tests: Hilt inyecta la implementación real de todos modos.
     private val categoryRules: CategoryRuleRepository = EmptyCategoryRules
 ) : ViewModel() {
@@ -271,6 +280,10 @@ class DashboardViewModel @Inject constructor(
                     .filter { it.direction == DEBT_OWED_TO_ME && !it.isClosed }
                     .sumOf { it.remainingAmount }
             )
+        }
+        .combine(goalRepository.getGoals()) { state, goals ->
+            val smallest = goals.filterNot { it.isCompleted }.minByOrNull { it.targetAmount }
+            state.copy(waterLevel = smallest?.progress?.coerceIn(0f, 1f) ?: 0.5f)
         }
         .stateIn(
         scope = viewModelScope,

@@ -179,7 +179,8 @@ internal fun DashboardCardContent(
             totalBalance = uiState.totalBalance,
             foreignSubtitle = uiState.foreignBalancesSubtitle,
             expenseTrendPercent = uiState.expenseTrendPercent,
-            hidden = uiState.balancesHidden
+            hidden = uiState.balancesHidden,
+            waterLevel = uiState.waterLevel
         )
         DashboardCardType.CASH_FLOW -> CashFlowCard(uiState)
         DashboardCardType.EXPENSE_STRUCTURE -> ExpenseStructureCard(uiState)
