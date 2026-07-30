@@ -300,10 +300,6 @@ class TransactionsViewModelTest {
             transactions.value += transaction
             accounts.adjustBalance(transaction.accountId, if (transaction.type == "INCOME") transaction.amount else -transaction.amount)
         }
-        override suspend fun executeTransfer(fromAccountId: String, toAccountId: String, amount: Long, transaction: Transaction): Boolean {
-            transactions.value += transaction
-            return true
-        }
         override suspend fun updateTransaction(transaction: Transaction) { transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it } }
         override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) {
             val diff = transaction.amount - oldAmount

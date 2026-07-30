@@ -370,10 +370,6 @@ class DashboardViewModelTest {
             transactions.value.filter { it.debtId == debtId }
         override suspend fun addTransaction(transaction: Transaction) { transactions.value += transaction }
         override suspend fun addTransactionWithBalance(transaction: Transaction) { transactions.value += transaction }
-        override suspend fun executeTransfer(fromAccountId: String, toAccountId: String, amount: Long, transaction: Transaction): Boolean {
-            transactions.value += transaction
-            return true
-        }
         override suspend fun updateTransaction(transaction: Transaction) { transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it } }
         override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) { transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it } }
         override suspend fun deleteTransaction(id: String) { transactions.value = transactions.value.filterNot { it.id == id } }

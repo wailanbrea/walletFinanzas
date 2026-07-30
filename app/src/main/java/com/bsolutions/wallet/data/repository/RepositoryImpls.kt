@@ -157,18 +157,6 @@ class TransactionRepositoryImpl @Inject constructor(
         syncScheduler.requestSyncNow()
     }
 
-    override suspend fun executeTransfer(
-        fromAccountId: String,
-        toAccountId: String,
-        amount: Long,
-        transaction: Transaction
-    ): Boolean = dao.executeTransfer(
-        fromAccountId,
-        toAccountId,
-        amount,
-        transaction.toEntity(ownerScope.currentOwnerId())
-    )
-
     override suspend fun updateTransaction(transaction: Transaction) {
         // Tambien se encola: por aqui pasa atar un movimiento a una deuda, y sin subirlo
         // el otro telefono seguia contando lo prestado como gasto propio.
@@ -185,7 +173,13 @@ class TransactionRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteTransaction(id: String) {
-        dao.softDeleteTransaction(ownerScope.currentOwnerId(), id)
+        // Tambien encola: sin la lapida el borrado se quedaba aqui y el movimiento
+        // reaparecia en la siguiente sincronizacion, bajado del servidor.
+        val ownerId = ownerScope.currentOwnerId()
+        val existing = dao.getTransactionByIdIncludingDeleted(ownerId, id) ?: return
+        val tomb = existing.copy(isDeleted = true)
+        dao.softDeleteWithOp(tomb, SyncRepository.transactionOp(gson, tomb))
+        syncScheduler.requestSyncNow()
     }
 
     override suspend fun deleteTransactionWithBalance(transaction: Transaction) {

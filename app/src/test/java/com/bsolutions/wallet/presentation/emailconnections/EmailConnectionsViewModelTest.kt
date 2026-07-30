@@ -709,12 +709,6 @@ class EmailConnectionsViewModelTest {
                 added += transaction
             }
         }
-        override suspend fun executeTransfer(
-            fromAccountId: String,
-            toAccountId: String,
-            amount: Long,
-            transaction: Transaction
-        ) = false
         override suspend fun updateTransaction(transaction: Transaction) = Unit
         override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) = Unit
         override suspend fun deleteTransaction(id: String) = Unit

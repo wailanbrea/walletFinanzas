@@ -58,8 +58,8 @@ interface TransactionDao {
 
     /**
      * Registra un ingreso o gasto y ajusta el saldo de la cuenta en UNA sola transacción
-     * SQLite (evita el descuadre de la escritura en dos pasos). TRANSFER se maneja aparte
-     * con [executeTransfer].
+     * SQLite (evita el descuadre de la escritura en dos pasos). Una transferencia son dos
+     * movimientos, uno en cada cuenta, y cada uno pasa por aqui.
      */
     @Transaction
     suspend fun insertWithBalance(transaction: TransactionEntity): Boolean {
@@ -101,20 +101,6 @@ interface TransactionDao {
         if (insertWithBalance(transaction)) op?.let { insertPendingOp(it) }
     }
 
-    /** Actualiza ambos saldos y registra el movimiento en una sola transacción SQLite. */
-    @Transaction
-    suspend fun executeTransfer(
-        fromAccountId: String,
-        toAccountId: String,
-        amount: Long,
-        transaction: TransactionEntity
-    ): Boolean {
-        if (debitAccount(transaction.ownerId, fromAccountId, amount) != 1) return false
-        check(creditAccount(transaction.ownerId, toAccountId, amount) == 1) { "La cuenta de destino ya no existe" }
-        insertTransaction(transaction)
-        return true
-    }
-    
     @Update
     suspend fun updateTransaction(transaction: TransactionEntity): Int
 
@@ -143,6 +129,19 @@ interface TransactionDao {
         op: PendingOperationEntity?
     ) {
         updateWithBalance(updated, oldAmount)
+        op?.let { insertPendingOp(it) }
+    }
+
+    /**
+     * Borra un movimiento y encola la lapida, sin tocar el saldo.
+     *
+     * Es el caso de los movimientos que no movieron saldo por esta via, como los TRANSFER
+     * antiguos. Sin encolar aqui el borrado se quedaba en el telefono y el movimiento
+     * volvia del servidor en la siguiente sincronizacion.
+     */
+    @Transaction
+    suspend fun softDeleteWithOp(transaction: TransactionEntity, op: PendingOperationEntity?) {
+        softDeleteTransaction(transaction.ownerId, transaction.id)
         op?.let { insertPendingOp(it) }
     }
 
