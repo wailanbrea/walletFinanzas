@@ -89,10 +89,17 @@ fun WaterSurface(
         for (drop in water.droplets) {
             // Nacen en la superficie: se parte del nivel y se le suma su propia caida.
             val originY = surfaceY - slope + slope * 2f * drop.x
+            val centerY = if (drop.stuck) {
+                originY + drop.glassY * size.height
+            } else {
+                originY + drop.y * size.height
+            }
+            val fade = drop.life.coerceIn(0f, 1f)
+            // La pegada se ve algo mas marcada: en el vidrio concentra la luz.
             drawCircle(
-                color = color.copy(alpha = 0.55f * drop.life.coerceIn(0f, 1f)),
-                radius = drop.size * size.width,
-                center = Offset(drop.x * size.width, originY + drop.y * size.height)
+                color = color.copy(alpha = (if (drop.stuck) 0.70f else 0.55f) * fade),
+                radius = drop.size * size.width * (if (drop.stuck) 0.85f else 1f),
+                center = Offset(drop.x * size.width, centerY)
             )
         }
     }
@@ -148,7 +155,11 @@ private class Droplet(
     var vx: Float,
     var vy: Float,
     var life: Float = 1f,
-    val size: Float
+    val size: Float,
+    /** Pegada al cristal: ya no vuela, resbala. */
+    var stuck: Boolean = false,
+    /** Y absoluta en la tarjeta mientras está pegada, sin depender del nivel del agua. */
+    var glassY: Float = 0f
 )
 
 /** Estado del líquido: hacia dónde se inclina y cuánto chapotea. */
@@ -191,12 +202,35 @@ private fun advanceDroplets(water: WaterMotion, dt: Float, stirred: Float) {
     val iterator = water.droplets.iterator()
     while (iterator.hasNext()) {
         val drop = iterator.next()
+
+        if (drop.stuck) {
+            // Pegada al cristal no cae libre: la tensión superficial la retiene y de
+            // pronto cede. Ese avance a tirones es lo que delata una gota real; bajando
+            // a velocidad constante parece un punto animado.
+            val releases = Math.random().toFloat() < 0.06f
+            if (releases) drop.vy = 0.05f + Math.random().toFloat() * 0.09f
+            drop.vy *= 0.90f
+            drop.glassY += drop.vy * dt
+            // Se seca despacio: una gota en el vidrio dura mucho más que una en el aire.
+            drop.life -= dt * 0.22f
+            if (drop.life <= 0f || drop.glassY > 1.02f) iterator.remove()
+            continue
+        }
+
         drop.vy += gravity * dt
         drop.x += drop.vx * dt
         drop.y += drop.vy * dt
         drop.life -= dt * 1.1f
-        // Se retira al apagarse o al volver a la masa: seguir dibujandola bajo la
-        // superficie la haria verse como una burbuja.
+
+        // Al llegar arriba del arco la gota toca el cristal; unas se quedan pegadas y
+        // otras siguen cayendo, que es lo que pasa al agitar una botella.
+        if (drop.vy > 0f && drop.y < -0.02f && !drop.stuck && Math.random().toFloat() < 0.35f) {
+            drop.stuck = true
+            drop.glassY = drop.y
+            drop.vy = 0f
+            drop.life = 1f
+        }
+
         if (drop.life <= 0f || drop.y > 1.05f) iterator.remove()
     }
 
@@ -260,8 +294,8 @@ private fun rememberWaterMotion(): WaterMotion {
                 // Resorte amortiguado en vez de perseguir la gravedad con retardo: la
                 // superficie se pasa de largo y vuelve, que es lo que hace que se lea como
                 // líquido y no como una barra que se acomoda. Subamortiguado a propósito.
-                val stiffness = 26f
-                val damping = 4.2f
+                val stiffness = 20f
+                val damping = 3.4f
                 val acceleration = (target - water.tilt.floatValue) * stiffness - water.velocity * damping
                 water.velocity += acceleration * dt
                 water.tilt.floatValue += water.velocity * dt
