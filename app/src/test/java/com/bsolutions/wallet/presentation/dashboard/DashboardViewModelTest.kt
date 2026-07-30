@@ -113,9 +113,15 @@ class DashboardViewModelTest {
                 tx("1", 3_000L, "EXPENSE", thisMonth()),
                 // Prestado y cobrado: atados a una deuda, no son consumo propio.
                 tx("2", 20_000L, "EXPENSE", thisMonth()).copy(debtId = "d-1"),
-                tx("3", 5_000L, "INCOME", thisMonth()).copy(debtId = "d-1")
+                tx("3", 5_000L, "INCOME", thisMonth()).copy(debtId = "d-1"),
+                tx("4", 219_99L, "EXPENSE", thisMonth()).copy(debtId = "d-2")
             ),
-            debts = listOf(Debt("d-1", "David", "La mica", "OWED_TO_ME", 20_000L, 5_000L, null, false))
+            debts = listOf(
+                Debt("d-1", "David", "La mica", "OWED_TO_ME", 20_000L, 5_000L, null, false),
+                // Una deuda propia: pagarla es un gasto atado a una deuda, pero no es
+                // prestar. Sin mirar la direccion se sumaba a "Prestado".
+                Debt("d-2", "Samuel", "Cena", "I_OWE", 60_000L, 0L, null, false)
+            )
         )
 
         val state = awaitState(viewModel)
@@ -124,6 +130,7 @@ class DashboardViewModelTest {
         assertEquals(3_000L, state.monthlyExpenses)
         assertEquals(0L, state.monthlyIncome)
         // Pero visibles en el flujo, porque el dinero si se movio de la cuenta.
+        // Solo lo prestado de verdad: el pago de la deuda propia queda fuera.
         assertEquals(20_000L, state.monthlyLent)
         assertEquals(5_000L, state.monthlyCollected)
         assertEquals(15_000L, state.outstandingReceivable)

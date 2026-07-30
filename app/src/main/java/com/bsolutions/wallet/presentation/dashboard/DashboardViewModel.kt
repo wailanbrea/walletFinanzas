@@ -106,6 +106,14 @@ data class DashboardUiState(
     /** Lo que sigue pendiente de cobrar, de todas las deudas abiertas. */
     val outstandingReceivable: Long = 0L,
     /**
+     * Movimientos del período atados a una deuda, a la espera de saber su dirección.
+     *
+     * Se llena en el paso que agrega los movimientos y se vacía en el que conoce las
+     * deudas: pagar una deuda propia y prestar dinero son ambos un gasto atado a una
+     * deuda, y solo la dirección los distingue.
+     */
+    val periodDebtTransactions: List<Transaction> = emptyList(),
+    /**
      * Cuánto llena el agua de la tarjeta de balance.
      *
      * Sin metas es decorativa y llega a la mitad. Con metas representa el avance de la
@@ -228,9 +236,9 @@ class DashboardViewModel @Inject constructor(
         // falta en la cuenta no aparece en ningun lado del flujo y no cuadra.
         // Solo lo atado a una deuda. Filtrar por "no es consumo" metia aqui tambien las
         // transferencias, y mover dinero a tu propia tarjeta aparecia como cobrado.
-        val debtTx = thisMonthTx.filter { it.debtId != null }
-        val lent = debtTx.filter { it.type == "EXPENSE" }.sumOf { it.amount }
-        val collected = debtTx.filter { it.type == "INCOME" }.sumOf { it.amount }
+        // El reparto entre prestado y cobrado se hace mas abajo, cuando se conocen las
+        // direcciones: pagar una deuda propia tambien es un gasto atado a una deuda, y
+        // aqui no hay forma de distinguirlo de prestar.
 
         // Tendencia real: gasto de este mes vs el mes anterior
         val prevExpenses = transactions
@@ -263,8 +271,7 @@ class DashboardViewModel @Inject constructor(
             foreignBalancesSubtitle = foreignSubtitle,
             monthlyIncome = income,
             monthlyExpenses = expenses,
-            monthlyLent = lent,
-            monthlyCollected = collected,
+            periodDebtTransactions = thisMonthTx.filter { it.debtId != null },
             expenseTrendPercent = trend,
             categorySpending = spending,
             recentTransactions = filteredTransactions.sortedByDescending { it.date }.take(5),
@@ -278,7 +285,17 @@ class DashboardViewModel @Inject constructor(
     }
         // Encadenado y no dentro del combine porque el overload tipado se queda en cinco.
         .combine(debtRepository.getDebts()) { state, debts ->
+            // Solo las deudas a tu favor cuentan como prestar y cobrar. Pagar una deuda
+            // propia es un gasto atado a una deuda igual que prestar, y sin mirar la
+            // direccion se sumaba a "Prestado" dinero que en realidad estabas devolviendo.
+            val receivables = debts.filterTo(mutableSetOf()) { it.direction == DEBT_OWED_TO_ME }
+                .mapTo(mutableSetOf()) { it.id }
+            val mine = state.periodDebtTransactions.filter { it.debtId in receivables }
+
             state.copy(
+                monthlyLent = mine.filter { it.type == "EXPENSE" }.sumOf { it.amount },
+                monthlyCollected = mine.filter { it.type == "INCOME" }.sumOf { it.amount },
+                periodDebtTransactions = emptyList(),
                 outstandingReceivable = debts
                     .filter { it.direction == DEBT_OWED_TO_ME && !it.isClosed }
                     .sumOf { it.remainingAmount }
