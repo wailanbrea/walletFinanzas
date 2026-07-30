@@ -209,6 +209,39 @@ internal fun CashFlowCard(uiState: DashboardUiState) {
             color = MaterialTheme.colorScheme.error,
             hidden = false
         )
+        // Un prestamo no es gasto, pero el dinero si salio de la cuenta. Sin esta linea
+        // el flujo no cuadra con el balance y parece que falta plata sin explicacion.
+        if (uiState.monthlyLent > 0L || uiState.monthlyCollected > 0L) {
+            Spacer(Modifier.height(10.dp))
+            AmountProgressRow(
+                label = stringResource(R.string.dashboard_lent),
+                amount = uiState.monthlyLent,
+                progress = uiState.monthlyLent / maximum,
+                color = MaterialTheme.colorScheme.tertiary,
+                hidden = false
+            )
+            if (uiState.monthlyCollected > 0L) {
+                Spacer(Modifier.height(10.dp))
+                AmountProgressRow(
+                    label = stringResource(R.string.dashboard_collected),
+                    amount = uiState.monthlyCollected,
+                    progress = uiState.monthlyCollected / maximum,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    hidden = false
+                )
+            }
+        }
+        if (uiState.outstandingReceivable > 0L) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(
+                    R.string.dashboard_outstanding_receivable,
+                    MoneyFormat.format(uiState.outstandingReceivable)
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

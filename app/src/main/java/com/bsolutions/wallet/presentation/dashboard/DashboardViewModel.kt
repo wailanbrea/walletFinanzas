@@ -15,6 +15,8 @@ import com.bsolutions.wallet.data.preferences.UserProfilePreferences
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.repository.CategoryRepository
+import com.bsolutions.wallet.domain.repository.DebtRepository
+import com.bsolutions.wallet.domain.usecase.DEBT_OWED_TO_ME
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -95,6 +97,12 @@ data class DashboardUiState(
     val foreignBalancesSubtitle: String? = null,
     val monthlyIncome: Long = 0L,
     val monthlyExpenses: Long = 0L,
+    /** Dinero que salió en el período por préstamos a terceros. */
+    val monthlyLent: Long = 0L,
+    /** Dinero que volvió en el período por deudas cobradas. */
+    val monthlyCollected: Long = 0L,
+    /** Lo que sigue pendiente de cobrar, de todas las deudas abiertas. */
+    val outstandingReceivable: Long = 0L,
     /** Variación % del gasto de este mes vs el anterior; null si no hay base de comparación. */
     val expenseTrendPercent: Int? = null,
     val categorySpending: List<CategorySpend> = emptyList(),
@@ -114,6 +122,7 @@ class DashboardViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
     private val categoryRepository: CategoryRepository,
     private val userPreferencesRepository: UserProfilePreferences,
+    private val debtRepository: DebtRepository,
     // Default para tests: Hilt inyecta la implementación real de todos modos.
     private val categoryRules: CategoryRuleRepository = EmptyCategoryRules
 ) : ViewModel() {
@@ -205,6 +214,11 @@ class DashboardViewModel @Inject constructor(
         val consumptionTx = thisMonthTx.filter { it.isConsumption }
         val income = consumptionTx.filter { it.type == "INCOME" }.sumOf { it.amount }
         val expenses = consumptionTx.filter { it.type == "EXPENSE" }.sumOf { it.amount }
+        // Lo prestado sale del bolsillo aunque no sea gasto: sin mostrarlo, el dinero que
+        // falta en la cuenta no aparece en ningun lado del flujo y no cuadra.
+        val debtTx = thisMonthTx.filterNot { it.isConsumption }
+        val lent = debtTx.filter { it.type == "EXPENSE" }.sumOf { it.amount }
+        val collected = debtTx.filter { it.type == "INCOME" }.sumOf { it.amount }
 
         // Tendencia real: gasto de este mes vs el mes anterior
         val prevExpenses = transactions
@@ -237,6 +251,8 @@ class DashboardViewModel @Inject constructor(
             foreignBalancesSubtitle = foreignSubtitle,
             monthlyIncome = income,
             monthlyExpenses = expenses,
+            monthlyLent = lent,
+            monthlyCollected = collected,
             expenseTrendPercent = trend,
             categorySpending = spending,
             recentTransactions = filteredTransactions.sortedByDescending { it.date }.take(5),
@@ -247,7 +263,16 @@ class DashboardViewModel @Inject constructor(
             selectedCards = DashboardCardType.fromStorageIds(profile.dashboardCardIds),
             balancesHidden = profile.balancesHidden
         )
-    }.stateIn(
+    }
+        // Encadenado y no dentro del combine porque el overload tipado se queda en cinco.
+        .combine(debtRepository.getDebts()) { state, debts ->
+            state.copy(
+                outstandingReceivable = debts
+                    .filter { it.direction == DEBT_OWED_TO_ME && !it.isClosed }
+                    .sumOf { it.remainingAmount }
+            )
+        }
+        .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = DashboardUiState()

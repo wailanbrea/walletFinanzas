@@ -94,6 +94,9 @@
     <string name="dashboard_total_balance">Balance Total</string>
     <string name="dashboard_income">Ingresos</string>
     <string name="dashboard_expenses">Gastos</string>
+    <string name="dashboard_lent">Prestado</string>
+    <string name="dashboard_collected">Cobrado</string>
+    <string name="dashboard_outstanding_receivable">Te deben %1$s en total</string>
     <string name="dashboard_expenses_by_category">Gastos por Categoría</string>
     <string name="dashboard_recent_transactions">Transacciones Recientes</string>
     <string name="dashboard_see_all">Ver todas</string>

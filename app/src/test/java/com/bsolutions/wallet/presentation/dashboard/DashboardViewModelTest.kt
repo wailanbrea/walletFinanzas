@@ -8,6 +8,8 @@ import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.Transaction
 
+import com.bsolutions.wallet.domain.model.Debt
+import com.bsolutions.wallet.domain.repository.DebtRepository
 import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import kotlinx.coroutines.Dispatchers
@@ -64,12 +66,14 @@ class DashboardViewModelTest {
     private fun buildViewModel(
         transactions: List<Transaction>,
         categories: List<Category> = listOf(Category("food", "Alimentación", "restaurant", "#1B873F")),
-        preferences: FakeUserProfilePreferences = FakeUserProfilePreferences()
+        preferences: FakeUserProfilePreferences = FakeUserProfilePreferences(),
+        debts: List<Debt> = emptyList()
     ): DashboardViewModel = DashboardViewModel(
         FakeAccountRepository(Account("acc-1", "Cuenta", "BANK", 50_000L, "DOP")),
         FakeTransactionRepository(transactions),
         FakeCategoryRepository(categories),
-        preferences
+        preferences,
+        FakeDebtRepository(debts)
     )
 
     private suspend fun kotlinx.coroutines.test.TestScope.awaitState(viewModel: DashboardViewModel): DashboardUiState {
@@ -95,6 +99,31 @@ class DashboardViewModelTest {
 
         assertEquals(10_000L, state.monthlyIncome)
         assertEquals(3_000L, state.monthlyExpenses)
+    }
+
+    @Test
+    fun `un prestamo no es gasto pero si aparece en el flujo`() = runTest {
+        val viewModel = buildViewModel(
+            listOf(
+                tx("1", 3_000L, "EXPENSE", thisMonth()),
+                // Prestado y cobrado: atados a una deuda, no son consumo propio.
+                tx("2", 20_000L, "EXPENSE", thisMonth()).copy(debtId = "d-1"),
+                tx("3", 5_000L, "INCOME", thisMonth()).copy(debtId = "d-1")
+            ),
+            debts = listOf(Debt("d-1", "David", "La mica", "OWED_TO_ME", 20_000L, 5_000L, null, false))
+        )
+
+        val state = awaitState(viewModel)
+
+        // Fuera de gastos e ingresos: si contaran, el mes se veria como un gasto enorme.
+        assertEquals(3_000L, state.monthlyExpenses)
+        assertEquals(0L, state.monthlyIncome)
+        // Pero visibles en el flujo, porque el dinero si se movio de la cuenta.
+        assertEquals(20_000L, state.monthlyLent)
+        assertEquals(5_000L, state.monthlyCollected)
+        assertEquals(15_000L, state.outstandingReceivable)
+        // Y tampoco distorsionan el donut.
+        assertEquals(3_000L, state.categorySpending.sumOf { it.amount })
     }
 
     @Test
@@ -305,7 +334,8 @@ class DashboardViewModelTest {
             FakeAccountRepository(Account("acc-1", "Cuenta", "BANK", 0L, "DOP")),
             FakeTransactionRepository(emptyList()),
             categories,
-            FakeUserProfilePreferences()
+            FakeUserProfilePreferences(),
+            FakeDebtRepository()
         )
 
         advanceUntilIdle()
@@ -353,6 +383,19 @@ class DashboardViewModelTest {
 
         override suspend fun setDashboardCardIds(cardIds: Set<String>) {
             profile.value = profile.value.copy(dashboardCardIds = cardIds)
+        }
+    }
+
+    private class FakeDebtRepository(initial: List<Debt> = emptyList()) : DebtRepository {
+        private val debts = MutableStateFlow(initial)
+        override fun getDebts(): Flow<List<Debt>> = debts
+        override suspend fun getDebt(id: String): Debt? = debts.value.firstOrNull { it.id == id }
+        override suspend fun addDebt(debt: Debt) { debts.value = debts.value + debt }
+        override suspend fun updateDebt(debt: Debt) {
+            debts.value = debts.value.map { if (it.id == debt.id) debt else it }
+        }
+        override suspend fun deleteDebt(id: String) {
+            debts.value = debts.value.filterNot { it.id == id }
         }
     }
 
