@@ -149,6 +149,8 @@ class WalletSyncResourceController extends Controller
                 'name' => ['required', 'string', 'max:120'],
                 'icon' => ['required', 'string', 'max:80'],
                 'color_hex' => ['required', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+                // Opcional para que un cliente viejo, que no lo manda, siga funcionando.
+                'type' => ['sometimes', Rule::in(['EXPENSE', 'INCOME', 'BOTH'])],
             ],
             'budgets' => [
                 'category_id' => ['required', 'string', 'max:100'],
