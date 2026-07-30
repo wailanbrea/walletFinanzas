@@ -205,4 +205,54 @@ class FinancialEmailExtractorTest extends TestCase
 
         $this->assertSame('8324', $result['card_last_four']);
     }
+
+    public function test_it_reads_banreservas_fields_with_colon_pipe_and_two_bullets(): void
+    {
+        $result = $this->extractor->extract(
+            'Notificaciones Banreservas',
+            'Notificación de Consumo | Su tarjeta MCG-MULTIMONEDA ••4116 presenta un consumo. | Monto: | DOP 380.01 | Comercio: | HELADOS BON SM NACIONA SANTO DOMINGO DOM | Estado: | APROBADO',
+            null
+        );
+
+        $this->assertSame('HELADOS BON SM NACIONA SANTO DOMINGO DOM', $result['merchant']);
+        $this->assertSame('4116', $result['card_last_four']);
+        $this->assertSame('Restaurantes', $result['category_suggestion']);
+    }
+
+    public function test_it_reads_a_merchant_on_the_line_after_the_label(): void
+    {
+        $result = $this->extractor->extract(
+            'Recibo de su pago a Epic Games Commerce...',
+            "Ha pagado $22.99 USD\nComercio\nEpic Games Commerce",
+            null
+        );
+
+        $this->assertSame('Epic Games', $result['merchant']);
+        $this->assertSame('Entretenimiento', $result['category_suggestion']);
+    }
+
+    public function test_aliexpress_receipts_use_a_specific_purchase_category(): void
+    {
+        $result = $this->extractor->extract(
+            'Recibo de su pago a AliExpress',
+            'Pago completado USD 15.00',
+            null
+        );
+
+        $this->assertSame('AliExpress', $result['merchant']);
+        $this->assertSame('Compras', $result['category_suggestion']);
+    }
+
+    public function test_it_reads_qik_locality_and_partially_masked_card(): void
+    {
+        $result = $this->extractor->extract(
+            'Usaste tu tarjeta de crédito Qik',
+            "Tarjeta  53*************8324\nSe hizo una transacción de RD$ 1,214.35 en OPENAI *CHATGPT SUBSCR con tu tarjeta crédito Qik\nLocalidad       OPENAI *CHATGPT SUB",
+            null
+        );
+
+        $this->assertSame('OPENAI *CHATGPT SUB', $result['merchant']);
+        $this->assertSame('8324', $result['card_last_four']);
+        $this->assertSame('Servicios', $result['category_suggestion']);
+    }
 }

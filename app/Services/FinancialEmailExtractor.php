@@ -64,8 +64,11 @@ class FinancialEmailExtractor
             '/\b(?:terminad[ao]s?|termina|finalizada|ending)\s+(?:en|in)\s*[:\-]?\s*(?<digits>\d{4})\b/iu',
             // Mascara antes de los digitos: "****1234", "xxxx-1234", "•••• 1234"
             '/(?:[*x•·]\s*){3,}[\s\-]*(?<digits>\d{4})\b/iu',
-            // BIN visible y resto enmascarado: "401234******1234"
-            '/\b\d{6}[*x]{4,}(?<digits>\d{4})\b/iu',
+            // Prefijo visible y resto enmascarado: "53*************8324" o
+            // "401234******1234". Qik solo deja visibles dos digitos al inicio.
+            '/\b\d{2,6}[*x]{4,}(?<digits>\d{4})\b/iu',
+            // Banreservas usa solo dos viñetas: "Su tarjeta MCG-MULTIMONEDA ••4116".
+            '/\btarjeta\b[^\n|]{0,80}?(?:[*x•·]\s*){2,}[\s\-]*(?<digits>\d{4})\b/iu',
             // Etiqueta con separador obligatorio: "Tarjeta No.: 1234". La barra entra
             // porque asi quedan las celdas de tabla al convertir el cuerpo a texto.
             '/\btarjeta\s*(?:n[uú]mero|no\.?|#)?\s*[:|\-]\s*[*x•·\s\-]*(?<digits>\d{4})\b/iu',
@@ -138,6 +141,8 @@ class FinancialEmailExtractor
             'jumbo' => 'Jumbo',
             'la sirena' => 'La Sirena',
             'super pola' => 'Super Pola',
+            'epic games' => 'Epic Games',
+            'aliexpress' => 'AliExpress',
         ];
 
         // Primero las marcas conocidas: dan un nombre canonico y limpio ("PayPal" y no
@@ -161,8 +166,12 @@ class FinancialEmailExtractor
      */
     private function merchantFromLabel(string $text): ?string
     {
-        $labels = 'comercio|establecimiento|negocio|afiliado|adquirente|merchant|lugar de consumo';
-        if (! preg_match('/\b(?:'.$labels.')\b\s*[:|]\s*(?<value>[^\n|]{2,60})/iu', $text, $match)) {
+        $labels = 'comercio|establecimiento|negocio|afiliado|adquirente|merchant|lugar de consumo|localidad';
+        // Algunos HTML producen "Comercio: | NOMBRE" (dos separadores) y PayPal
+        // produce "Comercio\nNOMBRE" sin puntuacion. Ambos siguen siendo campos
+        // estructurados y no prosa libre.
+        $separator = '(?:(?:\h*[:|]\h*)+\R?|\h*\R+\h*|\h{2,})';
+        if (! preg_match('/\b(?:'.$labels.')\b'.$separator.'(?<value>[^\n|]{2,60})/iu', $text, $match)) {
             return null;
         }
         $value = trim(preg_replace('/\s+/u', ' ', $match['value']) ?? $match['value']);
@@ -196,15 +205,15 @@ class FinancialEmailExtractor
 
         $rules = [
             'Alimentación' => '/\b(supermercado|colmado|nacional|jumbo|sirena|pola|bravo|grocer|market|panader[ií]a)\b/iu',
-            'Restaurantes' => '/\b(restaurante|pizza|burger|mcdonald|kfc|domino|sushi|pedidosya)\b/iu',
+            'Restaurantes' => '/\b(restaurante|pizza|burger|mcdonald|kfc|domino|sushi|pedidosya|helad(?:o|os|er[ií]a))\b/iu',
             'Transporte' => '/\b(uber|didi|indriver|taxi|gasolina|combustible|peaje|parqueo|metro)\b/iu',
-            'Servicios' => '/\b(claro|altice|viva|edesur|edenorte|edeeste|internet|tel[eé]fono|factura|electricidad|agua)\b/iu',
-            'Entretenimiento' => '/\b(netflix|spotify|hbo|disney|cine|steam|concierto|juego)\b/iu',
+            'Servicios' => '/\b(claro|altice|viva|edesur|edenorte|edeeste|internet|tel[eé]fono|factura|electricidad|agua|openai|chatgpt)\b/iu',
+            'Entretenimiento' => '/\b(netflix|spotify|hbo|disney|cine|steam|epic games|concierto|juego)\b/iu',
             'Salud' => '/\b(farmacia|cl[ií]nica|hospital|m[eé]dic|dentista|laboratorio)\b/iu',
             'Viajes' => '/\b(vuelo|hotel|airbnb|aeropuerto|arajet|jetblue|resort)\b/iu',
             'Educación' => '/\b(colegio|universidad|curso|libro|matr[ií]cula|inscripci[oó]n)\b/iu',
-            'Vivienda' => '/\b(alquiler|renta|hipoteca|condominio)\b/iu',
-            'Compras' => '/\b(paypal|amazon|google|apple|zara|shein|temu|tienda|shopping|ropa|calzado)\b/iu',
+            'Vivienda' => '/\b(alquiler|renta|hipoteca|condominio|ferreter[ií]a)\b/iu',
+            'Compras' => '/\b(paypal|amazon|aliexpress|google|apple|zara|shein|temu|tienda|shopping|ropa|calzado)\b/iu',
         ];
 
         foreach ($rules as $category => $pattern) {

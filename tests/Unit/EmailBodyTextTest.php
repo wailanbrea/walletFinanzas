@@ -12,7 +12,7 @@ class EmailBodyTextTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->bodyText = new EmailBodyText();
+        $this->bodyText = new EmailBodyText;
     }
 
     public function test_table_cells_do_not_get_glued_together(): void

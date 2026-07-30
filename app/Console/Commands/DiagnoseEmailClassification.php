@@ -62,7 +62,7 @@ class DiagnoseEmailClassification extends Command
                 $noMerchant[] = $message->subject;
                 $noMerchantSamples[] = $message;
             }
-            if (blank($extracted['category_suggestion'])) {
+            if (blank($extracted['category_suggestion']) || $extracted['category_suggestion'] === 'Otros') {
                 $noCategory[] = $message->subject;
             }
             if (blank($extracted['card_last_four'])) {
@@ -79,7 +79,7 @@ class DiagnoseEmailClassification extends Command
             $this->newLine();
             $this->info('De los reconocidos:');
             $this->line('  Sin comercio identificado: '.$this->withPercent(count($noMerchant), $classified));
-            $this->line('  Sin categoría sugerida: '.$this->withPercent(count($noCategory), $classified));
+            $this->line('  Sin categoría específica: '.$this->withPercent(count($noCategory), $classified));
             $this->line('  Sin tarjeta detectada: '.$this->withPercent($noCard, $classified));
         }
 

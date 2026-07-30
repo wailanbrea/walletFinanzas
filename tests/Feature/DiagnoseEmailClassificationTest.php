@@ -24,6 +24,7 @@ class DiagnoseEmailClassificationTest extends TestCase
             ->expectsOutputToContain('Correos analizados: 3')
             ->expectsOutputToContain('Reconocidos como movimiento')
             ->expectsOutputToContain('Sin comercio identificado')
+            ->expectsOutputToContain('Sin categoría específica')
             // El techo: se reporta cuanto texto habia para clasificar.
             ->expectsOutputToContain('Texto disponible por correo')
             ->assertSuccessful();
