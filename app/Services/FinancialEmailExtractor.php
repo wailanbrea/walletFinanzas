@@ -66,8 +66,9 @@ class FinancialEmailExtractor
             '/(?:[*x•·]\s*){3,}[\s\-]*(?<digits>\d{4})\b/iu',
             // BIN visible y resto enmascarado: "401234******1234"
             '/\b\d{6}[*x]{4,}(?<digits>\d{4})\b/iu',
-            // Etiqueta con separador obligatorio: "Tarjeta No.: 1234"
-            '/\btarjeta\s*(?:n[uú]mero|no\.?|#)?\s*[:\-]\s*[*x•·\s\-]*(?<digits>\d{4})\b/iu',
+            // Etiqueta con separador obligatorio: "Tarjeta No.: 1234". La barra entra
+            // porque asi quedan las celdas de tabla al convertir el cuerpo a texto.
+            '/\btarjeta\s*(?:n[uú]mero|no\.?|#)?\s*[:|\-]\s*[*x•·\s\-]*(?<digits>\d{4})\b/iu',
         ];
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $match) === 1) {
@@ -139,13 +140,52 @@ class FinancialEmailExtractor
             'super pola' => 'Super Pola',
         ];
 
+        // Primero las marcas conocidas: dan un nombre canonico y limpio ("PayPal" y no
+        // "PAYPAL *EBAY COMMERCE"), que ademas es el que alimenta la categorizacion.
         foreach ($merchants as $needle => $merchant) {
             if (preg_match('/(?<![\pL\pN])'.preg_quote($needle, '/').'(?![\pL\pN])/iu', $text)) {
                 return $merchant;
             }
         }
 
-        return null;
+        return $this->merchantFromLabel($text);
+    }
+
+    /**
+     * Comercio tomado del campo que el propio banco etiqueta.
+     *
+     * La lista de marcas solo reconoce lo que ya conoce, asi que cualquier negocio local
+     * quedaba como "no identificado" por mucho texto que trajera el correo. Los avisos si
+     * traen el dato rotulado: "Comercio: FERRETERIA OCHOA". El separador puede ser una
+     * barra porque asi quedan las celdas de tabla al convertir el cuerpo a texto.
+     */
+    private function merchantFromLabel(string $text): ?string
+    {
+        $labels = 'comercio|establecimiento|negocio|afiliado|adquirente|merchant|lugar de consumo';
+        if (! preg_match('/\b(?:'.$labels.')\b\s*[:|]\s*(?<value>[^\n|]{2,60})/iu', $text, $match)) {
+            return null;
+        }
+        $value = trim(preg_replace('/\s+/u', ' ', $match['value']) ?? $match['value']);
+        // En una celda de tabla la barra ya acota el valor, pero en prosa el rotulo va
+        // seguido del resto de la frase: "Establecimiento: PANADERIA por RD$250.00". Se
+        // corta donde empieza otro dato para no quedarse con media oracion por nombre.
+        $value = preg_split(
+            '/\s+(?:por|monto|importe|fecha|el d[ií]a|referencia|autorizaci[oó]n|tarjeta)\b|\s*(?:RD\$|USD|DOP|EUR|€|\$)/iu',
+            $value
+        )[0] ?? $value;
+        // Quita puntuacion de cierre que arrastra la celda siguiente.
+        $value = trim($value, " .,;:-–—\t");
+
+        // Tiene que parecer un nombre: un monto o un numero suelto no es un comercio.
+        if (mb_strlen($value) < 2 || ! preg_match('/\pL{2}/u', $value)) {
+            return null;
+        }
+        // Un rotulo seguido de otro rotulo significa que la celda venia vacia.
+        if (preg_match('/^(?:'.$labels.'|monto|tarjeta|fecha|referencia|autorizaci[oó]n)\b/iu', $value)) {
+            return null;
+        }
+
+        return mb_substr($value, 0, 60);
     }
 
     private function category(string $text, bool $expense): string

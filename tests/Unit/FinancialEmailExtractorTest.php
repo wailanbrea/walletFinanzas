@@ -135,4 +135,74 @@ class FinancialEmailExtractorTest extends TestCase
         // clara se descarta en vez de desplazar el importe por un factor de sesenta.
         $this->assertNull($this->extractor->extract('Compra aprobada', 'Cargo por $1,500.00', null));
     }
+
+    public function test_it_reads_a_merchant_it_has_never_seen_from_the_labelled_field(): void
+    {
+        // El caso que dejaba dos de cada tres avisos sin comercio: un negocio local no
+        // esta ni puede estar en la lista de marcas conocidas.
+        $body = "Compra aprobada\nComercio | FERRETERIA OCHOA SRL | Monto | RD$3,450.00";
+
+        $result = $this->extractor->extract('Notificación de Consumo', $body, null);
+
+        $this->assertSame('FERRETERIA OCHOA SRL', $result['merchant']);
+        $this->assertSame(345000, $result['amount']);
+    }
+
+    public function test_the_label_accepts_a_colon_as_well_as_a_table_cell(): void
+    {
+        $result = $this->extractor->extract(
+            'Consumo aprobado',
+            'Establecimiento: PANADERIA DEL SUR por RD$250.00',
+            null
+        );
+
+        $this->assertSame('PANADERIA DEL SUR', $result['merchant']);
+    }
+
+    public function test_a_known_brand_still_wins_over_the_raw_labelled_text(): void
+    {
+        // El nombre canonico es mas limpio y es el que alimenta la categorizacion.
+        $result = $this->extractor->extract(
+            'Compra aprobada',
+            'Comercio | PAYPAL *EBAY COMMERCE | Monto | RD$1,000.00',
+            null
+        );
+
+        $this->assertSame('PayPal', $result['merchant']);
+    }
+
+    public function test_an_empty_cell_does_not_turn_the_next_label_into_a_merchant(): void
+    {
+        $result = $this->extractor->extract(
+            'Compra aprobada',
+            'Comercio | | Monto | RD$500.00 | Tarjeta | ****4266',
+            null
+        );
+
+        $this->assertNull($result['merchant']);
+        // Pero la tarjeta sí se lee de la celda.
+        $this->assertSame('4266', $result['card_last_four']);
+    }
+
+    public function test_a_number_is_never_taken_as_a_merchant_name(): void
+    {
+        $result = $this->extractor->extract(
+            'Compra aprobada',
+            'Comercio | 00123456 | Monto | RD$700.00',
+            null
+        );
+
+        $this->assertNull($result['merchant']);
+    }
+
+    public function test_it_reads_the_card_from_a_table_cell_without_a_mask(): void
+    {
+        $result = $this->extractor->extract(
+            'Consumo aprobado',
+            'Tarjeta | 8324 | Monto | RD$1,214.35',
+            null
+        );
+
+        $this->assertSame('8324', $result['card_last_four']);
+    }
 }
