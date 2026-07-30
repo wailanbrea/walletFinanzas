@@ -15,10 +15,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -43,7 +43,7 @@ fun WaterSurface(
     color: Color,
     modifier: Modifier = Modifier
 ) {
-    val tilt = rememberDeviceTilt()
+    val tilt = rememberDeviceTilt()  // se lee dentro del Canvas, no aquí
     // El nivel se anima para que al cambiar de meta el agua suba en vez de saltar.
     val filled by animateFloatAsState(
         targetValue = level.coerceIn(0f, 1f),
@@ -64,9 +64,10 @@ fun WaterSurface(
     Canvas(modifier = modifier) {
         if (filled <= 0f) return@Canvas
         val surfaceY = size.height * (1f - filled)
-        // La inclinación mueve un extremo respecto al otro: es lo que hace que el agua
-        // parezca quedarse horizontal mientras el teléfono gira.
-        val slope = tilt * size.height * 0.12f
+        // Desnivel entre un extremo y el otro. Va contra el ancho y no contra el alto:
+        // la superficie cruza la tarjeta a lo largo, así que un desnivel medido en la
+        // altura quedaba en unos pocos píxeles y no se veía nada.
+        val slope = tilt.value * size.width * 0.22f
 
         drawWave(
             surfaceY = surfaceY,
@@ -125,11 +126,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
  * no se ve nada gasta batería sin que el usuario tenga forma de notarlo.
  */
 @Composable
-private fun rememberDeviceTilt(): Float {
+private fun rememberDeviceTilt(): FloatState {
     // En las vistas previas y en los tests no hay sensor: el agua se queda quieta.
-    if (LocalInspectionMode.current) return 0f
+    if (LocalInspectionMode.current) return remember { mutableFloatStateOf(0f) }
     val context = LocalContext.current
-    var tilt by remember { mutableFloatStateOf(0f) }
+    // Se devuelve el estado y no su valor: leerlo dentro del Canvas invalida solo el
+    // dibujo. Leyendolo aqui, cada evento del sensor obligaria a recomponer la tarjeta
+    // entera, que es carisimo a la frecuencia del acelerometro.
+    val tilt = remember { mutableFloatStateOf(0f) }
 
     DisposableEffect(context) {
         val sensors = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
@@ -138,14 +142,17 @@ private fun rememberDeviceTilt(): Float {
             override fun onSensorChanged(event: SensorEvent) {
                 // El eje X en m/s²; a 9.8 el teléfono está de lado. Se suaviza para que
                 // el agua no tiemble con el pulso.
-                val target = (event.values[0] / 9.8f).coerceIn(-1f, 1f)
-                tilt += (target - tilt) * 0.12f
+                // El eje X es el giro lateral: a 9.8 m/s² el teléfono está de lado. Se
+                // amplifica porque en la mano se inclina poco, y se suaviza lo justo para
+                // que no tiemble con el pulso sin que llegue tarde.
+                val target = (event.values[0] / 4.5f).coerceIn(-1f, 1f)
+                tilt.floatValue += (target - tilt.floatValue) * 0.35f
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
         }
         if (accelerometer != null) {
-            sensors.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+            sensors.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_GAME)
         }
         onDispose { sensors?.unregisterListener(listener) }
     }
