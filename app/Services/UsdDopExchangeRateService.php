@@ -5,6 +5,7 @@ namespace App\Services;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -119,13 +120,37 @@ class UsdDopExchangeRateService
                 $from
             ));
             if (! $response->successful()) {
+                $this->warnRateUnavailable($from, $day, 'respuesta '.$response->status());
+
                 return null;
             }
             $rate = data_get($response->json(), $from.'.dop');
+            if (! is_numeric($rate) || (float) $rate <= 0) {
+                $this->warnRateUnavailable($from, $day, 'la respuesta no trae una tasa utilizable');
 
-            return is_numeric($rate) && (float) $rate > 0 ? (float) $rate : null;
-        } catch (Throwable) {
+                return null;
+            }
+
+            return (float) $rate;
+        } catch (Throwable $exception) {
+            $this->warnRateUnavailable($from, $day, $exception->getMessage());
+
             return null;
         }
+    }
+
+    /**
+     * Deja rastro de por que no hubo tasa.
+     *
+     * Sin esto el candidato se queda sin conversion en silencio y no hay forma de
+     * distinguir un dia sin datos publicados de un fallo de red del servidor.
+     */
+    private function warnRateUnavailable(string $from, CarbonImmutable $day, string $reason): void
+    {
+        Log::warning('No se pudo obtener la tasa de cambio', [
+            'from' => strtoupper($from),
+            'date' => $day->toDateString(),
+            'reason' => $reason,
+        ]);
     }
 }
