@@ -69,8 +69,8 @@ fun TransactionsScreen(
             },
             linkedDebt = tx.debtId?.let { id -> uiState.receivables.find { it.id == id } },
             openReceivables = uiState.openReceivables,
-            onMarkAsLoan = { personName ->
-                viewModel.markAsLoan(tx, personName)
+            onMarkAsLoan = { personName, note ->
+                viewModel.markAsLoan(tx, personName, note)
                 selectedTransaction = null
             },
             onApplyToDebt = { debtId ->
@@ -227,7 +227,7 @@ fun TransactionDetailSheet(
     linkedDebt: Debt? = null,
     /** Deudas por cobrar abiertas: a ellas se puede aplicar un ingreso como abono. */
     openReceivables: List<Debt> = emptyList(),
-    onMarkAsLoan: (personName: String) -> Unit = {},
+    onMarkAsLoan: (personName: String, note: String) -> Unit = { _, _ -> },
     onApplyToDebt: (debtId: String) -> Unit = {},
     onUnlinkDebt: () -> Unit = {}
 ) {
@@ -235,6 +235,7 @@ fun TransactionDetailSheet(
     var askLoanName by remember { mutableStateOf(false) }
     var pickDebt by remember { mutableStateOf(false) }
     var loanPersonName by remember { mutableStateOf("") }
+    var loanNote by remember { mutableStateOf("") }
     var amountStr by remember { mutableStateOf(String.format(Locale.US, "%.2f", transaction.amount / 100.0)) }
     var note by remember { mutableStateOf(transaction.note) }
     var selectedCategoryId by remember(transaction.id, categories) {
@@ -402,13 +403,21 @@ fun TransactionDetailSheet(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    // Sirve para acordarse de que era el prestamo cuando pasen meses.
+                    OutlinedTextField(
+                        value = loanNote,
+                        onValueChange = { loanNote = it },
+                        label = { Text(stringResource(R.string.tx_loan_note)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         askLoanName = false
-                        onMarkAsLoan(loanPersonName)
+                        onMarkAsLoan(loanPersonName, loanNote)
                     },
                     enabled = loanPersonName.isNotBlank()
                 ) { Text(stringResource(R.string.common_save)) }

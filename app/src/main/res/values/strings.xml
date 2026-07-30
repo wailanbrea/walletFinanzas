@@ -197,6 +197,12 @@
     <string name="debts_owed_to_me">Me deben</string>
     <string name="debts_settled">Saldada</string>
     <string name="debts_remaining_of">Restan %1$s de %2$s</string>
+    <string name="debts_none_i_owe">No le debes nada a nadie.</string>
+    <string name="debts_none_owed_to_me">Nadie te debe nada.</string>
+    <plurals name="debts_open_count">
+        <item quantity="one">%d sin cerrar</item>
+        <item quantity="other">%d sin cerrar</item>
+    </plurals>
     <string name="debts_remaining">Restan %1$s</string>
     <string name="debts_record_payment">Registrar abono</string>
     <string name="debts_delete">Eliminar deuda</string>
@@ -339,6 +345,7 @@
     <string name="tx_mark_as_loan">Es un préstamo a un tercero</string>
     <string name="tx_mark_as_loan_help">No es un gasto tuyo: el dinero salió pero te lo van a devolver. Se creará una deuda por cobrar y no contará como consumo.</string>
     <string name="tx_loan_person">¿A quién le prestaste?</string>
+    <string name="tx_loan_note">Comentario (opcional)</string>
     <string name="tx_apply_to_debt">Aplicar como abono a una deuda</string>
     <string name="tx_apply_to_debt_help">Este ingreso se descontará de lo que te deben.</string>
     <string name="tx_debt_linked">Préstamo a</string>

@@ -1,6 +1,7 @@
 package com.bsolutions.wallet.presentation.debts
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CallMade
+import androidx.compose.material.icons.filled.CallReceived
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.MonetizationOn
@@ -50,6 +53,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -96,6 +101,11 @@ fun DebtsScreen(
                 paymentDebt = null
             }
         )
+    }
+
+    // Arranca en el lado que tiene algo: abrir en una lista vacia se ve roto.
+    var shownDirection by remember(uiState.owedToMeDebts.isEmpty()) {
+        mutableStateOf(if (uiState.owedToMeDebts.isEmpty() && uiState.iOweDebts.isNotEmpty()) "I_OWE" else "OWED_TO_ME")
     }
 
     Scaffold(
@@ -166,6 +176,8 @@ fun DebtsScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Las tarjetas de resumen son el selector: antes el rotulo aparecia dos
+                // veces, en el resumen y otra vez como texto suelto sobre cada lista.
                 item {
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
@@ -173,54 +185,52 @@ fun DebtsScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         SummaryCard(
-                            title = stringResource(R.string.debts_i_owe),
-                            amount = uiState.totalIOwe,
-                            isNegative = true,
+                            title = stringResource(R.string.debts_owed_to_me),
+                            amount = uiState.totalOwedToMe,
+                            count = uiState.owedToMeDebts.count { !it.isClosed },
+                            icon = Icons.Default.CallReceived,
+                            isNegative = false,
+                            selected = shownDirection == "OWED_TO_ME",
+                            onClick = { shownDirection = "OWED_TO_ME" },
                             modifier = Modifier.weight(1f)
                         )
                         SummaryCard(
-                            title = stringResource(R.string.debts_owed_to_me),
-                            amount = uiState.totalOwedToMe,
-                            isNegative = false,
+                            title = stringResource(R.string.debts_i_owe),
+                            amount = uiState.totalIOwe,
+                            count = uiState.iOweDebts.count { !it.isClosed },
+                            icon = Icons.Default.CallMade,
+                            isNegative = true,
+                            selected = shownDirection == "I_OWE",
+                            onClick = { shownDirection = "I_OWE" },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
 
-                if (uiState.iOweDebts.isNotEmpty()) {
+                val shown = if (shownDirection == "I_OWE") uiState.iOweDebts else uiState.owedToMeDebts
+                if (shown.isEmpty()) {
                     item {
                         Text(
-                            text = stringResource(R.string.debts_i_owe),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                    items(uiState.iOweDebts, key = { it.id }) { debt ->
-                        DebtCard(
-                            debt = debt,
-                            onRecordPayment = { paymentDebt = debt },
-                            onDelete = { viewModel.deleteDebt(debt.id) }
+                            text = stringResource(
+                                if (shownDirection == "I_OWE") R.string.debts_none_i_owe
+                                else R.string.debts_none_owed_to_me
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp)
                         )
                     }
                 }
-
-                if (uiState.owedToMeDebts.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = stringResource(R.string.debts_owed_to_me),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                    items(uiState.owedToMeDebts, key = { it.id }) { debt ->
-                        DebtCard(
-                            debt = debt,
-                            onRecordPayment = { paymentDebt = debt },
-                            onDelete = { viewModel.deleteDebt(debt.id) }
-                        )
-                    }
+                // Las cerradas al final: lo que sigue vivo es lo que importa.
+                items(shown.sortedBy { it.isClosed }, key = { it.id }) { debt ->
+                    DebtCard(
+                        debt = debt,
+                        onRecordPayment = { paymentDebt = debt },
+                        onDelete = { viewModel.deleteDebt(debt.id) }
+                    )
                 }
 
                 item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -229,34 +239,72 @@ fun DebtsScreen(
     }
 }
 
+/**
+ * Resumen de una direccion de deuda, que ademas selecciona que lista se ve.
+ *
+ * Al no estar seleccionada se apaga: asi se lee de un golpe cual de las dos listas
+ * esta abajo, sin repetir el rotulo como encabezado.
+ */
 @Composable
 private fun SummaryCard(
     title: String,
     amount: Long,
+    count: Int,
+    icon: ImageVector,
     isNegative: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val accent = if (isNegative) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+    val content = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
     Card(
-        modifier = modifier,
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isNegative) MaterialTheme.colorScheme.errorContainer
-            else MaterialTheme.colorScheme.secondaryContainer
-        )
+            containerColor = if (selected) {
+                accent.copy(alpha = 0.10f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) accent else MaterialTheme.colorScheme.outlineVariant
+        ),
+        elevation = CardDefaults.cardElevation(if (selected) 2.dp else 0.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = if (isNegative) MaterialTheme.colorScheme.onErrorContainer
-                else MaterialTheme.colorScheme.onSecondaryContainer
-            )
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = content,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = content,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                )
+            }
             Text(
                 text = formatMoney(amount),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = if (isNegative) MaterialTheme.colorScheme.onErrorContainer
-                else MaterialTheme.colorScheme.onSecondaryContainer
+                color = if (selected) accent else MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = pluralStringResource(R.plurals.debts_open_count, count, count),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -290,13 +338,25 @@ private fun DebtCard(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (debt.isClosed) Icons.Default.CheckCircle else Icons.Outlined.MonetizationOn,
-                        contentDescription = null,
-                        tint = if (debt.isClosed) MaterialTheme.colorScheme.onSecondaryContainer
-                        else if (debt.direction == "I_OWE") MaterialTheme.colorScheme.onErrorContainer
-                        else MaterialTheme.colorScheme.onSecondaryContainer
-                    )
+                    val onAvatar = if (debt.isClosed) MaterialTheme.colorScheme.onSecondaryContainer
+                    else if (debt.direction == "I_OWE") MaterialTheme.colorScheme.onErrorContainer
+                    else MaterialTheme.colorScheme.onSecondaryContainer
+                    // La inicial de la persona en vez de una moneda genérica: en una lista
+                    // de deudas lo que distingue una de otra es de quién es.
+                    if (debt.isClosed) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = onAvatar
+                        )
+                    } else {
+                        Text(
+                            text = debt.name.trim().take(1).uppercase(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = onAvatar
+                        )
+                    }
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -304,6 +364,15 @@ private fun DebtCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
+                    // Se guardaba pero no se veia: sin esto no hay forma de acordarse
+                    // de que era el prestamo cuando pasen meses.
+                    if (debt.description.isNotBlank()) {
+                        Text(
+                            text = debt.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Text(
                         text = if (debt.isClosed) stringResource(R.string.debts_settled)
                         else stringResource(R.string.debts_remaining_of, formatMoney(debt.remainingAmount), formatMoney(debt.totalAmount)),
