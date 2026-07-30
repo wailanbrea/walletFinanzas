@@ -100,7 +100,7 @@ fun WaterSurface(
 
         // Las gotas se leen para que el dibujo se rehaga mientras haya alguna en el aire.
         water.splashTick.value
-        for (drop in if (refraction != null) emptyList() else water.droplets) {
+        for (drop in water.droplets) {
             // Nacen en la superficie: se parte del nivel y se le suma su propia caida.
             val originY = surfaceY - slope + slope * 2f * drop.x
             val centerY = if (drop.stuck) {
@@ -128,7 +128,7 @@ fun WaterSurface(
                     )
                 }
                 drawCircle(
-                    color = color.copy(alpha = 0.70f * fade),
+                    color = color.copy(alpha = 0.85f * fade),
                     radius = radius * 0.85f,
                     center = Offset(drop.x * size.width, centerY)
                 )
@@ -136,8 +136,18 @@ fun WaterSurface(
                 // En el aire la gota se estira en la direccion en que va: una esfera
                 // perfecta se lee como una burbuja, no como agua cayendo.
                 val stretch = (1f + kotlin.math.abs(drop.vy) * 0.5f).coerceAtMost(2.2f)
+                // Brillo pequeno arriba a la izquierda: es lo que hace que una mancha
+                // clara se lea como una gota con volumen y no como un borron.
+                drawCircle(
+                    color = color.copy(alpha = 0.95f * fade),
+                    radius = radius * 0.34f,
+                    center = Offset(
+                        drop.x * size.width - radius * 0.30f,
+                        centerY - radius * 0.34f
+                    )
+                )
                 drawOval(
-                    color = color.copy(alpha = 0.55f * fade),
+                    color = color.copy(alpha = 0.72f * fade),
                     topLeft = Offset(
                         drop.x * size.width - radius,
                         centerY - radius * stretch
@@ -356,7 +366,14 @@ private fun rememberWaterMotion(): WaterMotion {
 
                 // El eje X es el giro lateral. Se amplifica porque en la mano el teléfono
                 // se inclina poco: nadie lo pone de costado para mirar el saldo.
-                val target = (event.values[0] / 4.5f).coerceIn(-1f, 1f)
+                // Componente lateral de la gravedad, normalizada por su magnitud en el
+                // plano de la pantalla. Leer solo el eje X hacia que el agua dejara de
+                // responder al girar el telefono: a noventa grados ese eje marca cero y
+                // es el otro el que lleva la gravedad. Asi funciona en cualquier giro.
+                val gx = event.values[0]
+                val gy = event.values[1]
+                val planar = kotlin.math.sqrt(gx * gx + gy * gy)
+                val target = if (planar > 0.5f) (gx / planar).coerceIn(-1f, 1f) else 0f
 
                 // Resorte amortiguado en vez de perseguir la gravedad con retardo: la
                 // superficie se pasa de largo y vuelve, que es lo que hace que se lea como
@@ -372,7 +389,11 @@ private fun rememberWaterMotion(): WaterMotion {
                 // Sacudirlo a lo largo comprime el liquido contra el fondo y la
                 // superficie rebota. El eje Y trae la gravedad cuando esta derecho, asi
                 // que lo que importa es cuanto se aparta de ella, no su valor.
-                val verticalPush = ((event.values[1] - 9.8f) / 9.8f).coerceIn(-1f, 1f)
+                // Sacudirlo comprime el liquido contra el fondo. Se mide la magnitud
+                // total menos la gravedad: asi da igual como se sostenga el telefono.
+                val gz = event.values[2]
+                val magnitude = kotlin.math.sqrt(gx * gx + gy * gy + gz * gz)
+                val verticalPush = ((magnitude - 9.8f) / 9.8f).coerceIn(-1f, 1f)
                 val bobAcceleration = (verticalPush - water.bob.floatValue) * 30f - water.bobVelocity * 5f
                 water.bobVelocity += bobAcceleration * dt
                 water.bob.floatValue = (water.bob.floatValue + water.bobVelocity * dt).coerceIn(-1f, 1f)
