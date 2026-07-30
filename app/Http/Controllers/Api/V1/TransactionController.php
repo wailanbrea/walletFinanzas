@@ -90,6 +90,7 @@ class TransactionController extends Controller
                     'currency' => $validated['currency'],
                     'description' => $validated['description'] ?? null,
                     'category_id' => $validated['category_id'] ?? null,
+                    'debt_id' => $validated['debt_id'] ?? null,
                     'occurred_at' => $validated['timestamp'],
                     'status' => $validated['status'],
                 ]);
@@ -133,6 +134,8 @@ class TransactionController extends Controller
             'amount' => ['sometimes', 'integer', 'not_in:0', 'between:-9000000000000000,9000000000000000'],
             'description' => ['sometimes', 'nullable', 'string', 'max:500'],
             'category_id' => ['sometimes', 'nullable', 'string', 'max:100'],
+            // Enviar null desata el movimiento de su deuda.
+            'debt_id' => ['sometimes', 'nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9._:-]+$/'],
             'timestamp' => ['sometimes', 'date'],
             'status' => ['sometimes', Rule::in(['pending', 'completed', 'cancelled'])],
         ]);
@@ -153,6 +156,7 @@ class TransactionController extends Controller
                 'amount' => $validated['amount'] ?? $fresh->amount,
                 'description' => array_key_exists('description', $validated) ? $validated['description'] : $fresh->description,
                 'category_id' => array_key_exists('category_id', $validated) ? $validated['category_id'] : $fresh->category_id,
+                'debt_id' => array_key_exists('debt_id', $validated) ? $validated['debt_id'] : $fresh->debt_id,
                 'occurred_at' => $validated['timestamp'] ?? $fresh->occurred_at,
                 'status' => $validated['status'] ?? $fresh->status,
             ])->save();

@@ -19,6 +19,7 @@ class Transaction extends Model
         'currency',
         'description',
         'category_id',
+        'debt_id',
         'occurred_at',
         'status',
     ];

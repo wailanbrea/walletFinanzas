@@ -13,6 +13,73 @@ class TransactionApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_the_link_to_a_debt_survives_the_round_trip(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::create([
+            'user_id' => $owner->id,
+            'name' => 'Popular',
+            'balance' => 100000,
+            'currency' => 'DOP',
+            'country_code' => 'DO',
+        ]);
+        $debtId = (string) Str::uuid();
+
+        Sanctum::actingAs($owner);
+        // Sin esto el vinculo se quedaba en el telefono donde se creo y el otro
+        // dispositivo volvia a contar lo prestado como gasto propio.
+        $created = $this->postJson('/api/v1/transactions', [
+            'account_id' => $account->id,
+            'amount' => -2186799,
+            'currency' => 'DOP',
+            'description' => 'La mica de David',
+            'debt_id' => $debtId,
+            'timestamp' => '2026-07-30T00:19:00Z',
+            'status' => 'completed',
+            'idempotency_key' => (string) Str::uuid(),
+        ])->assertCreated()
+            ->assertJsonPath('data.debt_id', $debtId)
+            ->json('data');
+
+        $this->assertDatabaseHas('transactions', [
+            'id' => $created['id'],
+            'debt_id' => $debtId,
+        ]);
+
+        // Y vuelve en el listado, que es de donde lo lee el otro dispositivo.
+        $this->getJson('/api/v1/transactions')
+            ->assertOk()
+            ->assertJsonPath('data.0.debt_id', $debtId);
+
+        // Desatarlo es enviar null, no omitirlo.
+        $this->patchJson("/api/v1/transactions/{$created['id']}", ['debt_id' => null])
+            ->assertOk()
+            ->assertJsonPath('data.debt_id', null);
+    }
+
+    public function test_a_transaction_without_a_debt_reports_null_instead_of_omitting_it(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::create([
+            'user_id' => $owner->id,
+            'name' => 'Efectivo',
+            'balance' => 10000,
+            'currency' => 'DOP',
+            'country_code' => 'DO',
+        ]);
+
+        Sanctum::actingAs($owner);
+        $this->postJson('/api/v1/transactions', [
+            'account_id' => $account->id,
+            'amount' => -500,
+            'currency' => 'DOP',
+            'timestamp' => '2026-07-30T00:19:00Z',
+            'status' => 'completed',
+            'idempotency_key' => (string) Str::uuid(),
+        ])->assertCreated()
+            ->assertJsonPath('data.debt_id', null);
+    }
+
     public function test_transaction_creation_is_authenticated_and_updates_balance_atomically(): void
     {
         $owner = User::factory()->create();

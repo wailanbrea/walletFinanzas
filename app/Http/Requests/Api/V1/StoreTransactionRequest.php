@@ -51,6 +51,9 @@ class StoreTransactionRequest extends FormRequest
             'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'description' => ['nullable', 'string', 'max:500'],
             'category_id' => ['nullable', 'string', 'max:100'],
+            // Id que el cliente le dio a la deuda: las deudas no tienen tabla propia,
+            // viajan como recursos de sincronizacion.
+            'debt_id' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9._:-]+$/'],
             'timestamp' => ['required', 'date'],
             'status' => ['required', Rule::in(['pending', 'completed', 'cancelled'])],
         ];

@@ -17,6 +17,7 @@ class TransactionResource extends JsonResource
             'currency' => $this->currency,
             'description' => $this->description,
             'category_id' => $this->category_id,
+            'debt_id' => $this->debt_id,
             'timestamp' => $this->occurred_at?->toISOString(),
             'status' => $this->status,
             'created_at' => $this->created_at?->toISOString(),
