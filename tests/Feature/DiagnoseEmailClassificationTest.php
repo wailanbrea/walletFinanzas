@@ -29,6 +29,28 @@ class DiagnoseEmailClassificationTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_it_can_dump_the_text_the_extractor_actually_sees(): void
+    {
+        $user = User::factory()->create();
+        // Un aviso reconocido pero sin comercio: es el que hay que poder mirar.
+        $this->message($user, 'Notificación de Consumo', 'Consumo aprobado por RD$800.00 | Referencia | 998877');
+
+        $this->artisan('email:diagnose', ['--dump' => 3])
+            ->expectsOutputToContain('Texto que ve el extractor en los casos sin comercio')
+            ->expectsOutputToContain('Referencia | 998877')
+            ->assertSuccessful();
+    }
+
+    public function test_without_dump_the_text_is_not_printed(): void
+    {
+        $user = User::factory()->create();
+        $this->message($user, 'Notificación de Consumo', 'Consumo aprobado por RD$800.00 | Referencia | 998877');
+
+        $this->artisan('email:diagnose')
+            ->doesntExpectOutputToContain('Texto que ve el extractor')
+            ->assertSuccessful();
+    }
+
     public function test_it_says_so_when_there_is_nothing_to_analyse(): void
     {
         $this->artisan('email:diagnose')

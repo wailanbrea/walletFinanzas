@@ -20,7 +20,9 @@ class DiagnoseEmailClassification extends Command
 {
     protected $signature = 'email:diagnose
         {--user= : Limitar a un usuario por id}
-        {--show=15 : Cuántos casos fallidos listar}';
+        {--show=15 : Cuántos casos fallidos listar}
+        {--dump=0 : Cuántos casos sin comercio volcar con su texto completo}
+        {--dump-chars=700 : Cuánto texto volcar de cada uno}';
 
     protected $description = 'Reporta qué tan bien se están clasificando los correos guardados';
 
@@ -39,6 +41,7 @@ class DiagnoseEmailClassification extends Command
 
         $discarded = [];
         $noMerchant = [];
+        $noMerchantSamples = [];
         $noCategory = [];
         $noCard = 0;
         $classified = 0;
@@ -57,6 +60,7 @@ class DiagnoseEmailClassification extends Command
             $classified++;
             if (blank($extracted['merchant'])) {
                 $noMerchant[] = $message->subject;
+                $noMerchantSamples[] = $message;
             }
             if (blank($extracted['category_suggestion'])) {
                 $noCategory[] = $message->subject;
@@ -91,8 +95,37 @@ class DiagnoseEmailClassification extends Command
         $this->listFailures('Descartados (revisar si alguno sí era un movimiento)', $discarded, $show);
         $this->listFailures('Sin comercio', $noMerchant, $show);
         $this->listFailures('Sin categoría', $noCategory, $show);
+        $this->dumpSamples($noMerchantSamples);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Vuelca el texto tal como lo recibe el extractor.
+     *
+     * Es distinto de lo que se ve en el buzón: el correo llega en HTML y aquí ya está
+     * convertido. Escribir reglas mirando el correo renderizado lleva a patrones que no
+     * coinciden con lo que el código realmente lee, así que para inventar una regla nueva
+     * hay que ver esta versión y no la otra.
+     */
+    private function dumpSamples(array $messages): void
+    {
+        $dump = max(0, (int) $this->option('dump'));
+        if ($dump === 0 || $messages === []) {
+            return;
+        }
+        $chars = max(100, (int) $this->option('dump-chars'));
+
+        $this->newLine();
+        $this->info('Texto que ve el extractor en los casos sin comercio:');
+        foreach (array_slice($messages, 0, $dump) as $index => $message) {
+            $this->newLine();
+            $this->line('  ── '.($index + 1).' ── '.($message->provider ?? '?').' ── '.($message->subject ?: '(sin asunto)'));
+            $text = trim((string) $message->snippet);
+            $this->line($text === '' ? '  (sin texto)' : '  '.str_replace("\n", "\n  ", mb_substr($text, 0, $chars)));
+        }
+        $this->newLine();
+        $this->comment('Pega esta sección para que se escriban las reglas sobre el texto real.');
     }
 
     private function withPercent(int $count, int $total): string
