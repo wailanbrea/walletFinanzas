@@ -40,6 +40,11 @@ val DEFAULT_DASHBOARD_CARD_IDS: Set<String> = setOf(
  * guardaba ese vínculo, así que allá quedaron sueltos y ya no había operación pendiente
  * que los reenviara. Sin repetir el respaldo, el enlace se quedaría para siempre en el
  * teléfono donde se creó.
+ *
+ * No se sube para reenviar un cambio: el respaldo encola TODOS los movimientos del
+ * teléfono y el push va antes que el pull, así que un teléfono con datos viejos pisaría
+ * en el servidor lo que otro acaba de corregir. Sirve para lo que nunca se subió, no
+ * para repartir una corrección; para eso está la cola normal.
  */
 const val SYNC_BACKFILL_VERSION = 3
 

@@ -170,7 +170,11 @@ class TransactionRepositoryImpl @Inject constructor(
     )
 
     override suspend fun updateTransaction(transaction: Transaction) {
-        dao.updateTransaction(transaction.toEntity(ownerScope.currentOwnerId()))
+        // Tambien se encola: por aqui pasa atar un movimiento a una deuda, y sin subirlo
+        // el otro telefono seguia contando lo prestado como gasto propio.
+        val entity = transaction.toEntity(ownerScope.currentOwnerId())
+        dao.updateWithOp(entity, SyncRepository.transactionOp(gson, entity))
+        syncScheduler.requestSyncNow()
     }
 
     // Corregir y borrar tambien se encolan: antes se quedaban en este telefono.

@@ -119,6 +119,20 @@ interface TransactionDao {
     suspend fun updateTransaction(transaction: TransactionEntity): Int
 
     /**
+     * Actualiza un movimiento y encola su subida, sin tocar el saldo.
+     *
+     * Es el caso de atar o desatar un movimiento de una deuda: cambia a qué pertenece y
+     * su categoría, pero el dinero ya se movió cuando se creó. Sin encolar aquí, el
+     * cambio se quedaba en el teléfono donde se hizo y el otro seguía contando el
+     * préstamo como gasto propio.
+     */
+    @Transaction
+    suspend fun updateWithOp(updated: TransactionEntity, op: PendingOperationEntity?) {
+        updateTransaction(updated)
+        op?.let { insertPendingOp(it) }
+    }
+
+    /**
      * Actualiza un movimiento ajustando el saldo por la diferencia de monto, atómicamente.
      * Asume que la cuenta y el tipo no cambian (solo monto/categoría/nota).
      */
