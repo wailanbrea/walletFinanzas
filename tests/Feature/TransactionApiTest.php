@@ -422,4 +422,56 @@ class TransactionApiTest extends TestCase
         $this->deleteJson("/api/v1/transactions/{$clientKey}")->assertNoContent();
         $this->assertSame(10000, $account->fresh()->balance);
     }
+
+    /**
+     * Atar un movimiento ya registrado a una deuda tiene que llegar al servidor.
+     *
+     * El cliente reenvía el movimiento entero y solo corrige por PATCH cuando recibe un
+     * 409. Si el reenvío con una deuda nueva se acepta como «ya lo tengo», el vínculo se
+     * pierde en silencio y nunca sale del teléfono donde se hizo: el segundo aparato
+     * sigue contando como gasto propio un dinero que era un préstamo.
+     */
+    public function test_relinking_a_transaction_to_a_debt_is_not_swallowed_as_a_retry(): void
+    {
+        $owner = User::factory()->create();
+        Sanctum::actingAs($owner);
+        $account = Account::create([
+            'user_id' => $owner->id,
+            'name' => 'Efectivo',
+            'balance' => 10000,
+            'currency' => 'DOP',
+            'country_code' => 'DO',
+        ]);
+
+        $clientKey = (string) Str::uuid();
+        $moment = now()->toISOString();
+        $payload = [
+            'account_id' => $account->id,
+            'idempotency_key' => $clientKey,
+            'amount' => -2500,
+            'currency' => 'DOP',
+            'timestamp' => $moment,
+            'status' => 'completed',
+        ];
+
+        $this->postJson('/api/v1/transactions', $payload)->assertCreated();
+
+        // Reenviar lo mismo sigue siendo un reintento y no debe duplicar ni cobrar dos veces.
+        $this->postJson('/api/v1/transactions', $payload)->assertOk();
+        $this->assertSame(7500, $account->fresh()->balance);
+
+        // Lo mismo pero con deuda ya no es la misma operación: el 409 es lo que hace que
+        // el cliente lo corrija por PATCH en vez de darlo por subido.
+        $this->postJson('/api/v1/transactions', $payload + ['debt_id' => 'debt_david'])
+            ->assertStatus(409);
+
+        $this->patchJson("/api/v1/transactions/{$clientKey}", ['debt_id' => 'debt_david'])
+            ->assertOk()
+            ->assertJsonPath('data.debt_id', 'debt_david');
+
+        // Y una vez guardado, el reenvío con la misma deuda vuelve a ser un reintento.
+        $this->postJson('/api/v1/transactions', $payload + ['debt_id' => 'debt_david'])
+            ->assertOk();
+        $this->assertSame(7500, $account->fresh()->balance);
+    }
 }

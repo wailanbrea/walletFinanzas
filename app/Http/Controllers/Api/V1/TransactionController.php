@@ -240,6 +240,14 @@ class TransactionController extends Controller
             && $transaction->currency === $validated['currency']
             && $transaction->description === ($validated['description'] ?? null)
             && $transaction->category_id === ($validated['category_id'] ?? null)
+            // La deuda cuenta como parte de la operación. Sin esta línea, reenviar un
+            // movimiento al que se le acababa de atar una deuda devolvía 200 «ya lo
+            // tengo» y el vínculo se perdía en silencio: el cliente solo corrige por
+            // PATCH cuando recibe un 409, así que nunca llegaba a intentarlo. El
+            // resultado era que atar un gasto a una deuda no salía nunca del teléfono
+            // donde se hizo, y el mismo mes mostraba dos totales de gasto distintos
+            // según el aparato desde el que se mirara.
+            && $transaction->debt_id === ($validated['debt_id'] ?? null)
             && $transaction->status === $validated['status']
             && $transaction->occurred_at->equalTo(CarbonImmutable::parse($validated['timestamp']));
 

@@ -421,6 +421,20 @@ class SyncRepository @Inject constructor(
                         ownerId = ownerId
                     )
                 )
+
+                // Este telefono sabe que el movimiento pertenece a una deuda y el servidor
+                // no: se reencola para que suba. Pasa con todo lo que se ato a una deuda
+                // antes de que atar encolara la subida, y no se arreglaba solo nunca,
+                // porque la unica forma de reenviarlo era volver a editar el movimiento a
+                // mano. Mientras tanto el otro telefono contaba como gasto propio un
+                // dinero que era un prestamo: el mismo mes salia con dos totales de gasto
+                // distintos segun el aparato desde el que se mirara.
+                val localDebtId = existing?.debtId
+                if (dto.debtId == null && !localDebtId.isNullOrBlank() && localId !in pendingTransactions) {
+                    transactionDao.getTransactionByIdIncludingDeleted(ownerId, localId)?.let { local ->
+                        pendingOps.insert(transactionOp(gson, local))
+                    }
+                }
                 pulled++
             }
             cursor = page.meta?.nextCursor
