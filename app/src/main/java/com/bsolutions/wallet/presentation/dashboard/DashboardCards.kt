@@ -56,6 +56,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bsolutions.wallet.R
 import com.bsolutions.wallet.core.common.MoneyFormat
+import com.bsolutions.wallet.presentation.accounts.balanceBarFraction
+import com.bsolutions.wallet.presentation.accounts.creditCardDebt
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.presentation.common.DonutChart
 import com.bsolutions.wallet.presentation.common.DonutSegment
@@ -416,7 +418,15 @@ internal fun AccountBalancesCard(uiState: DashboardUiState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            val maximum = uiState.accounts.maxOf { it.balance.coerceAtLeast(0L) }.coerceAtLeast(1L).toFloat()
+            // Dos escalas y no una. Antes las barras se median todas contra el saldo mas
+            // grande, y como las tarjetas guardan la deuda en negativo salian siempre
+            // vacias: la tarjeta parecia rota justo cuando estaba al dia.
+            val largestBalance = uiState.accounts
+                .filter { it.type != "CREDIT_CARD" }
+                .maxOfOrNull { it.balance.coerceAtLeast(0L) } ?: 0L
+            val largestCardDebt = uiState.accounts
+                .filter { it.type == "CREDIT_CARD" && (it.creditLimit ?: 0L) <= 0L }
+                .maxOfOrNull { creditCardDebt(it.balance) } ?: 0L
             uiState.accounts.take(5).forEachIndexed { index, account ->
                 if (index > 0) Spacer(Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -429,12 +439,13 @@ internal fun AccountBalancesCard(uiState: DashboardUiState) {
                 Spacer(Modifier.height(6.dp))
                 // Mismo tratamiento que el flujo de caja: degradado, esquinas redondeadas
                 // y crecimiento animado, para que las dos tarjetas se lean como una familia.
-                // Las barras son relativas a la cuenta mas grande, asi que un saldo
-                // pequeno al lado de uno grande da una fraccion invisible. Se le da un
-                // minimo visible: la comparacion sigue siendo justa y deja de parecer
-                // que la cuenta esta vacia cuando no lo esta.
-                val share = (account.balance.coerceAtLeast(0L) / maximum).coerceIn(0f, 1f)
-                val visible = if (account.balance > 0L) share.coerceAtLeast(0.06f) else 0f
+                val visible = balanceBarFraction(
+                    type = account.type,
+                    balance = account.balance,
+                    creditLimit = account.creditLimit,
+                    largestBalance = largestBalance,
+                    largestCardDebt = largestCardDebt
+                )
                 val grown by animateFloatAsState(
                     targetValue = visible,
                     animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),

@@ -2,6 +2,8 @@
 
 package com.bsolutions.wallet.data.repository
 
+import java.time.Instant
+import java.time.OffsetDateTime
 import com.bsolutions.wallet.core.network.CreateAccountRequest
 import com.bsolutions.wallet.core.network.CreateCategoryRequest
 import com.bsolutions.wallet.core.network.CreateTransactionRequest
@@ -404,7 +406,12 @@ class SyncRepository @Inject constructor(
                         amount = positive,
                         type = type,
                         categoryId = validCategoryId,
-                        date = parseIso(dto.timestamp),
+                        // Si el servidor manda una fecha que no se entiende, se conserva
+                        // la que ya tenia el movimiento: pisarla con la hora del momento
+                        // era justo lo que descolocaba la lista de recientes.
+                        date = parseIsoOrNull(dto.timestamp)
+                            ?: existing?.date
+                            ?: System.currentTimeMillis(),
                         note = dto.description.orEmpty(),
                         currency = dto.currency,
                         // El servidor ya guarda el vinculo, asi que manda el suyo. Se cae
@@ -526,8 +533,28 @@ class SyncRepository @Inject constructor(
 
         fun isoUtc(millis: Long): String = isoFormat.format(Date(millis))
 
-        fun parseIso(value: String?): Long =
-            value?.let { runCatching { isoFormat.parse(it)?.time }.getOrNull() } ?: System.currentTimeMillis()
+        /**
+         * Fecha de un instante ISO-8601 del servidor, o null si no se entiende.
+         *
+         * Devuelve null en vez de la hora actual a proposito. Antes, cuando una fecha no
+         * se podia leer, se caia en `System.currentTimeMillis()`: como el servidor manda
+         * `2026-07-31T05:12:34.000000Z` y el patron esperaba segundos secos, ninguna
+         * fecha se entendia y cada sincronizacion le ponia la hora del momento a todos
+         * los movimientos. El efecto visible era que la lista de recientes se barajaba
+         * sola y un movimiento nuevo no salia el primero: los viejos acababan de
+         * "ocurrir" hace un instante.
+         *
+         * `Instant.parse` acepta la fraccion de segundo; `OffsetDateTime` cubre las
+         * fechas con desfase (`+00:00`) en vez de Z, y el formato viejo queda de ultimo
+         * por si algun dia responde un servidor que escriba asi.
+         */
+        fun parseIsoOrNull(value: String?): Long? {
+            if (value.isNullOrBlank()) return null
+
+            return runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
+                ?: runCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }.getOrNull()
+                ?: runCatching { isoFormat.parse(value)?.time }.getOrNull()
+        }
 
         /** Snapshot JSON para encolar una cuenta. */
         fun accountOp(gson: Gson, account: AccountEntity): PendingOperationEntity =

@@ -149,3 +149,43 @@ internal fun availableCredit(balance: Long, creditLimit: Long?): Long {
     if (balance > Long.MAX_VALUE - limit) return Long.MAX_VALUE
     return (limit + balance).coerceAtLeast(0L)
 }
+
+/**
+ * Cuanto se llena la barra de una cuenta, de 0 a 1.
+ *
+ * Las barras de esa tarjeta miden dos cosas distintas y por eso se llenan al reves. En una
+ * cuenta de banco la barra es el dinero que hay: crece cuanto mas tengas. En una tarjeta es
+ * el credito que te queda: esta llena cuando no debes nada y se vacia segun consumes el
+ * limite. Asi una barra llena siempre significa lo mismo —vas bien— en las dos.
+ *
+ * [largestBalance] es el mayor saldo entre las cuentas que no son tarjeta, porque una
+ * cuenta se compara con las otras cuentas y no con el limite de una tarjeta.
+ * [largestCardDebt] solo se usa para las tarjetas a las que no se les ha registrado
+ * limite: sin limite no hay forma de saber cuanto margen queda, asi que se comparan entre
+ * ellas. La mas endeudada queda vacia y la que no debe nada, llena.
+ */
+internal fun balanceBarFraction(
+    type: String,
+    balance: Long,
+    creditLimit: Long?,
+    largestBalance: Long,
+    largestCardDebt: Long
+): Float {
+    if (type == "CREDIT_CARD") {
+        val limit = (creditLimit ?: 0L).coerceAtLeast(0L)
+        if (limit > 0L) {
+            return (availableCredit(balance, limit).toFloat() / limit).coerceIn(0f, 1f)
+        }
+        val debt = creditCardDebt(balance)
+        if (debt <= 0L || largestCardDebt <= 0L) return 1f
+        return (1f - debt.toFloat() / largestCardDebt).coerceIn(0f, 1f)
+    }
+
+    val available = balance.coerceAtLeast(0L)
+    if (available <= 0L) return 0f
+    val share = available.toFloat() / largestBalance.coerceAtLeast(1L)
+    // Un saldo pequeno al lado de uno grande da una fraccion invisible. Con un minimo
+    // visible la comparacion sigue siendo justa y deja de parecer que la cuenta esta
+    // vacia cuando no lo esta.
+    return share.coerceIn(0.06f, 1f)
+}
