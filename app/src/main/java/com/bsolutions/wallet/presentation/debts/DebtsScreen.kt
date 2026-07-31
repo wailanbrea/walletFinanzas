@@ -59,6 +59,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalConfiguration
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.bsolutions.wallet.R
@@ -67,6 +72,7 @@ import com.bsolutions.wallet.core.common.MoneyFormat
 import com.bsolutions.wallet.core.common.MoneyParser
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Debt
+import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.presentation.common.animatedProgress
 
 private fun formatMoney(minorUnits: Long): String = MoneyFormat.format(minorUnits)
@@ -81,6 +87,8 @@ fun DebtsScreen(
     var showCreateSheet by remember { mutableStateOf(false) }
     var paymentDebt by remember { mutableStateOf<Debt?>(null) }
     var sheetIsCharge by remember { mutableStateOf(false) }
+    var detailDebt by remember { mutableStateOf<Debt?>(null) }
+    var editDebt by remember { mutableStateOf<Debt?>(null) }
 
     if (showCreateSheet) {
         CreateDebtSheet(
@@ -105,6 +113,35 @@ fun DebtsScreen(
                     viewModel.recordPayment(debt, amount, accountId)
                 }
                 paymentDebt = null
+            }
+        )
+    }
+
+    detailDebt?.let { debt ->
+        // Se relee del estado y no se guarda la copia del momento: si desde el detalle se
+        // corrige el monto o se registra un abono, lo que se ve tiene que cambiar solo.
+        val fresh = (uiState.owedToMeDebts + uiState.iOweDebts).find { it.id == debt.id }
+        if (fresh == null) {
+            detailDebt = null
+        } else {
+            DebtDetailSheet(
+                debt = fresh,
+                movements = uiState.transactionsByDebt[fresh.id].orEmpty(),
+                onDismiss = { detailDebt = null },
+                onEdit = { editDebt = fresh },
+                onAddCharge = { paymentDebt = fresh; sheetIsCharge = true; detailDebt = null },
+                onRecordPayment = { paymentDebt = fresh; sheetIsCharge = false; detailDebt = null }
+            )
+        }
+    }
+
+    editDebt?.let { debt ->
+        EditDebtSheet(
+            debt = debt,
+            onDismiss = { editDebt = null },
+            onSave = { name, description, amount ->
+                viewModel.updateDebt(debt, name, description, amount)
+                editDebt = null
             }
         )
     }
@@ -234,6 +271,7 @@ fun DebtsScreen(
                 items(shown.sortedBy { it.isClosed }, key = { it.id }) { debt ->
                     DebtCard(
                         debt = debt,
+                        onOpen = { detailDebt = debt },
                         onRecordPayment = { paymentDebt = debt; sheetIsCharge = false },
                         onAddCharge = { paymentDebt = debt; sheetIsCharge = true },
                         onDelete = { viewModel.deleteDebt(debt.id) }
@@ -320,12 +358,15 @@ private fun SummaryCard(
 @Composable
 private fun DebtCard(
     debt: Debt,
+    onOpen: () -> Unit,
     onRecordPayment: () -> Unit,
     onAddCharge: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        // Toda la tarjeta abre el detalle: era lo unico de la pantalla que enseñaba un
+        // total sin dejar ver de donde salia.
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(1.dp)
@@ -385,7 +426,7 @@ private fun DebtCard(
                         // Una deuda saldada decia solo "Saldada", sin cifra: al cuadrar lo
                         // cobrado del mes no habia forma de saber de donde salia ese dinero,
                         // porque la deuda ya no aparece en el saldo a tu favor.
-                        text = if (debt.isClosed) stringResource(R.string.debts_settled, formatMoney(debt.totalAmount))
+                        text = if (debt.isClosed) stringResource(R.string.debts_settled, formatMoney(debt.paidAmount))
                         else stringResource(R.string.debts_remaining_of, formatMoney(debt.remainingAmount), formatMoney(debt.totalAmount)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -631,6 +672,215 @@ private fun RecordPaymentSheet(
                     ),
                     fontWeight = FontWeight.Bold
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Detalle de una deuda: sus cifras y los movimientos que la formaron.
+ *
+ * La tarjeta solo enseñaba un total. Cuando ese total no cuadra con lo que uno recuerda
+ * —y pasa, porque un movimiento mal atado lo mueve— no había ninguna forma de averiguar
+ * de dónde salía, ni de corregirlo.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DebtDetailSheet(
+    debt: Debt,
+    movements: List<Transaction>,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onAddCharge: () -> Unit,
+    onRecordPayment: () -> Unit
+) {
+    val dateFormat = SimpleDateFormat("dd MMM yyyy", LocalConfiguration.current.locales[0])
+    val owedToMe = debt.direction == "OWED_TO_ME"
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = debt.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            if (debt.description.isNotBlank()) {
+                Text(
+                    text = debt.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            DebtDetailRow(stringResource(R.string.debts_detail_total), formatMoney(debt.totalAmount))
+            DebtDetailRow(
+                label = stringResource(
+                    if (owedToMe) R.string.debts_detail_paid else R.string.debts_detail_paid_owed
+                ),
+                value = formatMoney(debt.paidAmount)
+            )
+            DebtDetailRow(stringResource(R.string.debts_detail_remaining), formatMoney(debt.remainingAmount))
+
+            Text(
+                text = stringResource(R.string.debts_detail_movements),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (movements.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.debts_detail_no_movements),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                movements.sortedByDescending { it.date }.forEach { movement ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = movement.note.ifBlank { dateFormat.format(Date(movement.date)) },
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = dateFormat.format(Date(movement.date)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.size(12.dp))
+                        // El color dice de qué lado va: lo que sale de tu bolsillo es lo
+                        // que prestas, lo que entra es lo que te devuelven.
+                        Text(
+                            text = MoneyFormat.formatSigned(
+                                movement.amount,
+                                isIncome = movement.type == "INCOME",
+                                currency = movement.currency
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (movement.type == "INCOME") MaterialTheme.colorScheme.secondary
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = onEdit, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.debts_edit), maxLines = 1)
+                }
+                if (!debt.isClosed) {
+                    Button(onClick = onAddCharge, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.debts_add_charge), maxLines = 1)
+                    }
+                    Button(onClick = onRecordPayment, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.debts_record_payment), maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DebtDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+/**
+ * Corrige los datos de una deuda sin tocar ninguna cuenta.
+ *
+ * Es lo que faltaba para arreglar un total mal puesto: «Agregar cargo» y «Registrar
+ * abono» crean un movimiento y mueven el saldo, así que corregir un dato con ellos
+ * ensuciaba las cuentas con dinero que nunca se movió.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditDebtSheet(
+    debt: Debt,
+    onDismiss: () -> Unit,
+    onSave: (name: String, description: String, totalAmount: Long) -> Unit
+) {
+    var name by remember(debt.id) { mutableStateOf(debt.name) }
+    var description by remember(debt.id) { mutableStateOf(debt.description) }
+    var amountStr by remember(debt.id) {
+        mutableStateOf(String.format(Locale.US, "%.2f", debt.totalAmount / 100.0))
+    }
+    val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.debts_edit),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = stringResource(R.string.debts_edit_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(stringResource(R.string.debts_edit_name)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text(stringResource(R.string.debts_edit_description)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = amountStr,
+                onValueChange = { amountStr = it.filter { c -> c.isDigit() || c == '.' } },
+                label = { Text(stringResource(R.string.debts_edit_amount, MoneyFormat.symbol())) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = { onSave(name, description, amount) },
+                enabled = name.isNotBlank() && amount > 0L,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.common_save))
             }
         }
     }

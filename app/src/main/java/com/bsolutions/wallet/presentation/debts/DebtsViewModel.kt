@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Debt
 import com.bsolutions.wallet.domain.repository.AccountRepository
+import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.DebtRepository
+import com.bsolutions.wallet.domain.repository.TransactionRepository
 import com.bsolutions.wallet.domain.usecase.DebtLedger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,20 +24,27 @@ data class DebtsUiState(
     val totalIOwe: Long = 0L,
     val totalOwedToMe: Long = 0L,
     /** Cuentas donde puede entrar (o de donde puede salir) el dinero de un abono. */
-    val accounts: List<Account> = emptyList()
+    val accounts: List<Account> = emptyList(),
+    /**
+     * Movimientos de cada deuda. Sin ellos la tarjeta solo enseña un total, y cuando ese
+     * total no cuadra con lo que uno recuerda no hay forma de averiguar de dónde sale.
+     */
+    val transactionsByDebt: Map<String, List<Transaction>> = emptyMap()
 )
 
 @HiltViewModel
 class DebtsViewModel @Inject constructor(
     private val debtRepository: DebtRepository,
     private val accountRepository: AccountRepository,
+    private val transactionRepository: TransactionRepository,
     private val debtLedger: DebtLedger
 ) : ViewModel() {
 
     val uiState: StateFlow<DebtsUiState> = combine(
         debtRepository.getDebts(),
-        accountRepository.getAccounts()
-    ) { debts, accounts ->
+        accountRepository.getAccounts(),
+        transactionRepository.getTransactions()
+    ) { debts, accounts, transactions ->
             val iOwe = debts.filter { it.direction == "I_OWE" }
             val owedToMe = debts.filter { it.direction == "OWED_TO_ME" }
             DebtsUiState(
@@ -43,7 +52,10 @@ class DebtsViewModel @Inject constructor(
                 owedToMeDebts = owedToMe,
                 totalIOwe = iOwe.filter { !it.isClosed }.sumOf { it.remainingAmount },
                 totalOwedToMe = owedToMe.filter { !it.isClosed }.sumOf { it.remainingAmount },
-                accounts = accounts
+                accounts = accounts,
+                transactionsByDebt = transactions
+                    .filter { it.debtId != null }
+                    .groupBy { it.debtId!! }
             )
         }
         .stateIn(
@@ -108,6 +120,30 @@ class DebtsViewModel @Inject constructor(
                 accountId = account.id,
                 currency = account.currency,
                 dateMillis = System.currentTimeMillis()
+            )
+        }
+    }
+
+    /**
+     * Corrige los datos de una deuda sin inventar movimientos.
+     *
+     * Hacía falta una vía así: lo único que movía el total eran «Agregar cargo» y
+     * «Registrar abono», y los dos crean un movimiento y mueven el saldo de una cuenta.
+     * Cuando el total quedaba mal —por un vínculo antiguo mal puesto, por ejemplo— no
+     * había forma de arreglarlo sin ensuciar las cuentas con dinero que nunca se movió.
+     */
+    fun updateDebt(debt: Debt, name: String, description: String, totalAmount: Long) {
+        if (name.isBlank() || totalAmount <= 0L) return
+        viewModelScope.launch {
+            debtRepository.updateDebt(
+                debt.copy(
+                    name = name.trim(),
+                    description = description.trim(),
+                    totalAmount = totalAmount,
+                    // Se recalcula: subir el total de una deuda saldada vuelve a abrirla,
+                    // y bajarlo por debajo de lo cobrado la cierra.
+                    isClosed = debt.paidAmount >= totalAmount
+                )
             )
         }
     }

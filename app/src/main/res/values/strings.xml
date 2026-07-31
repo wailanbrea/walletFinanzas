@@ -207,6 +207,23 @@
     <string name="debts_i_owe">Yo debo</string>
     <string name="debts_owed_to_me">Me deben</string>
     <string name="debts_settled">Saldada · se cobraron %1$s</string>
+    <string name="debts_detail_title">Detalle de la deuda</string>
+    <string name="debts_detail_total">Monto de la deuda</string>
+    <string name="debts_detail_paid">Cobrado</string>
+    <string name="debts_detail_paid_owed">Pagado</string>
+    <string name="debts_detail_remaining">Falta</string>
+    <string name="debts_detail_movements">Movimientos de esta deuda</string>
+    <string name="debts_detail_no_movements">Esta deuda se apuntó a mano: no tiene movimientos atados.</string>
+    <string name="debts_edit">Corregir deuda</string>
+    <string name="debts_edit_name">Nombre</string>
+    <string name="debts_edit_description">Comentario</string>
+    <string name="debts_edit_amount">Monto de la deuda (%1$s)</string>
+    <!--
+        Corregir el monto no crea ningún movimiento a propósito: es para arreglar un dato
+        mal puesto, no para registrar dinero que se movió de verdad. Para eso están
+        «Agregar cargo» y «Registrar abono».
+    -->
+    <string name="debts_edit_hint">Corrige el dato sin mover dinero. Para registrar dinero que sí se movió, usa Agregar cargo o Registrar abono.</string>
     <string name="debts_remaining_of">Restan %1$s de %2$s</string>
     <string name="debts_none_i_owe">No le debes nada a nadie.</string>
     <string name="debts_none_owed_to_me">Nadie te debe nada.</string>
