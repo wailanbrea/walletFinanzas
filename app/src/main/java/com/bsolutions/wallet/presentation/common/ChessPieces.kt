@@ -18,7 +18,11 @@ internal class ChessPiece(
     /** Fraccion del alto. */
     var y: Float,
     var vx: Float = 0f,
-    var vy: Float = 0f
+    var vy: Float = 0f,
+    /** Grados de giro sobre su centro. */
+    var angle: Float = 0f,
+    /** Grados por segundo. */
+    var spin: Float = 0f
 )
 
 /** Un solo caballo: suelto en el vaso, no un tablero volcado dentro. */
@@ -63,13 +67,23 @@ internal fun advanceChessPieces(
         piece.x += piece.vx * dt
         piece.y += piece.vy * dt
 
+        // Gira como rodaria: lo que lo hace virar es avanzar de lado, no caer. Se le suma
+        // la turbulencia, que es lo que lo pone de lado o de cabeza en vez de dejarlo
+        // siempre derecho. El agua tambien frena el giro.
+        piece.spin += piece.vx * 620f * dt
+        piece.spin += kotlin.math.sin(elapsed * 1.3f + piece.sway * 2.1f) * (30f + stirred * 260f) * dt
+        piece.spin -= piece.spin * 1.5f * dt
+        piece.angle += piece.spin * dt
+
         // Paredes del vaso. Rebotan poco: un choque bajo el agua es sordo.
         if (piece.x < margin) {
             piece.x = margin
             piece.vx = -piece.vx * bounce
+            piece.spin = -piece.spin * 0.6f
         } else if (piece.x > 1f - margin) {
             piece.x = 1f - margin
             piece.vx = -piece.vx * bounce
+            piece.spin = -piece.spin * 0.6f
         }
         val floor = 1f - margin
         if (piece.y > floor) {

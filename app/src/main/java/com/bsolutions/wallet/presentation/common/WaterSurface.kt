@@ -20,6 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.TextStyle
@@ -75,13 +76,18 @@ fun WaterSurface(
         // El caballo va debajo del agua: se ve a través de ella, no flotando encima.
         for (piece in water.pieces) {
             val measured = textMeasurer.measure(text = piece.glyph, style = pieceStyle)
-            drawText(
-                textLayoutResult = measured,
-                topLeft = Offset(
-                    piece.x * size.width - measured.size.width / 2f,
-                    piece.y * size.height - measured.size.height / 2f
+            val center = Offset(piece.x * size.width, piece.y * size.height)
+            // Gira sobre su centro: un objeto suelto en agua no se mantiene derecho, y
+            // dibujarlo siempre vertical delataba que era un adorno pegado al fondo.
+            rotate(degrees = piece.angle, pivot = center) {
+                drawText(
+                    textLayoutResult = measured,
+                    topLeft = Offset(
+                        center.x - measured.size.width / 2f,
+                        center.y - measured.size.height / 2f
+                    )
                 )
-            )
+            }
         }
 
         drawWave(
@@ -225,10 +231,16 @@ private fun rememberWaterMotion(): WaterMotion {
                 val gz = event.values[2]
                 // Dirección real de la gravedad en el plano de la pantalla. Leer un solo
                 // eje hacía que el agua dejara de responder al girar el teléfono.
+                //
+                // El acelerometro marca positivo en el eje que apunta ARRIBA, y el eje Y
+                // del dispositivo apunta arriba mientras que el del lienzo apunta abajo.
+                // Convirtiendo las dos cosas, la gravedad en coordenadas de la tarjeta es
+                // (-gx, +gy). Usar (+gx, +gy) invertia el eje horizontal: al girar a la
+                // derecha todo se iba a la izquierda.
                 val planar = kotlin.math.sqrt(gx * gx + gy * gy)
-                val target = if (planar > 0.5f) (gx / planar).coerceIn(-1f, 1f) else 0f
+                val target = if (planar > 0.5f) (-gx / planar).coerceIn(-1f, 1f) else 0f
                 if (planar > 0.5f) {
-                    water.gravityX = gx / planar
+                    water.gravityX = -gx / planar
                     water.gravityY = gy / planar
                 }
 
