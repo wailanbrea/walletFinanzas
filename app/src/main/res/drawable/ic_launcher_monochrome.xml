@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Version monocroma para los iconos tematicos de Android 13+: el sistema la tine con el
+    color del fondo de pantalla, asi que aqui solo cuenta la silueta y todo va en un tono.
+
+    Dibujado dentro de la zona segura del icono adaptativo. El lanzador recorta la lamina
+    de 108 a un circulo o un cuadrado redondeado segun el dispositivo, y solo los 72
+    centrales estan garantizados: por eso nada pasa de 22 ni de 86.
+
+    Formas macizas y sin linea fina: un icono se ve a pocos milimetros, y ahi solo
+    sobrevive la silueta. El caballo va calado en el color del fondo en vez de dibujado
+    encima, que es como se estampa de verdad sobre cuero.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Solapa trasera: asoma por arriba y da el grosor de la cartera cerrada. -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M28,34 C 28,31.8 29.8,30 32,30 L 70,30 C 72.2,30 74,31.8 74,34 L 74,40 L 28,40 Z" />
+
+    <!-- Cuerpo -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M26,44 C 26,40.7 28.7,38 32,38 L 76,38 C 79.3,38 82,40.7 82,44 L 82,74 C 82,77.3 79.3,80 76,80 L 32,80 C 28.7,80 26,77.3 26,74 Z" />
+
+    <!--
+        Caballo calado. Es el mismo trazado que la pieza del agua, encajado con un grupo
+        que lo escala y lo centra: repetir el dibujo a mano habria dejado dos siluetas que
+        se separan en cuanto se retoca una.
+    -->
+    <group
+        android:scaleX="0.46"
+        android:scaleY="0.46"
+        android:translateX="29.2"
+        android:translateY="30.4">
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M36,76
+                C 36,66 39,60 45,55
+                C 49,51.6 51,49 52,46
+                C 47,47 42,49 38,52
+                C 35.5,53.8 33,52.5 33.4,49.8
+                C 34.4,42.5 39,36 46,32
+                C 50,29.7 54,28.6 58,28.4
+                L 58,24.5
+                C 58,22.8 59.8,21.8 61.2,22.7
+                L 68.5,27.4
+                C 73.5,30.6 76.6,35.8 77,41.7
+                C 77.6,50.5 76,59 73,67
+                C 71.8,70.2 71.2,73.2 71.2,76
+                Z" />
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M62.5,38.5 m-2.8,0 a2.8,2.8 0 1,0 5.6,0 a2.8,2.8 0 1,0 -5.6,0 Z" />
+    </group>
+
+    <!-- Cierre: la pieza que remata la cartera por el lado derecho. -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M70,54 C 70,51.8 71.8,50 74,50 L 82,50 L 82,68 L 74,68 C 71.8,68 70,66.2 70,64 Z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M76.5,59 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 Z" />
+</vector>

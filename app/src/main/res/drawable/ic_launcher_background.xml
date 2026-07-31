@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Fondo del icono: el mismo degradado verde de la tarjeta de balance, para que el icono
+    y la app se reconozcan como lo mismo.
+
+    Lleva una onda baja porque el agua es el elemento propio de la pantalla principal. Va
+    tenue y en el tercio inferior: en el lanzador el icono se ve a pocos milimetros, y un
+    fondo con detalle compite con la silueta que si tiene que leerse.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108"
+                android:type="linear">
+                <item android:color="#FF8BD08D" android:offset="0" />
+                <item android:color="#FF3FA45B" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Onda de atras: mas tenue y desfasada, para que se lea volumen y no una raya. -->
+    <path
+        android:fillColor="#22FFFFFF"
+        android:pathData="M-6,74 C 12,66 30,82 48,74 C 66,66 84,82 114,72 L114,114 L-6,114 Z" />
+    <path
+        android:fillColor="#33FFFFFF"
+        android:pathData="M-6,82 C 14,74 32,90 52,82 C 72,74 92,88 114,80 L114,114 L-6,114 Z" />
+</vector>
