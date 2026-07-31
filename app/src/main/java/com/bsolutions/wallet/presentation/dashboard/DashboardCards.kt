@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalConfiguration
@@ -245,9 +246,17 @@ internal fun CashFlowCard(uiState: DashboardUiState) {
         if (uiState.outstandingReceivable > 0L) {
             Spacer(Modifier.height(10.dp))
             Text(
-                text = stringResource(
-                    R.string.dashboard_outstanding_receivable,
-                    MoneyFormat.format(uiState.outstandingReceivable)
+                // Prestado y Cobrado son del periodo elegido; esta linea es el saldo de
+                // todas las deudas abiertas. Al estar una debajo de otra se leia como si
+                // fuera la resta de las dos, y no cuadraba nunca: una deuda apuntada a
+                // mano no pasa por Prestado, y una ya saldada sigue en Cobrado pero ya no
+                // suma aqui. Decir cuantas deudas son y que es todo el historial es lo
+                // que separa las dos cuentas.
+                text = pluralStringResource(
+                    R.plurals.dashboard_outstanding_receivable,
+                    uiState.openReceivableCount,
+                    MoneyFormat.format(uiState.outstandingReceivable),
+                    uiState.openReceivableCount
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

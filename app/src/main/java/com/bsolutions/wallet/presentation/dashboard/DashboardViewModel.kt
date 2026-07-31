@@ -105,6 +105,8 @@ data class DashboardUiState(
     val monthlyCollected: Long = 0L,
     /** Lo que sigue pendiente de cobrar, de todas las deudas abiertas. */
     val outstandingReceivable: Long = 0L,
+    /** Cuantas deudas a tu favor siguen abiertas; acompana a [outstandingReceivable]. */
+    val openReceivableCount: Int = 0,
     /**
      * Movimientos del período atados a una deuda, a la espera de saber su dirección.
      *
@@ -291,14 +293,14 @@ class DashboardViewModel @Inject constructor(
             val receivables = debts.filterTo(mutableSetOf()) { it.direction == DEBT_OWED_TO_ME }
                 .mapTo(mutableSetOf()) { it.id }
             val mine = state.periodDebtTransactions.filter { it.debtId in receivables }
+            val open = debts.filter { it.direction == DEBT_OWED_TO_ME && !it.isClosed }
 
             state.copy(
                 monthlyLent = mine.filter { it.type == "EXPENSE" }.sumOf { it.amount },
                 monthlyCollected = mine.filter { it.type == "INCOME" }.sumOf { it.amount },
                 periodDebtTransactions = emptyList(),
-                outstandingReceivable = debts
-                    .filter { it.direction == DEBT_OWED_TO_ME && !it.isClosed }
-                    .sumOf { it.remainingAmount }
+                outstandingReceivable = open.sumOf { it.remainingAmount },
+                openReceivableCount = open.size
             )
         }
         .combine(goalRepository.getGoals()) { state, goals ->

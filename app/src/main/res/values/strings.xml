@@ -96,7 +96,15 @@
     <string name="dashboard_expenses">Gastos</string>
     <string name="dashboard_lent">Prestado</string>
     <string name="dashboard_collected">Cobrado</string>
-    <string name="dashboard_outstanding_receivable">Te deben %1$s en total</string>
+    <!--
+        No dice "te deben" a secas porque debajo de Prestado y Cobrado se leia como el
+        resultado de restarlos, y no lo es: aquellos son del periodo elegido y esto es el
+        saldo de todas las deudas abiertas, sin filtro de fecha.
+    -->
+    <plurals name="dashboard_outstanding_receivable">
+        <item quantity="one">Saldo a tu favor: %1$s en %2$d deuda abierta (todo el historial)</item>
+        <item quantity="other">Saldo a tu favor: %1$s en %2$d deudas abiertas (todo el historial)</item>
+    </plurals>
     <string name="dashboard_expenses_by_category">Gastos por Categoría</string>
     <string name="dashboard_recent_transactions">Transacciones Recientes</string>
     <string name="dashboard_see_all">Ver todas</string>
@@ -198,7 +206,7 @@
     <string name="debts_empty_desc">Registra lo que debes o lo que te deben con el botón +</string>
     <string name="debts_i_owe">Yo debo</string>
     <string name="debts_owed_to_me">Me deben</string>
-    <string name="debts_settled">Saldada</string>
+    <string name="debts_settled">Saldada · se cobraron %1$s</string>
     <string name="debts_remaining_of">Restan %1$s de %2$s</string>
     <string name="debts_none_i_owe">No le debes nada a nadie.</string>
     <string name="debts_none_owed_to_me">Nadie te debe nada.</string>

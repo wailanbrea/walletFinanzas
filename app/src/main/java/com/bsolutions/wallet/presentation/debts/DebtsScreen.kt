@@ -382,7 +382,10 @@ private fun DebtCard(
                         )
                     }
                     Text(
-                        text = if (debt.isClosed) stringResource(R.string.debts_settled)
+                        // Una deuda saldada decia solo "Saldada", sin cifra: al cuadrar lo
+                        // cobrado del mes no habia forma de saber de donde salia ese dinero,
+                        // porque la deuda ya no aparece en el saldo a tu favor.
+                        text = if (debt.isClosed) stringResource(R.string.debts_settled, formatMoney(debt.totalAmount))
                         else stringResource(R.string.debts_remaining_of, formatMoney(debt.remainingAmount), formatMoney(debt.totalAmount)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
