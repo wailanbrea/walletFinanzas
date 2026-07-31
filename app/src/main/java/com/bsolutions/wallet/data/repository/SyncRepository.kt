@@ -310,6 +310,7 @@ class SyncRepository @Inject constructor(
 
     private suspend fun pull(): Int {
         var pulled = 0
+        var skippedWithoutDate = 0
         val ownerId = ownerScope.currentOwnerId()
 
         // Regla de conflicto: gana el servidor, salvo que la fila local tenga un cambio
@@ -393,6 +394,16 @@ class SyncRepository @Inject constructor(
                 }.orEmpty()
                 val localId = dto.idempotencyKey ?: dto.id
                 val existing = transactionDao.getTransactionByIdIncludingDeleted(ownerId, localId)
+                // Un movimiento sin fecha utilizable no se puede colocar en ninguna parte.
+                // Antes se le ponia la hora del momento, y esa invencion era la unica via
+                // por la que un movimiento viejo podia amanecer con fecha de hoy. Se salta
+                // la fila: si el servidor manda algo legible en la siguiente pasada,
+                // entra entonces, y mientras tanto no se corrompe nada.
+                val remoteDate = parseIsoOrNull(dto.timestamp) ?: existing?.date
+                if (remoteDate == null) {
+                    skippedWithoutDate++
+                    continue
+                }
                 // Se copia el estado del servidor tal cual, sin recalcular saldos: el
                 // saldo de la cuenta llega en el mismo pull, asi que ambos quedan
                 // coherentes entre si.
@@ -406,12 +417,9 @@ class SyncRepository @Inject constructor(
                         amount = positive,
                         type = type,
                         categoryId = validCategoryId,
-                        // Si el servidor manda una fecha que no se entiende, se conserva
-                        // la que ya tenia el movimiento: pisarla con la hora del momento
-                        // era justo lo que descolocaba la lista de recientes.
-                        date = parseIsoOrNull(dto.timestamp)
-                            ?: existing?.date
-                            ?: System.currentTimeMillis(),
+                        // Nunca la hora del momento: ver mas abajo por que se descarta
+                        // la fila entera antes que inventarle una fecha.
+                        date = remoteDate ?: checkNotNull(existing).date,
                         note = dto.description.orEmpty(),
                         currency = dto.currency,
                         // El servidor ya guarda el vinculo, asi que manda el suyo. Se cae
@@ -439,6 +447,14 @@ class SyncRepository @Inject constructor(
             }
             cursor = page.meta?.nextCursor
         } while (cursor != null)
+
+        // No se calla: saltarse filas en silencio se leeria como que llegaron todas.
+        if (skippedWithoutDate > 0) {
+            android.util.Log.w(
+                "WalletSync",
+                "$skippedWithoutDate movimiento(s) sin fecha utilizable; se dejan para la proxima pasada"
+            )
+        }
 
         cursor = null
         do {
