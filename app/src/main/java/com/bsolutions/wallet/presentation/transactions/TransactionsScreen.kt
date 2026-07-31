@@ -44,6 +44,7 @@ import com.bsolutions.wallet.presentation.dashboard.DashboardPeriodFilter
 import com.bsolutions.wallet.presentation.dashboard.TransactionItem
 import com.bsolutions.wallet.presentation.dashboard.getIconForName
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -272,6 +273,7 @@ fun TransactionDetailSheet(
     // Arranca en la del movimiento, no en hoy: corregir el monto no puede moverlo de dia.
     var editedDate by remember(transaction.id) { mutableStateOf(transaction.date) }
     var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
 
     val category = categories.find { it.id == transaction.categoryId }
     val dateStr = SimpleDateFormat("dd MMMM yyyy, hh:mm a", LocalConfiguration.current.locales[0]).format(Date(transaction.date))
@@ -312,6 +314,44 @@ fun TransactionDetailSheet(
             }
         ) {
             DatePicker(state = datePickerState)
+        }
+    }
+
+    if (showTimePicker) {
+        val calendar = Calendar.getInstance().apply { timeInMillis = editedDate }
+        val timePickerState = rememberTimePickerState(
+            initialHour = calendar.get(Calendar.HOUR_OF_DAY),
+            initialMinute = calendar.get(Calendar.MINUTE),
+            is24Hour = false
+        )
+        DatePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        editedDate = Calendar.getInstance().apply {
+                            timeInMillis = editedDate
+                            set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                            set(Calendar.MINUTE, timePickerState.minute)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }.timeInMillis
+                        showTimePicker = false
+                    }
+                ) { Text(stringResource(R.string.common_accept)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                TimePicker(state = timePickerState)
+            }
         }
     }
 
@@ -388,15 +428,32 @@ fun TransactionDetailSheet(
                 // La fecha se puede corregir, pero hay que ir a buscarla: viene puesta la
                 // que ya tenia el movimiento y solo cambia si se toca a proposito.
                 Text(stringResource(R.string.tx_date), style = MaterialTheme.typography.labelLarge)
-                OutlinedButton(
-                    onClick = { showDatePicker = true },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(24.dp)
-                ) {
-                    Text(
-                        SimpleDateFormat("dd MMMM yyyy", LocalConfiguration.current.locales[0])
-                            .format(Date(editedDate))
-                    )
+                // Dia y hora por separado. La hora hace falta de verdad: es lo que ordena
+                // los movimientos del mismo dia, y sin poder tocarla, arreglar una fecha
+                // mal puesta dejaba el movimiento en su dia pero a una hora inventada.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { showDatePicker = true },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text(
+                            SimpleDateFormat("dd MMM yyyy", LocalConfiguration.current.locales[0])
+                                .format(Date(editedDate)),
+                            maxLines = 1
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { showTimePicker = true },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text(
+                            SimpleDateFormat("hh:mm a", LocalConfiguration.current.locales[0])
+                                .format(Date(editedDate)),
+                            maxLines = 1
+                        )
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
