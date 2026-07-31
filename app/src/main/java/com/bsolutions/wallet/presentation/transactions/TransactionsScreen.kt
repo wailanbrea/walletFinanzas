@@ -37,6 +37,9 @@ import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.Debt
 import com.bsolutions.wallet.domain.model.Transaction
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.bsolutions.wallet.core.common.isTransferLeg
+import com.bsolutions.wallet.presentation.dashboard.DashboardPeriodFilter
 import com.bsolutions.wallet.presentation.dashboard.TransactionItem
 import com.bsolutions.wallet.presentation.dashboard.getIconForName
 import java.text.SimpleDateFormat
@@ -142,33 +145,54 @@ fun TransactionsScreen(
                     singleLine = true
                 )
 
-                // Horizontal Filter Chips
+                // Los tres filtros. Antes eran adornos: el chip decia "Este mes" y estaba
+                // marcado, pero la lista mostraba todo el historial y tocarlo no hacia nada.
+                // Cada uno abre su menu y la etiqueta dice lo que hay elegido.
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(bottom = 16.dp)
                 ) {
                     item {
-                        FilterChip(
-                            selected = true,
-                            onClick = {},
-                            label = { Text(stringResource(R.string.tx_filter_month)) },
-                            leadingIcon = { Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        val periodLabels = periodFilterLabels()
+                        FilterMenuChip(
+                            label = uiState.period?.let { periodLabels.getValue(it) }
+                                ?: stringResource(R.string.tx_filter_all_time),
+                            active = uiState.period != DashboardPeriodFilter.THIS_MONTH,
+                            icon = Icons.Default.CalendarMonth,
+                            options = buildList {
+                                add(null to stringResource(R.string.tx_filter_all_time))
+                                DashboardPeriodFilter.entries.forEach { add(it to periodLabels.getValue(it)) }
+                            },
+                            selected = uiState.period,
+                            onSelect = viewModel::setPeriod
                         )
                     }
                     item {
-                        FilterChip(
-                            selected = false,
-                            onClick = {},
-                            label = { Text(stringResource(R.string.tx_filter_all_accounts)) },
-                            leadingIcon = { Icon(Icons.Default.AccountBalance, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        FilterMenuChip(
+                            label = uiState.accounts.find { it.id == uiState.accountId }?.name
+                                ?: stringResource(R.string.tx_filter_all_accounts),
+                            active = uiState.accountId != null,
+                            icon = Icons.Default.AccountBalance,
+                            options = buildList {
+                                add(null to stringResource(R.string.tx_filter_all_accounts))
+                                uiState.accounts.forEach { add(it.id to it.name) }
+                            },
+                            selected = uiState.accountId,
+                            onSelect = viewModel::setAccount
                         )
                     }
                     item {
-                        FilterChip(
-                            selected = false,
-                            onClick = {},
-                            label = { Text(stringResource(R.string.categories_title)) },
-                            leadingIcon = { Icon(Icons.Default.Category, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        FilterMenuChip(
+                            label = uiState.categories.find { it.id == uiState.categoryId }?.name
+                                ?: stringResource(R.string.tx_filter_all_categories),
+                            active = uiState.categoryId != null,
+                            icon = Icons.Default.Category,
+                            options = buildList {
+                                add(null to stringResource(R.string.tx_filter_all_categories))
+                                uiState.categories.sortedBy { it.name }.forEach { add(it.id to it.name) }
+                            },
+                            selected = uiState.categoryId,
+                            onSelect = viewModel::setCategory
                         )
                     }
                 }
@@ -200,7 +224,9 @@ fun TransactionsScreen(
                                 title = tx.note.ifEmpty { category?.name ?: "Otros" },
                                 subtitle = dateStr,
                                 amount = tx.amount,
-                                type = tx.type,
+                                // Una transferencia no es ni ingreso ni gasto: el dinero
+                                // sigue siendo tuyo y solo cambio de cuenta.
+                                type = if (isTransferLeg(tx)) "TRANSFER" else tx.type,
                                 icon = getIconForName(category?.icon ?: "shopping_cart"),
                                 currency = tx.currency,
                                 categoryName = category?.name,
@@ -712,3 +738,65 @@ fun AddTransactionView(
         }
     }
 }
+
+/**
+ * Un chip que abre su lista de opciones y se marca cuando hay algo elegido.
+ *
+ * [T] es lo que identifica la opcion —el periodo, el id de la cuenta o el de la
+ * categoria— y null siempre significa "todas", que es la primera de la lista.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> FilterMenuChip(
+    label: String,
+    active: Boolean,
+    icon: ImageVector,
+    options: List<Pair<T?, String>>,
+    selected: T?,
+    onSelect: (T?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        FilterChip(
+            selected = active,
+            onClick = { expanded = true },
+            label = { Text(label, maxLines = 1) },
+            leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (value, text) ->
+                DropdownMenuItem(
+                    text = { Text(text) },
+                    // La marca dice cual esta puesto: con la lista abierta, el chip que
+                    // la abrio queda tapado y sin ella no se sabe donde se estaba.
+                    trailingIcon = {
+                        if (value == selected) {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    },
+                    onClick = {
+                        onSelect(value)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** Nombre visible de cada periodo, reutilizando los del panel para no inventar otros. */
+@Composable
+private fun periodFilterLabels(): Map<DashboardPeriodFilter, String> = mapOf(
+    DashboardPeriodFilter.TODAY to stringResource(R.string.dashboard_filter_today),
+    DashboardPeriodFilter.THIS_WEEK to stringResource(R.string.dashboard_filter_this_week),
+    DashboardPeriodFilter.THIS_MONTH to stringResource(R.string.tx_filter_month),
+    DashboardPeriodFilter.THIS_YEAR to stringResource(R.string.dashboard_filter_this_year),
+    DashboardPeriodFilter.LAST_7_DAYS to stringResource(R.string.dashboard_filter_last_7_days),
+    DashboardPeriodFilter.LAST_30_DAYS to stringResource(R.string.dashboard_filter_last_30_days),
+    DashboardPeriodFilter.LAST_12_WEEKS to stringResource(R.string.dashboard_filter_last_12_weeks),
+    DashboardPeriodFilter.LAST_6_MONTHS to stringResource(R.string.dashboard_filter_last_6_months),
+    DashboardPeriodFilter.LAST_1_YEAR to stringResource(R.string.dashboard_filter_last_1_year),
+    DashboardPeriodFilter.LAST_5_YEARS to stringResource(R.string.dashboard_filter_last_5_years)
+)

@@ -922,9 +922,18 @@ fun TransactionItem(
 
         Spacer(modifier = Modifier.width(16.dp))
 
-        val textColor = if (type == "INCOME") MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface
+        // Una transferencia va sin signo y en gris: no es ni ingreso ni gasto, el dinero
+        // sigue siendo tuyo y solo cambio de cuenta. Pintarla en rojo como un gasto hacia
+        // creer que se habia perdido, y la otra pata en verde, que se habia ganado.
+        val isTransfer = type == "TRANSFER"
+        val textColor = when {
+            isTransfer -> MaterialTheme.colorScheme.onSurfaceVariant
+            type == "INCOME" -> MaterialTheme.colorScheme.secondary
+            else -> MaterialTheme.colorScheme.onSurface
+        }
         Text(
-            text = MoneyFormat.formatSigned(amount, isIncome = type == "INCOME", currency = currency),
+            text = if (isTransfer) MoneyFormat.format(amount, currency)
+            else MoneyFormat.formatSigned(amount, isIncome = type == "INCOME", currency = currency),
             style = MaterialTheme.typography.titleMedium,
             color = textColor,
             fontWeight = FontWeight.Bold,

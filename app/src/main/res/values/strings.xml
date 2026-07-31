@@ -353,6 +353,9 @@
     <string name="tx_search_hint">Buscar movimientos…</string>
     <string name="tx_filter_month">Este mes</string>
     <string name="tx_filter_all_accounts">Todas las cuentas</string>
+    <string name="tx_filter_all_time">Todo el historial</string>
+    <string name="tx_filter_all_categories">Todas las categorías</string>
+    <string name="tx_filter_clear">Quitar filtros</string>
     <string name="tx_empty">No se encontraron movimientos.</string>
     <string name="tx_edit_title">Editar %1$s</string>
     <string name="tx_amount">Monto</string>

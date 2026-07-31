@@ -7,6 +7,8 @@ import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.core.common.CategoryRuleRepository
 import com.bsolutions.wallet.core.common.EmptyCategoryRules
 import com.bsolutions.wallet.core.common.ExpenseCategorizer
+import com.bsolutions.wallet.core.common.collapseTransferLegs
+import com.bsolutions.wallet.presentation.dashboard.DashboardPeriodFilter
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.model.Debt
@@ -33,10 +35,40 @@ data class TransactionsUiState(
     val categories: List<Category> = emptyList(),
     /** Todas las deudas por cobrar, abiertas y cerradas. */
     val receivables: List<Debt> = emptyList(),
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    /** Periodo mostrado; null es "todo", sin recortar por fecha. */
+    val period: DashboardPeriodFilter? = DashboardPeriodFilter.THIS_MONTH,
+    /** Cuenta elegida; null son todas. */
+    val accountId: String? = null,
+    /** Categoria elegida; null son todas. */
+    val categoryId: String? = null
 ) {
     /** Solo a una deuda abierta tiene sentido aplicarle un abono. */
     val openReceivables: List<Debt> get() = receivables.filterNot { it.isClosed }
+}
+
+private data class TransactionFilters(
+    val period: DashboardPeriodFilter? = DashboardPeriodFilter.THIS_MONTH,
+    val accountId: String? = null,
+    val categoryId: String? = null
+)
+
+/**
+ * Si el movimiento encaja con lo que se escribio en el buscador.
+ *
+ * Busca en la nota y tambien en el nombre de la categoria: escribir "transporte" tenia que
+ * encontrar la gasolina aunque la nota no diga esa palabra en ningun lado.
+ */
+internal fun matchesSearch(
+    transaction: Transaction,
+    query: String,
+    categoryName: String?
+): Boolean {
+    if (query.isBlank()) return true
+    val needle = query.trim()
+
+    return transaction.note.contains(needle, ignoreCase = true) ||
+        categoryName?.contains(needle, ignoreCase = true) == true
 }
 
 @HiltViewModel
@@ -50,27 +82,41 @@ class TransactionsViewModel @Inject constructor(
     private val categoryRules: CategoryRuleRepository = EmptyCategoryRules
 ) : ViewModel() {
 
+    /** Reloj sustituible para que las pruebas no dependan de la fecha de hoy. */
+    internal var nowMillisProvider: () -> Long = System::currentTimeMillis
+
     private val searchQuery = MutableStateFlow("")
+    private val filters = MutableStateFlow(TransactionFilters())
 
     val uiState: StateFlow<TransactionsUiState> = combine(
         transactionRepository.getTransactions(),
         accountRepository.getAccounts(),
         categoryRepository.getCategories(),
         debtRepository.getDebts(),
-        searchQuery
-    ) { txs, accounts, categories, debts, query ->
-        val filteredTxs = if (query.isEmpty()) {
-            txs
-        } else {
-            txs.filter { it.note.contains(query, ignoreCase = true) }
-        }
+        combine(searchQuery, filters) { query, active -> query to active }
+    ) { txs, accounts, categories, debts, (query, active) ->
+        val now = nowMillisProvider()
+        val since = active.period?.startMillis(now)
+        val categoryNameById = categories.associate { it.id to it.name }
+
+        val filteredTxs = txs
+            .filter { since == null || it.date >= since }
+            .filter { active.accountId == null || it.accountId == active.accountId }
+            .filter { active.categoryId == null || it.categoryId == active.categoryId }
+            .filter { matchesSearch(it, query, categoryNameById[it.categoryId]) }
 
         TransactionsUiState(
-            transactions = filteredTxs.sortedByDescending { it.date },
+            // La entrada de una transferencia se esconde cuando su salida esta en la
+            // misma lista: si no, el mismo dinero sale dos veces, una en verde y otra
+            // en rojo, y parece que se gasto y se gano a la vez.
+            transactions = collapseTransferLegs(filteredTxs.sortedByDescending { it.date }),
             accounts = accounts,
             categories = categories,
             receivables = debts.filter { it.direction == DEBT_OWED_TO_ME },
-            searchQuery = query
+            searchQuery = query,
+            period = active.period,
+            accountId = active.accountId,
+            categoryId = active.categoryId
         )
     }.stateIn(
         scope = viewModelScope,
@@ -80,6 +126,21 @@ class TransactionsViewModel @Inject constructor(
 
     fun updateSearchQuery(query: String) {
         searchQuery.value = query
+    }
+
+    /** null muestra todo el historial. */
+    fun setPeriod(period: DashboardPeriodFilter?) {
+        filters.value = filters.value.copy(period = period)
+    }
+
+    /** null son todas las cuentas. */
+    fun setAccount(accountId: String?) {
+        filters.value = filters.value.copy(accountId = accountId)
+    }
+
+    /** null son todas las categorias. */
+    fun setCategory(categoryId: String?) {
+        filters.value = filters.value.copy(categoryId = categoryId)
     }
 
     /**
