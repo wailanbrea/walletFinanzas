@@ -14,7 +14,13 @@ interface AccountRepository {
     suspend fun getAccount(id: String): Account?
     suspend fun addAccount(account: Account)
     suspend fun updateAccount(account: Account)
-    suspend fun deleteAccount(id: String)
+    /**
+     * Borra la cuenta y sus movimientos, y devuelve los que arrastro.
+     *
+     * Quien llame tiene que deshacer el efecto de los que estuvieran atados a una deuda:
+     * eso no puede resolverlo el repositorio de cuentas.
+     */
+    suspend fun deleteAccount(id: String): List<Transaction>
 }
 
 interface TransactionRepository {

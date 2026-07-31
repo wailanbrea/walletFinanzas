@@ -8,6 +8,7 @@ import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.data.preferences.UserPreferencesRepository
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
+import com.bsolutions.wallet.domain.usecase.DebtLedger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +27,12 @@ data class AccountsUiState(
     val foreignBalancesSubtitle: String? = null,
     val selectedAccountId: String? = null,
     val selectedAccountTransactions: List<Transaction> = emptyList(),
+    /**
+     * Movimientos de cada cuenta. Lo usa el aviso de borrado para enseñar lo que se va a
+     * llevar por delante: borrar una cuenta sin decir cuántos movimientos arrastra es
+     * pedir una confirmación a ciegas.
+     */
+    val transactionsByAccount: Map<String, List<Transaction>> = emptyMap(),
     val financialCountryCode: String = "DO",
     /** Modo privacidad: si está activo, la UI ofusca los montos. */
     val balancesHidden: Boolean = false
@@ -35,7 +42,8 @@ data class AccountsUiState(
 class AccountsViewModel @Inject constructor(
     private val accountRepository: AccountRepository,
     private val transactionRepository: TransactionRepository,
-    private val userPreferencesRepository: UserPreferencesRepository
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val debtLedger: DebtLedger
 ) : ViewModel() {
 
     private val selectedAccountId = MutableStateFlow<String?>(null)
@@ -60,6 +68,7 @@ class AccountsViewModel @Inject constructor(
             foreignBalancesSubtitle = AccountBalances.foreignSubtitle(accounts),
             selectedAccountId = selectedId,
             selectedAccountTransactions = filteredTx,
+            transactionsByAccount = allTransactions.groupBy { it.accountId },
             financialCountryCode = profile.financialCountryCode,
             balancesHidden = profile.balancesHidden
         )
@@ -129,7 +138,12 @@ class AccountsViewModel @Inject constructor(
 
     fun deleteAccount(accountId: String) {
         viewModelScope.launch {
+            // La cuenta se lleva sus movimientos. Los que estaban atados a una deuda
+            // tienen que soltar tambien su efecto ahi: si no, la deuda seguiria diciendo
+            // que se presto o se cobro un dinero cuyo movimiento ya no existe.
             accountRepository.deleteAccount(accountId)
+                .filter { it.debtId != null }
+                .forEach { debtLedger.onTransactionDeleted(it) }
             if (selectedAccountId.value == accountId) selectedAccountId.value = null
         }
     }

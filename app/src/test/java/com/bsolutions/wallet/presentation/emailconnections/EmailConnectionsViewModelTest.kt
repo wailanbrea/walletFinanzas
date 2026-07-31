@@ -685,8 +685,10 @@ class EmailConnectionsViewModelTest {
         override suspend fun updateAccount(account: Account) {
             accounts.value = accounts.value.filterNot { it.id == account.id } + account
         }
-        override suspend fun deleteAccount(id: String) {
+        override suspend fun deleteAccount(id: String): List<Transaction> {
             accounts.value = accounts.value.filterNot { it.id == id }
+
+            return emptyList()
         }
     }
 

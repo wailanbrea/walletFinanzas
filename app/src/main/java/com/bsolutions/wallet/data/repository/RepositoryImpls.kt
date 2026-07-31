@@ -119,11 +119,18 @@ class AccountRepositoryImpl @Inject constructor(
         syncScheduler.requestSyncNow()
     }
 
-    override suspend fun deleteAccount(id: String) {
-        dao.softDeleteWithOp(ownerScope.currentOwnerId(), id) { deleted ->
-            SyncRepository.accountOp(gson, deleted)
-        }
+    override suspend fun deleteAccount(id: String): List<Transaction> {
+        // Los movimientos se van con la cuenta. Dejarlos era peor que borrarlos: sin
+        // cuenta no se pueden ver ni deshacer, pero seguian sumando en el panel.
+        val dragged = dao.softDeleteWithTransactionsAndOps(
+            ownerId = ownerScope.currentOwnerId(),
+            id = id,
+            accountOp = { deleted -> SyncRepository.accountOp(gson, deleted) },
+            transactionOp = { tomb -> SyncRepository.transactionOp(gson, tomb) }
+        )
         syncScheduler.requestSyncNow()
+
+        return dragged.map { it.toDomain() }
     }
 }
 

@@ -321,7 +321,22 @@
     <string name="accounts_edit">Editar cuenta</string>
     <string name="accounts_edit_title">Editar Cuenta</string>
     <string name="accounts_delete">Eliminar cuenta</string>
-    <string name="accounts_delete_confirm">Se eliminará \"%1$s\". Sus movimientos históricos se conservarán. ¿Continuar?</string>
+    <string name="accounts_delete_confirm">Se eliminará \"%1$s\".</string>
+    <!--
+        La cuenta se lleva sus movimientos. Antes el aviso decía que se conservaban, y no
+        era verdad de ninguna forma útil: sin cuenta no se podían ver ni deshacer, pero
+        seguían sumando en el panel.
+    -->
+    <plurals name="accounts_delete_drags">
+        <item quantity="one">Se irá también %1$d movimiento suyo, por un total de %2$s:</item>
+        <item quantity="other">Se irán también %1$d movimientos suyos, por un total de %2$s:</item>
+    </plurals>
+    <string name="accounts_delete_no_movements">No tiene movimientos registrados.</string>
+    <plurals name="accounts_delete_and_more">
+        <item quantity="one">…y %1$d más</item>
+        <item quantity="other">…y %1$d más</item>
+    </plurals>
+    <string name="accounts_delete_irreversible">Esto no se puede deshacer.</string>
     <string name="accounts_name_hint">Nombre de la Cuenta</string>
     <string name="accounts_type">Tipo de Cuenta</string>
     <string name="accounts_initial_balance">Saldo Inicial (%1$s)</string>

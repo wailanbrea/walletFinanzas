@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.bsolutions.wallet.R
 import com.bsolutions.wallet.core.common.MoneyFormat
@@ -184,18 +185,13 @@ fun AccountsScreen(
 
         // Confirm Delete Account
         if (confirmDeleteAccount && selectedAccount != null) {
-            AlertDialog(
-                onDismissRequest = { confirmDeleteAccount = false },
-                title = { Text(stringResource(R.string.accounts_delete)) },
-                text = { Text(stringResource(R.string.accounts_delete_confirm, selectedAccount.name)) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        confirmDeleteAccount = false
-                        viewModel.deleteAccount(selectedAccount.id)
-                    }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirmDeleteAccount = false }) { Text(stringResource(R.string.common_cancel)) }
+            DeleteAccountDialog(
+                account = selectedAccount,
+                dragged = uiState.transactionsByAccount[selectedAccount.id].orEmpty(),
+                onDismiss = { confirmDeleteAccount = false },
+                onConfirm = {
+                    confirmDeleteAccount = false
+                    viewModel.deleteAccount(selectedAccount.id)
                 }
             )
         }
@@ -824,3 +820,106 @@ private fun CreditMetric(
 }
 
 private fun minorUnitsInput(amount: Long): String = BigDecimal.valueOf(amount, 2).toPlainString()
+
+/**
+ * Aviso antes de borrar una cuenta.
+ *
+ * Enseña los movimientos que se va a llevar por delante, con su fecha y su importe, y
+ * cuánto suman. Sin esa lista la confirmación es a ciegas: nadie recuerda cuántos
+ * movimientos tiene una cuenta ni cuánto valen, y el borrado no se puede deshacer.
+ */
+@Composable
+private fun DeleteAccountDialog(
+    account: Account,
+    dragged: List<Transaction>,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    // De los más recientes hacia atrás, que son los que se reconocen. Se enseñan unos
+    // pocos y se dice cuántos quedan: una lista de doscientos no cabe ni sirve.
+    val preview = dragged.sortedByDescending { it.date }.take(DELETE_PREVIEW_COUNT)
+    val total = dragged.sumOf { it.amount }
+    val dateFormat = SimpleDateFormat("dd MMM yyyy", LocalConfiguration.current.locales[0])
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.accounts_delete)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.accounts_delete_confirm, account.name))
+
+                if (dragged.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.accounts_delete_no_movements),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.accounts_delete_drags,
+                            dragged.size,
+                            dragged.size,
+                            MoneyFormat.format(total, account.currency)
+                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    preview.forEach { transaction ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = transaction.note.ifBlank { dateFormat.format(Date(transaction.date)) },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = MoneyFormat.formatSigned(
+                                    transaction.amount,
+                                    isIncome = transaction.type == "INCOME",
+                                    currency = transaction.currency
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    if (dragged.size > preview.size) {
+                        Text(
+                            text = pluralStringResource(
+                                R.plurals.accounts_delete_and_more,
+                                dragged.size - preview.size,
+                                dragged.size - preview.size
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Text(
+                    text = stringResource(R.string.accounts_delete_irreversible),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        }
+    )
+}
+
+/** Cuántos movimientos se enseñan en el aviso antes de resumir el resto. */
+private const val DELETE_PREVIEW_COUNT = 5

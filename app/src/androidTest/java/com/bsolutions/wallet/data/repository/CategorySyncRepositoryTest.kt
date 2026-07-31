@@ -23,7 +23,12 @@ import com.bsolutions.wallet.core.network.LoginRequest
 import com.bsolutions.wallet.core.network.MessageResponse
 import com.bsolutions.wallet.core.network.RegisterRequest
 import com.bsolutions.wallet.core.network.TransactionDto
+import com.bsolutions.wallet.core.network.AuthUserDto
+import com.bsolutions.wallet.core.network.UpdateProfileRequest
+import com.bsolutions.wallet.core.network.UpdateTransactionRequest
 import com.bsolutions.wallet.core.network.WalletApi
+import com.bsolutions.wallet.data.preferences.UserPreferencesRepository
+import retrofit2.Response
 import com.bsolutions.wallet.core.network.BudgetSyncDto
 import com.bsolutions.wallet.core.network.GoalSyncDto
 import com.bsolutions.wallet.core.network.DebtSyncDto
@@ -72,6 +77,10 @@ class CategorySyncRepositoryTest {
             debtDao = database.debtDao(),
             plannedPaymentDao = database.plannedPaymentDao(),
             ownerScope = ownerScope,
+            preferences = UserPreferencesRepository(
+                ApplicationProvider.getApplicationContext(),
+                ownerScope
+            ),
             gson = Gson()
         )
     }
@@ -282,12 +291,13 @@ private class CategorySyncFakeApi : WalletApi {
         calls += "CATEGORY:${request.id}"
         return ApiEnvelope(
             CategoryDto(
-                request.id,
-                request.name,
-                request.icon,
-                request.colorHex,
-                request.isDeleted,
-                null
+                id = request.id,
+                name = request.name,
+                icon = request.icon,
+                colorHex = request.colorHex,
+                type = request.type,
+                isDeleted = request.isDeleted,
+                updatedAt = null
             )
         )
     }
@@ -364,6 +374,41 @@ private class CategorySyncFakeApi : WalletApi {
         request: EmailCandidateReviewRequest
     ): ApiEnvelope<EmailCandidateDto> = unsupported()
     override suspend fun deleteEmailConnection(provider: String) = Unit
+    override suspend fun getProfile(): ApiEnvelope<AuthUserDto> = unsupported()
+    override suspend fun updateProfile(request: UpdateProfileRequest): ApiEnvelope<AuthUserDto> = unsupported()
+
+    /** Guarda lo que se corrige para poder comprobarlo desde las pruebas. */
+    val updatedTransactions = mutableMapOf<String, UpdateTransactionRequest>()
+
+    override suspend fun updateTransaction(
+        id: String,
+        request: UpdateTransactionRequest
+    ): ApiEnvelope<TransactionDto> {
+        calls += "TRANSACTION_UPDATE:$id"
+        updatedTransactions[id] = request
+
+        return ApiEnvelope(
+            TransactionDto(
+                id = id,
+                idempotencyKey = id,
+                accountId = "",
+                amount = request.amount,
+                currency = "DOP",
+                description = request.description,
+                categoryId = request.categoryId,
+                debtId = request.debtId,
+                timestamp = request.timestamp,
+                status = "completed",
+                updatedAt = null
+            )
+        )
+    }
+
+    override suspend fun deleteTransaction(id: String): Response<Unit> {
+        calls += "TRANSACTION_DELETE:$id"
+
+        return Response.success(null)
+    }
 
     private fun <T> unsupported(): T = throw UnsupportedOperationException("Not used")
 }

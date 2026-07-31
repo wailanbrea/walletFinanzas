@@ -280,7 +280,11 @@ class TransactionsViewModelTest {
         override suspend fun getAccount(id: String): Account? = accounts.value.firstOrNull { it.id == id }
         override suspend fun addAccount(account: Account) { accounts.value += account }
         override suspend fun updateAccount(account: Account) { accounts.value = accounts.value.map { if (it.id == account.id) account else it } }
-        override suspend fun deleteAccount(id: String) { accounts.value = accounts.value.filterNot { it.id == id } }
+        override suspend fun deleteAccount(id: String): List<Transaction> {
+            accounts.value = accounts.value.filterNot { it.id == id }
+
+            return emptyList()
+        }
         /** Simula el ajuste de saldo que el DAO hace dentro de la transacción atómica. */
         fun adjustBalance(accountId: String, delta: Long) {
             accounts.value = accounts.value.map { if (it.id == accountId) it.copy(balance = it.balance + delta) else it }
