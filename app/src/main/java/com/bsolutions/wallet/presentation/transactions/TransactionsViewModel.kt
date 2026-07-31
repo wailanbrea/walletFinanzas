@@ -197,7 +197,20 @@ class TransactionsViewModel @Inject constructor(
         }
     }
 
-    fun updateTransaction(original: Transaction, newAmount: Long, newCategoryId: String, newNote: String) {
+    /**
+     * Corrige un movimiento ya registrado.
+     *
+     * [newDate] llega solo cuando el usuario cambia la fecha a proposito. Si no, se
+     * conserva la que tenia: corregir el monto o la nota de algo de hace tres semanas no
+     * puede moverlo a hoy.
+     */
+    fun updateTransaction(
+        original: Transaction,
+        newAmount: Long,
+        newCategoryId: String,
+        newNote: String,
+        newDate: Long = original.date
+    ) {
         if (newAmount <= 0L) return
         viewModelScope.launch {
             val categories = categoryRepository.getCategories().first()
@@ -219,19 +232,24 @@ class TransactionsViewModel @Inject constructor(
             // (Las transferencias se editan por otra vía; aquí solo income/gasto.)
             if (original.type == "TRANSFER") {
                 transactionRepository.updateTransaction(
-                    original.copy(amount = newAmount, categoryId = finalCategoryId, note = newNote)
+                    original.copy(
+                        amount = newAmount,
+                        categoryId = finalCategoryId,
+                        note = newNote,
+                        date = newDate
+                    )
                 )
                 return@launch
             }
-            transactionRepository.updateTransactionWithBalance(
-                original.copy(amount = newAmount, categoryId = finalCategoryId, note = newNote),
-                oldAmount = original.amount
+            val corrected = original.copy(
+                amount = newAmount,
+                categoryId = finalCategoryId,
+                note = newNote,
+                date = newDate
             )
+            transactionRepository.updateTransactionWithBalance(corrected, oldAmount = original.amount)
             // Cambiar el monto de un movimiento atado mueve la deuda por la diferencia.
-            debtLedger.onAmountEdited(
-                original.copy(amount = newAmount, categoryId = finalCategoryId, note = newNote),
-                oldAmount = original.amount
-            )
+            debtLedger.onAmountEdited(corrected, oldAmount = original.amount)
         }
     }
 

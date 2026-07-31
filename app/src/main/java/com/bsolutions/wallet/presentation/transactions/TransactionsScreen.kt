@@ -32,6 +32,7 @@ import com.bsolutions.wallet.R
 import com.bsolutions.wallet.presentation.common.walletTopBarColors
 import com.bsolutions.wallet.core.common.MoneyFormat
 import com.bsolutions.wallet.core.common.MoneyParser
+import com.bsolutions.wallet.core.common.withDateKeepingTime
 import com.bsolutions.wallet.core.designsystem.CurrencyDisplayTextStyle
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
@@ -62,8 +63,8 @@ fun TransactionsScreen(
             account = uiState.accounts.find { it.id == tx.accountId },
             categories = uiState.categories,
             onDismiss = { selectedTransaction = null },
-            onUpdate = { newAmount, newCatId, newNote ->
-                viewModel.updateTransaction(tx, newAmount, newCatId, newNote)
+            onUpdate = { newAmount, newCatId, newNote, newDate ->
+                viewModel.updateTransaction(tx, newAmount, newCatId, newNote, newDate)
                 selectedTransaction = null
             },
             onDelete = {
@@ -247,7 +248,7 @@ fun TransactionDetailSheet(
     account: Account?,
     categories: List<Category>,
     onDismiss: () -> Unit,
-    onUpdate: (newAmount: Long, newCategoryId: String, newNote: String) -> Unit,
+    onUpdate: (newAmount: Long, newCategoryId: String, newNote: String, newDate: Long) -> Unit,
     onDelete: () -> Unit,
     /** Deuda a la que pertenece este movimiento, si ya está atado a una. */
     linkedDebt: Debt? = null,
@@ -268,6 +269,9 @@ fun TransactionDetailSheet(
         mutableStateOf(transaction.categoryId.takeIf { id -> categories.any { it.id == id } }.orEmpty())
     }
     var confirmDelete by remember { mutableStateOf(false) }
+    // Arranca en la del movimiento, no en hoy: corregir el monto no puede moverlo de dia.
+    var editedDate by remember(transaction.id) { mutableStateOf(transaction.date) }
+    var showDatePicker by remember { mutableStateOf(false) }
 
     val category = categories.find { it.id == transaction.categoryId }
     val dateStr = SimpleDateFormat("dd MMMM yyyy, hh:mm a", LocalConfiguration.current.locales[0]).format(Date(transaction.date))
@@ -282,6 +286,33 @@ fun TransactionDetailSheet(
         "INCOME" -> MaterialTheme.colorScheme.secondary
         "TRANSFER" -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.error
+    }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = editedDate)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // Se conserva la hora original: el selector solo devuelve el dia, y
+                        // guardar todo a medianoche baraja el orden dentro de esa fecha.
+                        datePickerState.selectedDateMillis?.let { picked ->
+                            editedDate = withDateKeepingTime(editedDate, picked)
+                        }
+                        showDatePicker = false
+                    },
+                    enabled = datePickerState.selectedDateMillis != null
+                ) { Text(stringResource(R.string.common_accept)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -354,6 +385,19 @@ fun TransactionDetailSheet(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                // La fecha se puede corregir, pero hay que ir a buscarla: viene puesta la
+                // que ya tenia el movimiento y solo cambia si se toca a proposito.
+                Text(stringResource(R.string.tx_date), style = MaterialTheme.typography.labelLarge)
+                OutlinedButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Text(
+                        SimpleDateFormat("dd MMMM yyyy", LocalConfiguration.current.locales[0])
+                            .format(Date(editedDate))
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { isEditing = false },
@@ -363,7 +407,7 @@ fun TransactionDetailSheet(
                     Button(
                         onClick = {
                             val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
-                            if (amount > 0) onUpdate(amount, selectedCategoryId, note)
+                            if (amount > 0) onUpdate(amount, selectedCategoryId, note, editedDate)
                         },
                         enabled = (MoneyParser.parseMinorUnits(amountStr) ?: 0L) > 0L,
                         modifier = Modifier.weight(1f).height(48.dp),

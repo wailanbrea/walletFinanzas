@@ -83,6 +83,47 @@ class TransactionsViewModelTest {
     }
 
     @Test
+    fun `correcting a movement never moves it to today`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 10_000L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        // 1 de julio de 2026, 08:30. Corregirle el monto no puede traerlo al dia de hoy.
+        val elPrimero = 1_782_218_400_000L
+        val original = Transaction("tx-1", "account-1", 5_000L, "EXPENSE", "cat_otros", elPrimero, "Colmado")
+        transactionRepository.addTransaction(original)
+        val viewModel = createViewModel(transactionRepository, accountRepository)
+
+        viewModel.updateTransaction(original, newAmount = 7_000L, newCategoryId = "", newNote = "Colmado grande")
+        advanceUntilIdle()
+
+        val corrected = transactionRepository.transactions.value.single()
+        assertEquals(7_000L, corrected.amount)
+        assertEquals("Colmado grande", corrected.note)
+        assertEquals(elPrimero, corrected.date)
+    }
+
+    @Test
+    fun `the date only changes when it is corrected on purpose`() = runTest {
+        val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 10_000L, "DOP"))
+        val transactionRepository = FakeTransactionRepository(accountRepository)
+        val elPrimero = 1_782_218_400_000L
+        val elQuince = 1_783_428_000_000L
+        val original = Transaction("tx-1", "account-1", 5_000L, "EXPENSE", "cat_otros", elPrimero, "Colmado")
+        transactionRepository.addTransaction(original)
+        val viewModel = createViewModel(transactionRepository, accountRepository)
+
+        viewModel.updateTransaction(
+            original,
+            newAmount = 5_000L,
+            newCategoryId = "",
+            newNote = "Colmado",
+            newDate = elQuince
+        )
+        advanceUntilIdle()
+
+        assertEquals(elQuince, transactionRepository.transactions.value.single().date)
+    }
+
+    @Test
     fun `lending money opens a receivable without touching the amount or the account`() = runTest {
         val accountRepository = FakeAccountRepository(Account("account-1", "Popular", "BANK", 100_000L, "DOP"))
         val transactionRepository = FakeTransactionRepository(accountRepository)
