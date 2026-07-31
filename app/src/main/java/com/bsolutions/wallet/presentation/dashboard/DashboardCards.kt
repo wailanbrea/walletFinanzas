@@ -6,6 +6,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.draw.clip
@@ -17,10 +18,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -33,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -44,13 +49,16 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -316,9 +324,18 @@ private fun AmountProgressRow(
 
 @Composable
 internal fun ExpenseStructureCard(uiState: DashboardUiState) {
+    var showBreakdown by remember { mutableStateOf(false) }
+
+    if (showBreakdown) {
+        ExpenseBreakdownSheet(uiState = uiState, onDismiss = { showBreakdown = false })
+    }
+
     DashboardInfoCard(
         title = stringResource(R.string.dashboard_card_expense_structure),
-        subtitle = stringResource(R.string.dashboard_card_expense_question)
+        subtitle = stringResource(R.string.dashboard_card_expense_question),
+        // La leyenda solo cabe para tres categorias, pero el grafico las pinta todas: sin
+        // esto, las porciones de las demas no tenian nombre en ningun lado.
+        onClick = { showBreakdown = true }.takeIf { uiState.categorySpending.isNotEmpty() }
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Column(modifier = Modifier.weight(1f)) {
@@ -335,10 +352,22 @@ internal fun ExpenseStructureCard(uiState: DashboardUiState) {
                     )
                 } else {
                     val fallback = MaterialTheme.colorScheme.primary
-                    uiState.categorySpending.take(3).forEach { spend ->
+                    uiState.categorySpending.take(LEGEND_CATEGORIES).forEach { spend ->
                         CategoryLegendItem(
                             text = "${spend.category.name} (${spend.percentage}%)",
                             color = parseHexColor(spend.category.colorHex, fallback)
+                        )
+                    }
+                    val hidden = uiState.categorySpending.size - LEGEND_CATEGORIES
+                    if (hidden > 0) {
+                        Text(
+                            text = pluralStringResource(
+                                R.plurals.dashboard_expense_more_categories,
+                                hidden,
+                                hidden
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -492,10 +521,13 @@ private fun DashboardInfoCard(
     title: String,
     subtitle: String,
     action: @Composable (() -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
         shape = RoundedCornerShape(16.dp)
@@ -514,6 +546,129 @@ private fun DashboardInfoCard(
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
             content()
+        }
+    }
+}
+
+/** Cuantas categorias caben en la leyenda de la tarjeta sin aplastar el grafico. */
+private const val LEGEND_CATEGORIES = 3
+
+/**
+ * Desglose completo del gasto por categoria.
+ *
+ * En la tarjeta solo caben tres nombres, pero el grafico dibuja todas las porciones: el
+ * resto quedaba pintado y sin nombre, y no habia forma de saber a que correspondia cada
+ * trozo ni cuanto valia.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExpenseBreakdownSheet(
+    uiState: DashboardUiState,
+    onDismiss: () -> Unit
+) {
+    val fallback = MaterialTheme.colorScheme.primary
+    // Cada barra se mide contra la categoria mas gastadora y no contra el total: si una
+    // sola se lleva el 70%, medir contra el total deja a las demas en una raya invisible.
+    val largest = uiState.categorySpending.maxOfOrNull { it.amount }?.coerceAtLeast(1L) ?: 1L
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Column {
+                    Text(
+                        text = stringResource(R.string.dashboard_card_expense_structure),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.dashboard_expense_breakdown_total,
+                            MoneyFormat.format(uiState.monthlyExpenses)
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    DonutChart(
+                        segments = uiState.categorySpending.map { spend ->
+                            DonutSegment(spend.amount, parseHexColor(spend.category.colorHex, fallback))
+                        },
+                        size = 160.dp,
+                        strokeWidth = 22.dp
+                    )
+                }
+            }
+            items(uiState.categorySpending, key = { it.category.id }) { spend ->
+                val color = parseHexColor(spend.category.colorHex, fallback)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                            )
+                            Text(
+                                text = spend.category.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = MoneyFormat.format(spend.amount),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            // El porcentaje redondea a entero, asi que una categoria
+                            // pequeña sale como 0%. El importe de arriba es el que manda.
+                            Text(
+                                text = "${spend.percentage}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(color.copy(alpha = 0.18f))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth((spend.amount.toFloat() / largest).coerceIn(0.04f, 1f))
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(50))
+                                .background(color)
+                        )
+                    }
+                }
+            }
         }
     }
 }

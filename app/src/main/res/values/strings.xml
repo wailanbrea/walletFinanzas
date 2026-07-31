@@ -129,6 +129,12 @@
     <string name="dashboard_filter_last_1_year">1 año</string>
     <string name="dashboard_filter_last_5_years">5 años</string>
     <string name="dashboard_no_expenses_filter">Sin gastos para este filtro</string>
+    <!-- En la tarjeta solo caben tres nombres; el grafico pinta todas las porciones. -->
+    <plurals name="dashboard_expense_more_categories">
+        <item quantity="one">y %1$d categoría más · toca para verlas</item>
+        <item quantity="other">y %1$d categorías más · toca para verlas</item>
+    </plurals>
+    <string name="dashboard_expense_breakdown_total">%1$s en total</string>
     <string name="dashboard_card_selector_title">Selector de tarjetas del panel</string>
     <string name="dashboard_card_tab_all">Todas</string>
     <string name="dashboard_card_tab_balance">Saldo</string>
