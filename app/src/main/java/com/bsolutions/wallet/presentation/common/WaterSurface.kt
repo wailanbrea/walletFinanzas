@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.TextStyle
@@ -62,18 +63,24 @@ fun WaterSurface(
         val tick = water.tick.value
         if (filled <= 0f || tick < 0f) return@Canvas
 
-        // El rebote mueve todo el nivel, no solo la ola: es lo que se ve al sacudirlo a
-        // lo largo. Acotado para que no se salga de la tarjeta.
+        // El liquido se dibuja en su propio marco, girado hasta que "abajo" coincida con
+        // la gravedad real, y luego se gira todo junto. Antes la superficie era una linea
+        // inclinada rellenada hacia el borde inferior de la tarjeta, asi que el agua
+        // quedaba pegada a ese borde: con el telefono de cabeza seguia abajo en vez de
+        // irse al lado que ahora es el fondo.
+        val gravityAngle = water.surfaceAngle.value
+        // El lienzo girado debe cubrir la tarjeta en cualquier angulo: se dibuja sobre un
+        // cuadrado de lado igual a la diagonal, o asomarian las esquinas vacias.
+        val span = kotlin.math.hypot(size.width, size.height)
+        val originX = (size.width - span) / 2f
+        val originY = (size.height - span) / 2f
+
+        // El rebote mueve todo el nivel: es lo que se ve al sacudirlo a lo largo.
         val bobbed = (filled + water.bob.value * 0.07f).coerceIn(0f, 1f)
-        val surfaceY = size.height * (1f - bobbed)
-        // Desnivel entre un extremo y el otro. Va contra el ancho y no contra el alto: la
-        // superficie cruza la tarjeta a lo largo, así que medirlo en la altura quedaba en
-        // unos pocos píxeles y no se veía nada.
-        val slope = water.tilt.value * size.width * 0.22f
         val energy = water.energy.value
         val phase = water.phase.value
 
-        // El caballo va debajo del agua: se ve a través de ella, no flotando encima.
+        // El caballo va debajo del agua: se ve a traves de ella, no flotando encima.
         for (piece in water.pieces) {
             val measured = textMeasurer.measure(text = piece.glyph, style = pieceStyle)
             val center = Offset(piece.x * size.width, piece.y * size.height)
@@ -90,35 +97,43 @@ fun WaterSurface(
             }
         }
 
-        drawWave(
-            surfaceY = surfaceY,
-            slope = slope * 0.6f,
-            phase = phase * 0.7f,
-            amplitude = size.height * 0.045f * energy,
-            brush = Brush.verticalGradient(
-                listOf(color.copy(alpha = 0.22f), color.copy(alpha = 0.10f)),
-                startY = surfaceY,
-                endY = size.height
-            )
-        )
-        drawWave(
-            surfaceY = surfaceY,
-            slope = slope,
-            phase = phase,
-            amplitude = size.height * 0.065f * energy,
-            brush = Brush.verticalGradient(
-                listOf(color.copy(alpha = 0.40f), color.copy(alpha = 0.16f)),
-                startY = surfaceY,
-                endY = size.height
-            )
-        )
+        rotate(degrees = gravityAngle, pivot = Offset(size.width / 2f, size.height / 2f)) {
+            translate(left = originX, top = originY) {
+                val surfaceY = span * (1f - bobbed)
+                drawWave(
+                    width = span,
+                    height = span,
+                    surfaceY = surfaceY,
+                    phase = phase * 0.7f,
+                    amplitude = span * 0.030f * energy,
+                    brush = Brush.verticalGradient(
+                        listOf(color.copy(alpha = 0.22f), color.copy(alpha = 0.10f)),
+                        startY = surfaceY,
+                        endY = span
+                    )
+                )
+                drawWave(
+                    width = span,
+                    height = span,
+                    surfaceY = surfaceY,
+                    phase = phase,
+                    amplitude = span * 0.042f * energy,
+                    brush = Brush.verticalGradient(
+                        listOf(color.copy(alpha = 0.40f), color.copy(alpha = 0.16f)),
+                        startY = surfaceY,
+                        endY = span
+                    )
+                )
+            }
+        }
     }
 }
 
 /** Una onda rellena desde su superficie hasta abajo. */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
+    width: Float,
+    height: Float,
     surfaceY: Float,
-    slope: Float,
     phase: Float,
     amplitude: Float,
     brush: Brush
@@ -144,7 +159,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
         return (principal + secundaria) * amplitude * sharpness
     }
 
-    fun surfaceAt(t: Float): Float = surfaceY - slope + slope * 2f * t + heightAt(t)
+    fun surfaceAt(t: Float): Float = surfaceY + heightAt(t)
 
     val path = Path().apply {
         moveTo(0f, surfaceAt(0f))
@@ -158,14 +173,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
             // de la onda, y no por la cuerda entre extremos.
             val controlY = 2f * surfaceAt(middle) - (surfaceAt(previous) + surfaceAt(current)) / 2f
             quadraticTo(
-                size.width * middle + shiftAt(middle),
+                width * middle + shiftAt(middle),
                 controlY,
-                size.width * current + shiftAt(current),
+                width * current + shiftAt(current),
                 surfaceAt(current)
             )
         }
-        lineTo(size.width, size.height)
-        lineTo(0f, size.height)
+        lineTo(width, height)
+        lineTo(0f, height)
         close()
     }
     drawPath(path, brush)
@@ -180,6 +195,10 @@ private class WaterMotion {
     val phase = mutableFloatStateOf(0f)
     /** Cuánto sube o baja el nivel al sacudir el teléfono a lo largo. */
     val bob = mutableFloatStateOf(0f)
+    /** Angulo del liquido en grados; persigue a la gravedad con retardo elastico. */
+    val surfaceAngle = mutableFloatStateOf(0f)
+    var angleVelocity = 0f
+
     /** Sube en cada fotograma: es lo que fuerza a redibujar. */
     val tick = mutableFloatStateOf(0f)
 
@@ -249,6 +268,18 @@ private fun rememberWaterMotion(): WaterMotion {
                 val acceleration = (target - water.tilt.floatValue) * 20f - water.velocity * 3.4f
                 water.velocity += acceleration * dt
                 water.tilt.floatValue += water.velocity * dt
+
+                // El liquido no se pone a nivel de golpe: persigue el angulo de la
+                // gravedad con el mismo resorte, y por eso se pasa de largo y vuelve.
+                val targetAngle = Math.toDegrees(
+                    kotlin.math.atan2(water.gravityX.toDouble(), water.gravityY.toDouble())
+                ).toFloat()
+                // Por el camino corto: entre 179 y -179 hay dos grados, no trescientos.
+                var difference = targetAngle - water.surfaceAngle.floatValue
+                while (difference > 180f) difference -= 360f
+                while (difference < -180f) difference += 360f
+                water.angleVelocity += (difference * 20f - water.angleVelocity * 3.4f) * dt
+                water.surfaceAngle.floatValue += water.angleVelocity * dt
 
                 // Sacudirlo comprime el líquido contra el fondo. Se mide la magnitud total
                 // menos la gravedad: así da igual cómo se sostenga el teléfono.
