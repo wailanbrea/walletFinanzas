@@ -49,6 +49,25 @@ class AccountBalancesTest {
         assertEquals(mapOf("USD" to 30_000L), AccountBalances.foreignTotals(listOf(pesos, dolares)))
     }
 
+    @Test
+    fun `an empty foreign account is not announced under the total`() {
+        val pesos = account(id = "a1", balance = 50_000)
+        val dolaresVacia = account(id = "a2", balance = 0, currency = "USD")
+
+        // Sin esto el Balance Total llevaba debajo un "Ademas: US$0.00" que se lee
+        // como un fallo de la app y no como una cuenta vacia.
+        assertEquals(emptyMap<String, Long>(), AccountBalances.foreignTotals(listOf(pesos, dolaresVacia)))
+        assertEquals(null, AccountBalances.foreignSubtitle(listOf(pesos, dolaresVacia)))
+    }
+
+    @Test
+    fun `two accounts in the same currency that cancel out are not announced either`() {
+        val ahorro = account(id = "a1", balance = 30_000, currency = "USD")
+        val tarjeta = account(id = "a2", balance = -30_000, currency = "USD")
+
+        assertEquals(emptyMap<String, Long>(), AccountBalances.foreignTotals(listOf(ahorro, tarjeta)))
+    }
+
     private fun account(
         id: String,
         balance: Long,

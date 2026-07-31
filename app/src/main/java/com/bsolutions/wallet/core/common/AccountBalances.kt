@@ -17,11 +17,18 @@ object AccountBalances {
         accounts.filter { it.currency == MoneyFormat.DEFAULT_CURRENCY }
             .sumOf { it.balance }
 
-    /** Subtotales por cada divisa distinta de la base, ordenados por código. */
+    /**
+     * Subtotales por cada divisa distinta de la base, ordenados por código.
+     *
+     * Las divisas cuyo subtotal queda en cero no se listan: una cuenta en dólares
+     * vacía no es información, y "Además: US$0.00" bajo el Balance Total se lee
+     * como un fallo. Vuelve a aparecer sola en cuanto la cuenta tenga saldo.
+     */
     fun foreignTotals(accounts: List<Account>): Map<String, Long> =
         accounts.filter { it.currency != MoneyFormat.DEFAULT_CURRENCY }
             .groupBy { it.currency }
             .mapValues { (_, accs) -> accs.sumOf { it.balance } }
+            .filterValues { it != 0L }
             .toSortedMap()
 
     /**
