@@ -129,6 +129,20 @@ fun WaterSurface(
     }
 }
 
+/**
+ * Grados que hay que girar el marco del liquido para que su "abajo" caiga donde cae la
+ * gravedad. [gravityX] y [gravityY] ya vienen en coordenadas de la tarjeta: X positivo a
+ * la derecha, Y positivo hacia abajo.
+ *
+ * El signo de X va negado a proposito. `rotate` gira en sentido horario, y con el eje Y
+ * hacia abajo eso lleva el vector local (0,1) a (-sen, cos): para que apunte a (gx, gy)
+ * hace falta sen = -gx. Con `atan2(gx, gy)` el agua se iba al lado contrario del que se
+ * inclinaba el telefono, mientras el caballo —que usa la gravedad directamente, sin
+ * pasar por ningun giro— si caia al lado correcto.
+ */
+internal fun surfaceAngleFor(gravityX: Float, gravityY: Float): Float =
+    Math.toDegrees(kotlin.math.atan2(-gravityX.toDouble(), gravityY.toDouble())).toFloat()
+
 /** Una onda rellena desde su superficie hasta abajo. */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
     width: Float,
@@ -271,9 +285,7 @@ private fun rememberWaterMotion(): WaterMotion {
 
                 // El liquido no se pone a nivel de golpe: persigue el angulo de la
                 // gravedad con el mismo resorte, y por eso se pasa de largo y vuelve.
-                val targetAngle = Math.toDegrees(
-                    kotlin.math.atan2(water.gravityX.toDouble(), water.gravityY.toDouble())
-                ).toFloat()
+                val targetAngle = surfaceAngleFor(water.gravityX, water.gravityY)
                 // Por el camino corto: entre 179 y -179 hay dos grados, no trescientos.
                 var difference = targetAngle - water.surfaceAngle.floatValue
                 while (difference > 180f) difference -= 360f
