@@ -747,11 +747,7 @@ fun TotalBalanceCard(
         WaterSurface(
             level = waterLevel,
             color = Color.White,
-            modifier = Modifier.matchParentSize(),
-            // El fondo se pasa por fórmula y no se captura: es el mismo degradado que
-            // pinta la tarjeta, así que el shader puede recalcularlo y desviarlo.
-            backgroundTop = gradientStart,
-            backgroundBottom = gradientEnd
+            modifier = Modifier.matchParentSize()
         )
         // Los circulos decorativos se retiraron: dentro del vaso ahora hay piezas de
         // ajedrez, y un fondo con burbujas fijas competia con ellas.

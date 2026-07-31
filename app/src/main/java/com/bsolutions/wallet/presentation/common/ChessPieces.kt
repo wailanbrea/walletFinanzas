@@ -12,6 +12,8 @@ package com.bsolutions.wallet.presentation.common
  */
 internal class ChessPiece(
     val glyph: String,
+    /** Desfase propio: sin el, las ocho oscilarian a la vez como un bloque. */
+    val sway: Float,
     /** Fraccion del ancho de la tarjeta. */
     var x: Float,
     /** Fraccion del alto. */
@@ -36,7 +38,11 @@ internal fun advanceChessPieces(
     gy: Float,
     dt: Float,
     /** Mitad del tamaño de una pieza, en fracción, para que no se salgan por el borde. */
-    margin: Float
+    margin: Float,
+    /** Segundos desde que se abrió la pantalla, para la deriva continua. */
+    elapsed: Float,
+    /** Cuánto se está agitando el agua ahora mismo, de 0 a 1. */
+    stirred: Float
 ) {
     val gravity = 1.6f
     val drag = 2.6f
@@ -45,6 +51,13 @@ internal fun advanceChessPieces(
     for (piece in pieces) {
         piece.vx += gx * gravity * dt
         piece.vy += gy * gravity * dt
+
+        // Nada suelto en un liquido se queda del todo quieto: siempre hay corriente. Cada
+        // pieza tiene su propio ritmo, y con el agua agitada la corriente arrecia.
+        val current = 0.05f + stirred * 0.55f
+        piece.vx += kotlin.math.sin(elapsed * 0.9f + piece.sway) * current * dt
+        piece.vy += kotlin.math.cos(elapsed * 0.7f + piece.sway * 1.6f) * current * dt
+
         // El agua frena: la velocidad se pierde sola en vez de acumularse.
         piece.vx -= piece.vx * drag * dt
         piece.vy -= piece.vy * drag * dt
@@ -103,6 +116,7 @@ private fun separate(pieces: List<ChessPiece>, margin: Float) {
 internal fun initialChessPieces(): List<ChessPiece> = CHESS_BACK_RANK.mapIndexed { index, glyph ->
     ChessPiece(
         glyph = glyph,
+        sway = index * 0.8f,
         x = 0.10f + index * 0.114f,
         y = 0.82f
     )
