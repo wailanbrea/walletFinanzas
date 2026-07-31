@@ -1,18 +1,17 @@
 package com.bsolutions.wallet.presentation.common
 
 /**
- * Las ocho piezas de la fila trasera, hundidas en el agua de la tarjeta.
+ * Un caballo de ajedrez suelto en el agua de la tarjeta.
  *
- * Son mas pesadas que el liquido, asi que se van al fondo y ruedan hacia el lado bajo
- * cuando el telefono se inclina. No flotan: eso las haria parecer globos.
+ * Es mas pesado que el liquido, asi que se va al fondo y rueda hacia el lado bajo
+ * cuando el telefono se inclina. No flota: eso lo haria parecer un globo.
  *
- * Se dibujan con los glifos de ajedrez de Unicode y no con trazados a mano: a este
- * tamano un contorno propio sale tosco, y la tipografia ya trae la silueta bien
- * resuelta a cualquier resolucion.
+ * Se dibuja con el glifo de ajedrez de Unicode y no con un trazado a mano: a este tamano
+ * un contorno propio sale tosco, y la tipografia trae la silueta bien resuelta.
  */
 internal class ChessPiece(
     val glyph: String,
-    /** Desfase propio: sin el, las ocho oscilarian a la vez como un bloque. */
+    /** Desfase de la corriente que lo mece. */
     val sway: Float,
     /** Fraccion del ancho de la tarjeta. */
     var x: Float,
@@ -22,8 +21,8 @@ internal class ChessPiece(
     var vy: Float = 0f
 )
 
-/** Torre, caballo, alfil, dama, rey, alfil, caballo, torre. */
-internal val CHESS_BACK_RANK = listOf("♜", "♞", "♝", "♛", "♚", "♝", "♞", "♜")
+/** Un solo caballo: suelto en el vaso, no un tablero volcado dentro. */
+internal const val CHESS_KNIGHT = "♞"
 
 /**
  * Mueve las piezas por el fondo del vaso.
@@ -81,43 +80,9 @@ internal fun advanceChessPieces(
             piece.vy = -piece.vy * bounce
         }
     }
-
-    separate(pieces, margin)
 }
 
-/**
- * Las aparta cuando se montan una encima de otra.
- *
- * Sin esto todas caen al mismo punto bajo y quedan superpuestas en un borron negro, que
- * es justo lo contrario de verse definidas.
- */
-private fun separate(pieces: List<ChessPiece>, margin: Float) {
-    val minimum = margin * 1.7f
-    for (i in pieces.indices) {
-        for (j in i + 1 until pieces.size) {
-            val a = pieces[i]
-            val b = pieces[j]
-            val dx = b.x - a.x
-            val dy = (b.y - a.y) * 0.5f // el alto pesa menos: se apilan algo
-            val distance = kotlin.math.sqrt(dx * dx + dy * dy)
-            if (distance >= minimum || distance == 0f) continue
-            val push = (minimum - distance) / 2f
-            val nx = dx / distance
-            val ny = dy / distance
-            a.x -= nx * push
-            b.x += nx * push
-            a.y -= ny * push
-            b.y += ny * push
-        }
-    }
-}
-
-/** Reparte las piezas a lo ancho del fondo, como salen de la caja. */
-internal fun initialChessPieces(): List<ChessPiece> = CHESS_BACK_RANK.mapIndexed { index, glyph ->
-    ChessPiece(
-        glyph = glyph,
-        sway = index * 0.8f,
-        x = 0.10f + index * 0.114f,
-        y = 0.82f
-    )
-}
+/** El caballo empieza centrado y ya hundido. */
+internal fun initialChessPieces(): List<ChessPiece> = listOf(
+    ChessPiece(glyph = CHESS_KNIGHT, sway = 0f, x = 0.5f, y = 0.8f)
+)

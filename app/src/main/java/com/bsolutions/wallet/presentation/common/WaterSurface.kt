@@ -31,7 +31,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Agua dentro de la tarjeta, con las ocho piezas de ajedrez sueltas.
+ * Agua dentro de la tarjeta, con un caballo de ajedrez suelto.
  *
  * Se dibujan dos ondas desfasadas y no una: con una sola el movimiento se lee como una
  * bandera y no como líquido. La de atrás va más tenue y a otra velocidad, que es lo que
@@ -48,7 +48,7 @@ fun WaterSurface(
     val water = rememberWaterMotion()  // se lee dentro del Canvas, no aquí
     // Se crea una vez: medir texto en cada fotograma cuesta más que dibujarlo.
     val textMeasurer = rememberTextMeasurer()
-    val pieceStyle = remember { TextStyle(fontSize = 30.sp, color = Color.Black) }
+    val pieceStyle = remember { TextStyle(fontSize = 52.sp, color = Color.Black) }
     // El nivel se anima para que al cambiar de meta el agua suba en vez de saltar.
     val filled by animateFloatAsState(
         targetValue = level.coerceIn(0f, 1f),
@@ -72,7 +72,7 @@ fun WaterSurface(
         val energy = water.energy.value
         val phase = water.phase.value
 
-        // Las piezas van debajo del agua: se ven a través de ella, no flotando encima.
+        // El caballo va debajo del agua: se ve a través de ella, no flotando encima.
         for (piece in water.pieces) {
             val measured = textMeasurer.measure(text = piece.glyph, style = pieceStyle)
             drawText(
@@ -165,7 +165,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWave(
     drawPath(path, brush)
 }
 
-/** Estado del líquido: hacia dónde se inclina, cuánto chapotea y dónde están las piezas. */
+/** Estado del líquido: hacia dónde se inclina, cuánto chapotea y dónde está el caballo. */
 private class WaterMotion {
     /** Inclinación actual de la superficie, de -1 a 1. */
     val tilt = mutableFloatStateOf(0f)
@@ -187,16 +187,16 @@ private class WaterMotion {
     var lastEventNanos = 0L
     var elapsed = 0f
 
-    /** Las ocho piezas sueltas en el vaso. */
+    /** El caballo suelto en el vaso. */
     val pieces = initialChessPieces()
 }
 
 /**
  * Sigue el movimiento del teléfono y mueve las piezas.
  *
- * El agua responde al sensor, pero las piezas se mueven por fotograma y no por lectura
- * del acelerómetro: algo suelto en un líquido nunca se queda del todo quieto, y atarlas
- * al sensor las dejaba congeladas en cuanto el teléfono se apoyaba en la mesa.
+ * El agua responde al sensor, pero el caballo se mueve por fotograma y no por lectura del
+ * acelerómetro: algo suelto en un líquido nunca se queda del todo quieto, y atarlo al
+ * sensor lo dejaba congelado en cuanto el teléfono se apoyaba en la mesa.
  *
  * Tanto el bucle como el listener se sueltan al salir de la pantalla: seguir calculando o
  * escuchando cuando no se ve nada gasta batería sin que el usuario pueda notarlo.
@@ -286,7 +286,7 @@ private fun rememberWaterMotion(): WaterMotion {
                         gx = water.gravityX,
                         gy = water.gravityY,
                         dt = dt,
-                        margin = 0.085f,
+                        margin = 0.13f,
                         elapsed = water.elapsed,
                         stirred = water.energy.floatValue
                     )
