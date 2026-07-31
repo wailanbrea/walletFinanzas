@@ -753,28 +753,8 @@ fun TotalBalanceCard(
             backgroundTop = gradientStart,
             backgroundBottom = gradientEnd
         )
-        // Círculos decorativos translúcidos
-        Box(
-            modifier = Modifier
-                .size(150.dp)
-                .offset(x = 250.dp, y = (-40).dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.12f))
-        )
-        Box(
-            modifier = Modifier
-                .size(90.dp)
-                .offset(x = 300.dp, y = 70.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.10f))
-        )
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .offset(x = (-16).dp, y = 90.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.08f))
-        )
+        // Los circulos decorativos se retiraron: dentro del vaso ahora hay piezas de
+        // ajedrez, y un fondo con burbujas fijas competia con ellas.
 
         Column(modifier = Modifier.padding(24.dp)) {
             Row(

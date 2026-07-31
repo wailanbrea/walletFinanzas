@@ -21,6 +21,10 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import kotlin.math.PI
@@ -45,6 +49,9 @@ fun WaterSurface(
     backgroundBottom: Color? = null
 ) {
     val water = rememberWaterMotion()  // se lee dentro del Canvas, no aquí
+    // Se mide una vez y se reutiliza: medir texto en cada fotograma es caro.
+    val textMeasurer = rememberTextMeasurer()
+    val pieceFontSize = 26.sp
     // El nivel se anima para que al cambiar de meta el agua suba en vez de saltar.
     val filled by animateFloatAsState(
         targetValue = level.coerceIn(0f, 1f),
@@ -98,8 +105,22 @@ fun WaterSurface(
             )
         )
 
-        // Las gotas se leen para que el dibujo se rehaga mientras haya alguna en el aire.
+        // Las gotas y las piezas se leen para que el dibujo se rehaga mientras se muevan.
         water.splashTick.value
+        for (piece in water.pieces) {
+            val measured = textMeasurer.measure(
+                text = piece.glyph,
+                style = TextStyle(fontSize = pieceFontSize)
+            )
+            drawText(
+                textLayoutResult = measured,
+                color = Color.Black,
+                topLeft = Offset(
+                    piece.x * size.width - measured.size.width / 2f,
+                    piece.y * size.height - measured.size.height / 2f
+                )
+            )
+        }
         for (drop in water.droplets) {
             // Nacen en la superficie: se parte del nivel y se le suma su propia caida.
             val originY = surfaceY - slope + slope * 2f * drop.x
@@ -260,6 +281,9 @@ private class WaterMotion {
      */
     var gravityX = 0f
     var gravityY = 1f
+
+    /** Las ocho piezas hundidas en el vaso. */
+    val pieces = initialChessPieces()
 
     var lastEventNanos = 0L
 
@@ -429,6 +453,9 @@ private fun rememberWaterMotion(): WaterMotion {
                 val decay = kotlin.math.exp(-1.6f * dt)
                 water.energy.floatValue = maxOf(water.energy.floatValue * decay, stirred)
                 advanceDroplets(water, dt, stirred)
+                advanceChessPieces(water.pieces, water.gravityX, water.gravityY, dt, margin = 0.075f)
+                // Las piezas se mueven mientras haya inercia, aunque el chapoteo pare.
+                water.splashTick.floatValue += dt
 
                 if (water.energy.floatValue < 0.01f) {
                     water.energy.floatValue = 0f
