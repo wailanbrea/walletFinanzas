@@ -83,10 +83,15 @@ class EmailConnectionController extends Controller
             $connection = EmailConnection::query()
                 ->where('user_id', $request->user()->id)
                 ->where('provider', $provider)
-                ->where('status', 'connected')
                 ->lockForUpdate()
                 ->first();
             if (! $connection) {
+                return ['error' => 'email_connection_not_found'];
+            }
+            if ($connection->status === EmailOAuthService::REAUTHORIZATION_REQUIRED) {
+                return ['error' => 'email_reauthorization_required'];
+            }
+            if ($connection->status !== 'connected') {
                 return ['error' => 'email_connection_not_found'];
             }
             $activeRun = EmailSyncRun::query()
@@ -133,6 +138,12 @@ class EmailConnectionController extends Controller
         });
         if (($outcome['error'] ?? null) === 'email_connection_not_found') {
             return response()->json(['message' => 'No hay una conexion de correo autorizada para este proveedor.', 'code' => 'email_connection_not_found'], 409);
+        }
+        if (($outcome['error'] ?? null) === 'email_reauthorization_required') {
+            return response()->json([
+                'message' => 'La conexion de correo necesita ser autorizada nuevamente.',
+                'code' => 'email_reauthorization_required',
+            ], 409);
         }
         if (($outcome['error'] ?? null) === 'email_sync_already_running') {
             return response()->json([

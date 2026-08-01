@@ -48,6 +48,15 @@ class SyncEmailConnection implements ShouldQueue
         try {
             $counts = $scanner->scan($run->connection, $run->sync_from_at);
         } catch (Throwable $exception) {
+            if ($exception->getMessage() === 'email_reauthorization_required') {
+                EmailSyncRun::query()->whereKey($run->id)->where('status', 'running')->update([
+                    'status' => 'failed',
+                    'error_code' => 'email_reauthorization_required',
+                    'finished_at' => now(),
+                ]);
+
+                return;
+            }
             EmailSyncRun::query()->whereKey($run->id)->where('status', 'running')->update(['status' => 'queued']);
             throw $exception;
         }

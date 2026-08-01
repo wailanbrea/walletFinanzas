@@ -16,6 +16,8 @@ class EmailOAuthService
 {
     public const PROVIDERS = ['gmail', 'microsoft'];
 
+    public const REAUTHORIZATION_REQUIRED = 'reauthorization_required';
+
     public function isReady(string $provider): bool
     {
         $config = $this->providerConfig($provider);
@@ -121,10 +123,14 @@ class EmailOAuthService
 
     public function accessToken(EmailConnection $connection): string
     {
+        if ($connection->status === self::REAUTHORIZATION_REQUIRED) {
+            throw new RuntimeException('email_reauthorization_required');
+        }
         if (! $connection->token_expires_at || $connection->token_expires_at->isFuture()) {
             return $connection->access_token;
         }
         if (! filled($connection->refresh_token)) {
+            $this->pauseForReauthorization($connection);
             throw new RuntimeException('email_reauthorization_required');
         }
 
@@ -138,7 +144,12 @@ class EmailOAuthService
         if ($connection->provider === 'microsoft') {
             $payload['scope'] = 'openid email profile offline_access Mail.Read User.Read';
         }
-        $token = $this->http()->asForm()->post($this->tokenEndpoint($connection->provider), $payload)->throw()->json();
+        $response = $this->http()->asForm()->post($this->tokenEndpoint($connection->provider), $payload);
+        if ($response->json('error') === 'invalid_grant') {
+            $this->pauseForReauthorization($connection);
+            throw new RuntimeException('email_reauthorization_required');
+        }
+        $token = $response->throw()->json();
         if (! is_string($token['access_token'] ?? null)) {
             throw new RuntimeException('oauth_token_missing');
         }
@@ -150,6 +161,15 @@ class EmailOAuthService
         ]);
 
         return $connection->access_token;
+    }
+
+    private function pauseForReauthorization(EmailConnection $connection): void
+    {
+        $connection->update([
+            'status' => self::REAUTHORIZATION_REQUIRED,
+            'refresh_token' => null,
+            'token_expires_at' => null,
+        ]);
     }
 
     public function ensureProvider(string $provider): void

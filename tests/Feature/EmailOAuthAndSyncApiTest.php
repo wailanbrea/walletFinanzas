@@ -223,6 +223,60 @@ class EmailOAuthAndSyncApiTest extends TestCase
         );
     }
 
+    public function test_invalid_grant_pauses_sync_until_oauth_reconnects_the_connection(): void
+    {
+        $user = User::factory()->create();
+        $connection = $this->connection($user, 'gmail', now()->subMinute());
+        Sanctum::actingAs($user);
+        $reauthorizing = false;
+        Http::fake(function (Request $request) use (&$reauthorizing) {
+            if (str_contains($request->url(), 'oauth2.googleapis.com/token')) {
+                return $reauthorizing
+                    ? Http::response([
+                        'access_token' => 'reauthorized-access-token',
+                        'refresh_token' => 'reauthorized-refresh-token',
+                        'expires_in' => 3600,
+                    ])
+                    : Http::response([
+                        'error' => 'invalid_grant',
+                        'error_description' => 'Token has been expired or revoked.',
+                    ], 400);
+            }
+
+            return Http::response(['emailAddress' => 'gmail@example.test']);
+        });
+
+        $this->postJson('/api/v1/email-connections/gmail/sync')
+            ->assertStatus(202)
+            ->assertJsonPath('data.status', 'failed')
+            ->assertJsonPath('data.error_code', 'email_reauthorization_required');
+        $connection->refresh();
+        $this->assertSame('reauthorization_required', $connection->status);
+        $this->assertNull($connection->refresh_token);
+        $this->assertNull($connection->token_expires_at);
+        $this->postJson('/api/v1/email-connections/gmail/sync')
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'email_reauthorization_required');
+
+        $plainState = str_repeat('r', 64);
+        EmailOAuthState::create([
+            'user_id' => $user->id,
+            'provider' => 'gmail',
+            'state_hash' => hash('sha256', $plainState),
+            'code_verifier' => 'synthetic-verifier',
+            'expires_at' => now()->addMinute(),
+        ]);
+        $reauthorizing = true;
+
+        $this->get('/api/v1/oauth/gmail/callback?'.http_build_query([
+            'state' => $plainState,
+            'code' => 'synthetic-code',
+        ]))->assertRedirect('walletfinanzas://email-oauth?provider=gmail&status=connected');
+        $connection->refresh();
+        $this->assertSame('connected', $connection->status);
+        $this->assertSame('reauthorized-refresh-token', $connection->refresh_token);
+    }
+
     public function test_sync_runs_candidates_and_disconnect_are_user_scoped(): void
     {
         $owner = User::factory()->create();
