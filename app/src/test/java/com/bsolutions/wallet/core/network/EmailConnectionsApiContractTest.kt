@@ -1,6 +1,7 @@
 package com.bsolutions.wallet.core.network
 
 import okhttp3.mockwebserver.MockResponse
+import com.google.gson.GsonBuilder
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -21,7 +22,7 @@ class EmailConnectionsApiContractTest {
         server.start()
         api = Retrofit.Builder()
             .baseUrl(server.url("/api/v1/"))
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(GsonBuilder().serializeNulls().create()))
             .build()
             .create(WalletApi::class.java)
     }
@@ -70,14 +71,17 @@ class EmailConnectionsApiContractTest {
             {"data":[{"id":"9","provider":"gmail","merchant":"Banco","amount":-1999,"currency":"USD","converted_amount":-122408,"converted_currency":"DOP","exchange_rate_micros":61234567,"exchange_rate_at":"2026-07-20T00:00:00Z","exchange_rate_source":"fawaz-exchange-api-historical","conversion_kind":"historical_estimate","conversion_status":"available","direction":"expense","category_suggestion":"Alimentación","occurred_at":"2026-07-20T14:30:00Z","confidence":90,"status":"pending","subject":"Compra aprobada"}]}
         """.trimIndent()))
 
-        val sync = api.syncEmailConnection("gmail").data
+        val sync = api.syncEmailConnection("gmail", EmailSyncRequest("2026-07-01T04:00:00Z", "2026-07-01")).data
         val candidate = api.emailCandidates().data.single()
         val syncRequest = server.takeRequest()
         val candidatesRequest = server.takeRequest()
+        val syncRequestBody = syncRequest.body.readUtf8()
 
         assertEquals("POST", syncRequest.method)
         assertEquals("/api/v1/email-connections/gmail/sync", syncRequest.path)
         assertEquals("completed", sync.status)
+        assertTrue(syncRequestBody.contains("\"sync_from_at\":\"2026-07-01T04:00:00Z\""))
+        assertTrue(syncRequestBody.contains("\"sync_from_date\":\"2026-07-01\""))
         assertEquals(1, sync.candidatesCreated)
         assertEquals("GET", candidatesRequest.method)
         assertEquals("/api/v1/email-candidates", candidatesRequest.path)
@@ -90,9 +94,24 @@ class EmailConnectionsApiContractTest {
     }
 
     @Test
-    fun `review candidate uses patch contract and decodes classified result`() = kotlinx.coroutines.runBlocking {
+    fun `automatic sync serializes null cutoffs accepted by the backend`() = kotlinx.coroutines.runBlocking {
+        server.enqueue(MockResponse().setResponseCode(202).setBody("""
+            {"data":{"sync_run_id":8,"status":"completed","messages_discovered":0,"messages_created":0,"candidates_created":0}}
+        """.trimIndent()))
+
+        api.syncEmailConnection("gmail", EmailSyncRequest())
+        val request = server.takeRequest()
+        val body = request.body.readUtf8()
+
+        assertEquals("POST", request.method)
+        assertTrue(body.contains("\"sync_from_at\":null"))
+        assertTrue(body.contains("\"sync_from_date\":null"))
+    }
+
+    @Test
+    fun `review candidate uses patch contract and decodes categorized result`() = kotlinx.coroutines.runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody("""
-            {"data":{"id":"9","provider":"gmail","merchant":"Amazon","amount":-1999,"currency":"USD","converted_amount":-122408,"converted_currency":"DOP","exchange_rate_micros":61234567,"exchange_rate_at":"2026-07-21T00:02:32Z","exchange_rate_source":"exchangerate-api-open","direction":"expense","category_suggestion":"Compras en línea","occurred_at":"2026-07-20T14:30:00Z","confidence":90,"status":"classified","subject":"Pago aprobado"}}
+            {"data":{"id":"9","provider":"gmail","merchant":"Amazon","amount":-1999,"currency":"USD","converted_amount":-122408,"converted_currency":"DOP","exchange_rate_micros":61234567,"exchange_rate_at":"2026-07-21T00:02:32Z","exchange_rate_source":"exchangerate-api-open","direction":"expense","category_suggestion":"Compras en línea","occurred_at":"2026-07-20T14:30:00Z","confidence":90,"status":"categorized","subject":"Pago aprobado"}}
         """.trimIndent()))
 
         val candidate = api.reviewEmailCandidate(
@@ -103,7 +122,7 @@ class EmailConnectionsApiContractTest {
 
         assertEquals("PATCH", request.method)
         assertEquals("/api/v1/email-candidates/9", request.path)
-        assertEquals("classified", candidate.status)
+        assertEquals("categorized", candidate.status)
         assertTrue(request.body.readUtf8().contains("\"action\":\"categorize\""))
     }
 }

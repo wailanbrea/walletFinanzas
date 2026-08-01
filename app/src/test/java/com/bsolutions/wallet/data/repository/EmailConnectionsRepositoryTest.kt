@@ -48,6 +48,43 @@ class EmailConnectionsRepositoryTest {
     }
 
     @Test
+    fun `sync forwards the selected date to backend`() = runTest {
+        val api = FakeEmailConnectionsApi()
+        val repository = DefaultEmailConnectionsRepository(api, TestWalletSessionStore())
+
+        repository.sync(EmailProvider.GMAIL, "2026-07-01T04:00:00Z", "2026-07-01")
+
+        assertEquals(
+            listOf("gmail" to "2026-07-01T04:00:00Z"),
+            api.syncRequests.map { it.first to it.second.syncFromAt }
+        )
+        assertEquals("2026-07-01", api.syncRequests.single().second.syncFromDate)
+    }
+
+    @Test
+    fun `sync polls one logical run until every batch completes`() = runTest {
+        val api = FakeEmailConnectionsApi(
+            syncRuns = listOf(
+                EmailSyncDto(syncRunId = 7L, status = "queued", messagesDiscovered = 100),
+                EmailSyncDto(syncRunId = 7L, status = "running", messagesDiscovered = 100),
+                EmailSyncDto(
+                    syncRunId = 7L,
+                    status = "completed",
+                    messagesDiscovered = 125,
+                    candidatesCreated = 6
+                )
+            )
+        )
+        val repository = DefaultEmailConnectionsRepository(api, TestWalletSessionStore())
+
+        val result = repository.sync(EmailProvider.GMAIL)
+
+        assertEquals(125, result.messagesDiscovered)
+        assertEquals(6, result.candidatesCreated)
+        assertEquals(listOf(7L, 7L), api.syncRunRequests)
+    }
+
+    @Test
     fun `requests authorization URL and disconnects using backend provider values`() = runTest {
         val api = FakeEmailConnectionsApi(authorizationUrl = "https://accounts.example/authorize")
         val repository = DefaultEmailConnectionsRepository(api, TestWalletSessionStore())
@@ -109,7 +146,8 @@ private class TestWalletSessionStore : WalletSessionStore {
 private class FakeEmailConnectionsApi(
     private val connections: List<EmailConnectionDto> = emptyList(),
     private val candidates: List<EmailCandidateDto> = emptyList(),
-    private val authorizationUrl: String = "https://example.test/authorize"
+    private val authorizationUrl: String = "https://example.test/authorize",
+    private val syncRuns: List<EmailSyncDto> = listOf(EmailSyncDto(syncRunId = 1L, status = "completed"))
 ) : WalletApi {
     override suspend fun getProfile(): ApiEnvelope<AuthUserDto> = error("sin uso")
     override suspend fun updateProfile(request: UpdateProfileRequest): ApiEnvelope<AuthUserDto> = error("sin uso")
@@ -118,16 +156,25 @@ private class FakeEmailConnectionsApi(
 
     override suspend fun emailConnections() = ApiEnvelope(connections)
 
+    val syncRunRequests = mutableListOf<Long>()
+    val syncRequests = mutableListOf<Pair<String, com.bsolutions.wallet.core.network.EmailSyncRequest>>()
     override suspend fun emailAuthorizationUrl(provider: String): ApiEnvelope<EmailAuthorizationDto> {
         authorizationProviders += provider
         return ApiEnvelope(EmailAuthorizationDto(authorizationUrl))
     }
 
-    override suspend fun syncEmailConnection(provider: String) =
-        ApiEnvelope(EmailSyncDto(syncRunId = 1L, status = "completed"))
+    override suspend fun syncEmailConnection(
+        provider: String,
+        request: com.bsolutions.wallet.core.network.EmailSyncRequest
+    ): ApiEnvelope<EmailSyncDto> {
+        syncRequests += provider to request
+        return ApiEnvelope(syncRuns.first())
+    }
 
-    override suspend fun emailSyncRun(provider: String, runId: Long) =
-        ApiEnvelope(EmailSyncDto(syncRunId = runId, status = "completed"))
+    override suspend fun emailSyncRun(provider: String, runId: Long): ApiEnvelope<EmailSyncDto> {
+        syncRunRequests += runId
+        return ApiEnvelope(syncRuns[minOf(syncRunRequests.size, syncRuns.lastIndex)])
+    }
 
     override suspend fun emailCandidates() = ApiEnvelope(candidates)
 

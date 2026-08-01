@@ -35,6 +35,12 @@ class DuplicateEmailCandidateTest extends TestCase
         $this->assertSame('pending', $qik->fresh()->status);
         $this->assertSame('duplicate', $paypal->fresh()->status);
         $this->assertSame($qik->id, $paypal->fresh()->duplicate_of_id);
+        $mailboxId = $paypal->message->connection->fresh()->email_mailbox_id;
+        $this->assertDatabaseHas('email_message_decisions', [
+            'email_mailbox_id' => $mailboxId,
+            'provider_message_id' => $paypal->message->provider_message_id,
+            'status' => 'duplicate',
+        ]);
     }
 
     public function test_a_usd_charge_without_conversion_is_never_matched(): void

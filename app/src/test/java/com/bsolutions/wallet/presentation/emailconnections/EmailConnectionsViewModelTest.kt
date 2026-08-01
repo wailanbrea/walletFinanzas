@@ -7,6 +7,7 @@ import com.bsolutions.wallet.data.repository.EmailCandidate
 import com.bsolutions.wallet.data.repository.EmailProvider
 import com.bsolutions.wallet.data.repository.EmailSyncResult
 import com.bsolutions.wallet.domain.model.Account
+import com.bsolutions.wallet.data.repository.EmailSyncStillQueuedException
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.AccountRepository
@@ -111,12 +112,37 @@ class EmailConnectionsViewModelTest {
         advanceUntilIdle()
         repository.candidates = listOf(financialCandidate())
 
-        viewModel.sync(EmailProvider.GMAIL)
+        viewModel.sync(EmailProvider.GMAIL, java.time.LocalDate.of(2026, 7, 1))
         advanceUntilIdle()
 
         assertEquals(listOf(EmailProvider.GMAIL), repository.synced)
+        val expectedStart = java.time.LocalDate.of(2026, 7, 1)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant().toString()
+        assertEquals(listOf(EmailProvider.GMAIL to expectedStart), repository.syncedFrom)
+        assertEquals(listOf(EmailProvider.GMAIL to "2026-07-01"), repository.syncedDates)
         assertEquals(1, viewModel.uiState.value.candidates.size)
         assertEquals(1, viewModel.uiState.value.syncResult?.candidatesCreated)
+        assertNull(viewModel.uiState.value.actionProvider)
+    }
+
+    @Test
+    fun `poll timeout refreshes candidates already produced by the server`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected()))
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+        repository.candidates = listOf(financialCandidate())
+        repository.syncError = EmailSyncStillQueuedException()
+
+        viewModel.sync(EmailProvider.GMAIL)
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.uiState.value.candidates.size)
+        assertEquals(
+            "La sincronización continúa en el servidor. " +
+                "Los movimientos encontrados hasta ahora ya están disponibles.",
+            viewModel.uiState.value.message
+        )
         assertNull(viewModel.uiState.value.actionProvider)
     }
 
@@ -137,11 +163,13 @@ class EmailConnectionsViewModelTest {
     }
 
     @Test
-    fun `duplicate candidates are hidden and can be marked manually`() = runTest {
+    fun `only pending candidates are visible and can be marked manually`() = runTest {
         val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
             candidates = listOf(
                 financialCandidate("pending"),
-                financialCandidate("already-duplicate").copy(status = "duplicate")
+                financialCandidate("already-duplicate").copy(status = "duplicate"),
+                financialCandidate("already-categorized").copy(status = "categorized"),
+                financialCandidate("already-dismissed").copy(status = "dismissed")
             )
         }
         val viewModel = createViewModel(repository)
@@ -587,11 +615,13 @@ class EmailConnectionsViewModelTest {
     }
 
     @Test
-    fun `a candidate marked duplicate disappears from the list`() {
+    fun `terminal candidates disappear from the list`() {
         val kept = financialCandidate(id = "dop", provider = EmailProvider.MICROSOFT).copy(currency = "DOP")
         val hidden = financialCandidate(id = "usd", provider = EmailProvider.GMAIL).copy(status = "duplicate")
+        val categorized = financialCandidate(id = "categorized").copy(status = "categorized")
+        val dismissed = financialCandidate(id = "dismissed").copy(status = "dismissed")
 
-        val visible = EmailConnectionsUiState(candidates = listOf(kept, hidden)).candidatesByDate
+        val visible = EmailConnectionsUiState(candidates = listOf(kept, hidden, categorized, dismissed)).candidatesByDate
             .values.flatten().map { it.id }
 
         // Mostrarlo contaría el mismo gasto dos veces.
@@ -619,12 +649,15 @@ class EmailConnectionsViewModelTest {
         var connections: List<EmailConnection> = emptyList(),
         private val authorizationUrl: String = "https://example.test/oauth",
         private val loadError: Boolean = false,
-        var reviewError: Boolean = false
+        var reviewError: Boolean = false,
+        var syncError: Exception? = null
     ) : EmailConnectionsRepository {
         var loadCount = 0
         val disconnected = mutableListOf<EmailProvider>()
         val synced = mutableListOf<EmailProvider>()
         val reviews = mutableListOf<Triple<String, String, String?>>()
+        val syncedFrom = mutableListOf<Pair<EmailProvider, String?>>()
+        val syncedDates = mutableListOf<Pair<EmailProvider, String?>>()
 
         /** (candidato, original) de cada marcado como duplicado. */
         val duplicateTargets = mutableListOf<Pair<String, String?>>()
@@ -640,8 +673,11 @@ class EmailConnectionsViewModelTest {
 
         override suspend fun getCandidates(): List<EmailCandidate> = candidates
 
-        override suspend fun sync(provider: EmailProvider): EmailSyncResult {
+        override suspend fun sync(provider: EmailProvider, syncFromAt: String?, syncFromDate: String?): EmailSyncResult {
             synced += provider
+            syncedFrom += provider to syncFromAt
+            syncedDates += provider to syncFromDate
+            syncError?.let { throw it }
             return EmailSyncResult(messagesDiscovered = 1, messagesCreated = 1, candidatesCreated = 1)
         }
 

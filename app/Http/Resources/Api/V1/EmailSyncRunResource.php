@@ -12,6 +12,7 @@ class EmailSyncRunResource extends JsonResource
         return [
             'sync_run_id' => $this->id,
             'status' => $this->status,
+            'sync_from_at' => $this->sync_from_at?->toISOString(),
             'messages_discovered' => $this->messages_discovered,
             'messages_created' => $this->messages_created,
             'candidates_created' => $this->candidates_created,

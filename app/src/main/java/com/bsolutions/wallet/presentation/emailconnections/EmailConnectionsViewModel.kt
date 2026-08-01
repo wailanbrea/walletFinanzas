@@ -106,7 +106,7 @@ data class EmailConnectionsUiState(
         get() {
             // Un duplicado ya esta representado por el candidato que se conserva:
             // mostrarlo contaria el mismo gasto dos veces.
-            val active = candidates.filterNot { it.status == "duplicate" }
+            val active = candidates.filter { it.status == "pending" }
 
             return selectedDate?.let { day ->
                 active.filter { candidateLocalDate(it.occurredAt) == day }
@@ -219,24 +219,35 @@ class EmailConnectionsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(authorizationUrl = null)
     }
 
-    fun sync(provider: EmailProvider) {
+    fun sync(provider: EmailProvider, fromDate: LocalDate? = null) {
         if (_uiState.value.actionProvider != null || _uiState.value.reviewCandidateId != null) return
         _uiState.value = _uiState.value.copy(actionProvider = provider, message = null, syncResult = null)
         viewModelScope.launch {
             try {
-                val result = repository.sync(provider)
+                val syncFromAt = fromDate
+                    ?.atStartOfDay(ZoneId.systemDefault())
+                    ?.toInstant()?.toString()
+                val result = repository.sync(provider, syncFromAt, fromDate?.toString())
                 loadConnections(result)
             } catch (exception: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    actionProvider = null,
-                    message = when (exception) {
-                        is EmailSessionExpiredException -> "Tu sesión venció. Inicia sesión nuevamente."
-                        is EmailSyncStillQueuedException ->
-                            "El servidor recibió la solicitud pero aún no la procesa. " +
-                                "Vuelve a intentarlo en un momento."
-                        else -> "No se pudieron sincronizar los correos. Inténtalo de nuevo."
-                    }
-                )
+                if (exception is EmailSyncStillQueuedException) {
+                    // El servidor sigue procesando el mismo run; muestra los candidatos
+                    // ya creados sin presentar el backfill parcial como un éxito final.
+                    loadConnections()
+                    _uiState.value = _uiState.value.copy(
+                        message = "La sincronización continúa en el servidor. " +
+                            "Los movimientos encontrados hasta ahora ya están disponibles."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        actionProvider = null,
+                        message = if (exception is EmailSessionExpiredException) {
+                            "Tu sesión venció. Inicia sesión nuevamente."
+                        } else {
+                            "No se pudieron sincronizar los correos. Inténtalo de nuevo."
+                        }
+                    )
+                }
             }
         }
     }
@@ -552,7 +563,7 @@ class EmailConnectionsViewModel @Inject constructor(
             // Los que el servidor ya emparejo no se bajan a la lista; de los que quedan,
             // se reintenta confirmar los que tienen movimiento creado pero sin confirmar.
             val candidates = reconcileBookedCandidates(
-                repository.getCandidates().filterNot { it.status == "duplicate" }
+                repository.getCandidates().filter { it.status == "pending" }
             )
             _uiState.value = _uiState.value.copy(
                 phase = if (connections.isEmpty()) EmailConnectionsPhase.EMPTY else EmailConnectionsPhase.CONTENT,

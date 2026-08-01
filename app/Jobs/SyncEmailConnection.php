@@ -16,7 +16,7 @@ class SyncEmailConnection implements ShouldQueue
 
     public array $backoff = [10, 30];
 
-    public int $timeout = 120;
+    public int $timeout = 75;
 
     public function __construct(public int $runId) {}
 
@@ -26,10 +26,45 @@ class SyncEmailConnection implements ShouldQueue
         if (! $run || ! $run->connection) {
             return;
         }
-        $run->update(['status' => 'running', 'started_at' => now(), 'error_code' => null]);
+        $claimed = EmailSyncRun::query()
+            ->whereKey($run->id)
+            ->where(function ($query): void {
+                $query->where('status', 'queued')
+                    ->orWhere(function ($query): void {
+                        $query->where('status', 'running')
+                            ->where('updated_at', '<=', now()->subSeconds($this->timeout + 5));
+                    });
+            })
+            ->update([
+                'status' => 'running',
+                'started_at' => $run->started_at ?? now(),
+                'error_code' => null,
+            ]);
+        if ($claimed !== 1) {
+            return;
+        }
+        $run->refresh();
 
-        $counts = $scanner->scan($run->connection);
-        $run->update($counts + ['status' => 'completed', 'finished_at' => now()]);
+        try {
+            $counts = $scanner->scan($run->connection, $run->sync_from_at);
+        } catch (Throwable $exception) {
+            EmailSyncRun::query()->whereKey($run->id)->where('status', 'running')->update(['status' => 'queued']);
+            throw $exception;
+        }
+        $hasMore = (bool) ($counts['has_more'] ?? false);
+        unset($counts['has_more']);
+        $totals = [];
+        foreach (['messages_discovered', 'messages_created', 'candidates_created', 'conversions_backfilled'] as $field) {
+            $totals[$field] = (int) $run->{$field} + (int) ($counts[$field] ?? 0);
+        }
+        if ($hasMore) {
+            $run->update($totals + ['status' => 'queued', 'finished_at' => null]);
+            self::dispatch($run->id);
+
+            return;
+        }
+
+        $run->update($totals + ['status' => 'completed', 'finished_at' => now()]);
     }
 
     public function failed(?Throwable $exception): void

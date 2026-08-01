@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\EmailConnection;
+use App\Models\EmailMailbox;
 use App\Models\EmailOAuthState;
 use App\Models\User;
 use Illuminate\Http\Client\PendingRequest;
@@ -92,16 +93,26 @@ class EmailOAuthService
         if (! is_string($accessToken) || $accessToken === '') {
             throw new RuntimeException('oauth_token_missing');
         }
-        $email = $this->profileEmail($provider, $accessToken);
+        $email = Str::lower(trim($this->profileEmail($provider, $accessToken)));
         $existing = EmailConnection::query()->where('user_id', $oauthState->user_id)->where('provider', $provider)->first();
+        $mailbox = EmailMailbox::query()->firstOrCreate([
+            'user_id' => $oauthState->user_id,
+            'provider' => $provider,
+            'email' => $email,
+        ]);
+        $sameMailbox = $existing && Str::lower(trim($existing->email)) === $email;
+        if ($existing && ! $sameMailbox) {
+            $existing->delete();
+        }
 
         return EmailConnection::query()->updateOrCreate(
             ['user_id' => $oauthState->user_id, 'provider' => $provider],
             [
+                'email_mailbox_id' => $mailbox->id,
                 'email' => $email,
                 'status' => 'connected',
                 'access_token' => $accessToken,
-                'refresh_token' => $token['refresh_token'] ?? $existing?->refresh_token,
+                'refresh_token' => $token['refresh_token'] ?? ($sameMailbox ? $existing->refresh_token : null),
                 'token_expires_at' => now()->addSeconds(max(0, (int) ($token['expires_in'] ?? 3600) - 30)),
                 'connected_at' => now(),
             ]

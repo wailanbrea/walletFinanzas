@@ -64,7 +64,7 @@ private class FakeEmailConnectionsRepository(
     override suspend fun getConnections() = connections
     override suspend fun getCandidates(): List<EmailCandidate> = emptyList()
     override suspend fun getAuthorizationUrl(provider: EmailProvider) = ""
-    override suspend fun sync(provider: EmailProvider): EmailSyncResult {
+    override suspend fun sync(provider: EmailProvider, syncFromAt: String?, syncFromDate: String?): EmailSyncResult {
         syncedProviders += provider
         if (provider == failingProvider) error("provider failure")
         return EmailSyncResult(0, 0, 0)

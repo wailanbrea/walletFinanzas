@@ -3,6 +3,7 @@ package com.bsolutions.wallet.data.repository
 import com.bsolutions.wallet.core.network.EmailCandidateDto
 import com.bsolutions.wallet.core.network.EmailConnectionDto
 import com.bsolutions.wallet.core.network.EmailCandidateReviewRequest
+import com.bsolutions.wallet.core.network.EmailSyncRequest
 import com.bsolutions.wallet.core.network.EmailSyncDto
 import com.bsolutions.wallet.core.network.WalletApi
 import kotlinx.coroutines.delay
@@ -28,7 +29,9 @@ data class EmailConnection(
     val email: String?,
     val configurationReady: Boolean,
     val connectedAt: String?,
-    val expiresAt: String?
+    val expiresAt: String?,
+    val syncFromAt: String? = null,
+    val syncFromDate: String? = null
 )
 
 data class EmailSyncResult(
@@ -67,7 +70,7 @@ interface EmailConnectionsRepository {
     suspend fun getConnections(): List<EmailConnection>
     suspend fun getCandidates(): List<EmailCandidate>
     suspend fun getAuthorizationUrl(provider: EmailProvider): String
-    suspend fun sync(provider: EmailProvider): EmailSyncResult
+    suspend fun sync(provider: EmailProvider, syncFromAt: String? = null, syncFromDate: String? = null): EmailSyncResult
     suspend fun reviewCandidate(
         id: String,
         action: String,
@@ -91,7 +94,7 @@ class EmailSyncStillQueuedException : Exception("La sincronización sigue en col
 class EmailSyncFailedException(val errorCode: String?) :
     Exception("La sincronización falló${errorCode?.let { " ($it)" } ?: ""}.")
 
-private const val MAX_SYNC_POLLS = 30
+private const val MAX_SYNC_POLLS = 400
 private const val SYNC_POLL_DELAY_MS = 1_500L
 
 class DefaultEmailConnectionsRepository(
@@ -107,10 +110,10 @@ class DefaultEmailConnectionsRepository(
     override suspend fun getAuthorizationUrl(provider: EmailProvider): String =
         authenticatedCall { api.emailAuthorizationUrl(provider.apiValue).data.authorizationUrl }
 
-    override suspend fun sync(provider: EmailProvider): EmailSyncResult = authenticatedCall {
+    override suspend fun sync(provider: EmailProvider, syncFromAt: String?, syncFromDate: String?): EmailSyncResult = authenticatedCall {
         // El backend encola el sync (202) y devuelve un run; sondeamos su estado hasta
         // que termine. Con QUEUE_CONNECTION=sync el run ya llega 'completed' sin sondeo.
-        var run = api.syncEmailConnection(provider.apiValue).data
+        var run = api.syncEmailConnection(provider.apiValue, EmailSyncRequest(syncFromAt, syncFromDate)).data
         var attempts = 0
         while (run.status != "completed" && run.status != "failed" && attempts < MAX_SYNC_POLLS) {
             delay(SYNC_POLL_DELAY_MS)
@@ -164,7 +167,9 @@ private fun EmailConnectionDto.toDomain() = EmailConnection(
     email = email,
     configurationReady = configurationReady,
     connectedAt = connectedAt,
-    expiresAt = expiresAt
+    expiresAt = expiresAt,
+    syncFromAt = syncFromAt,
+    syncFromDate = syncFromDate
 )
 
 private fun EmailSyncDto.toDomain() = EmailSyncResult(

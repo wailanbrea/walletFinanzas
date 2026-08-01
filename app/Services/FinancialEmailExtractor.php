@@ -54,7 +54,6 @@ class FinancialEmailExtractor
             'category_suggestion' => $category,
             'occurred_at' => $occurredAt ?? now(),
             'confidence' => $merchant && $category ? 90 : 80,
-            'status' => 'pending',
             'subject' => $subject,
         ];
     }

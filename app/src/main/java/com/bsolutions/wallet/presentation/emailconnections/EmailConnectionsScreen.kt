@@ -111,6 +111,7 @@ fun EmailConnectionsScreen(
     var dismissCandidate by remember { mutableStateOf<EmailCandidate?>(null) }
     var confirmClearAll by remember { mutableStateOf(false) }
     var showDateFilter by remember { mutableStateOf(false) }
+    var syncDateProvider by remember { mutableStateOf<EmailProvider?>(null) }
     var duplicatePair by remember { mutableStateOf<Pair<EmailCandidate, EmailCandidate>?>(null) }
 
     LaunchedEffect(oauthReturnNonce) {
@@ -124,6 +125,46 @@ fun EmailConnectionsScreen(
             if (uri != null && uri.scheme in setOf("https", "http")) {
                 CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(context, uri)
             }
+        }
+    }
+
+    syncDateProvider?.let { provider ->
+        val connection = state.connections.firstOrNull { it.provider == provider }
+        val initialDate = connection?.syncFromDate?.let(LocalDate::parse)
+            ?: connection?.syncFromAt?.let(::syncFromLocalDate)
+            ?: LocalDate.now().minusDays(90)
+        val syncDateState = rememberDatePickerState(
+            initialSelectedDateMillis = initialDate
+                .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { syncDateProvider = null },
+            confirmButton = {
+                TextButton(
+                    enabled = syncDateState.selectedDateMillis?.let {
+                        ! Instant.ofEpochMilli(it)
+                            .atZone(ZoneOffset.UTC)
+                            .toLocalDate()
+                            .isAfter(LocalDate.now())
+                    } == true,
+                    onClick = {
+                        val selected = syncDateState.selectedDateMillis?.let {
+                            Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+                        }
+                        syncDateProvider = null
+                        viewModel.sync(provider, selected)
+                    }
+                ) {
+                    Text(stringResource(R.string.email_sync))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { syncDateProvider = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        ) {
+            DatePicker(state = syncDateState)
         }
     }
 
@@ -616,7 +657,7 @@ fun EmailConnectionsScreen(
                         isWorking = state.actionProvider == EmailProvider.GMAIL,
                         actionsEnabled = state.actionProvider == null && state.reviewCandidateId == null,
                         onConnect = { viewModel.connect(EmailProvider.GMAIL) },
-                        onSync = { viewModel.sync(EmailProvider.GMAIL) },
+                        onSync = { syncDateProvider = EmailProvider.GMAIL },
                         onDisconnect = { disconnectCandidate = EmailProvider.GMAIL }
                     )
                 }
@@ -627,7 +668,7 @@ fun EmailConnectionsScreen(
                         isWorking = state.actionProvider == EmailProvider.MICROSOFT,
                         actionsEnabled = state.actionProvider == null && state.reviewCandidateId == null,
                         onConnect = { viewModel.connect(EmailProvider.MICROSOFT) },
-                        onSync = { viewModel.sync(EmailProvider.MICROSOFT) },
+                        onSync = { syncDateProvider = EmailProvider.MICROSOFT },
                         onDisconnect = { disconnectCandidate = EmailProvider.MICROSOFT }
                     )
                 }
@@ -817,6 +858,15 @@ private fun ProviderCard(
             }
 
             if (connected) {
+                val syncDate = connection?.syncFromDate?.let(LocalDate::parse)
+                    ?: connection?.syncFromAt?.let(::syncFromLocalDate)
+                    ?: LocalDate.now().minusDays(90)
+                Text(
+                    text = stringResource(R.string.email_sync_from, formatCandidateDay(syncDate)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
                 Button(
                     onClick = onSync,
                     enabled = actionsEnabled,
@@ -1147,3 +1197,7 @@ private fun formatCandidateDay(day: LocalDate): String {
         else -> day.format(DateTimeFormatter.ofPattern("d 'de' MMMM yyyy"))
     }
 }
+
+private fun syncFromLocalDate(value: String): LocalDate =
+    runCatching { Instant.parse(value).atZone(ZoneId.systemDefault()).toLocalDate() }
+        .getOrDefault(LocalDate.now().minusDays(90))

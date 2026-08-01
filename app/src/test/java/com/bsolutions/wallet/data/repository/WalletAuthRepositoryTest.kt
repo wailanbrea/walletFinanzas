@@ -230,7 +230,10 @@ private class FakeWalletApi : WalletApi {
         return ApiEnvelope(emptyList())
     }
     override suspend fun emailAuthorizationUrl(provider: String): ApiEnvelope<EmailAuthorizationDto> = error("Not used")
-    override suspend fun syncEmailConnection(provider: String): ApiEnvelope<EmailSyncDto> = error("Not used")
+    override suspend fun syncEmailConnection(
+        provider: String,
+        request: com.bsolutions.wallet.core.network.EmailSyncRequest
+    ): ApiEnvelope<EmailSyncDto> = error("Not used")
     override suspend fun emailSyncRun(provider: String, runId: Long): ApiEnvelope<EmailSyncDto> = error("Not used")
     override suspend fun emailCandidates(): ApiEnvelope<List<EmailCandidateDto>> = ApiEnvelope(emptyList())
     override suspend fun reviewEmailCandidate(

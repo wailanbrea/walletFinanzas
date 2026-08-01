@@ -11,7 +11,7 @@ class EmailConnection extends Model
 {
     use HasUuids;
 
-    protected $fillable = ['user_id', 'provider', 'email', 'status', 'access_token', 'refresh_token', 'token_expires_at', 'connected_at', 'last_synced_at'];
+    protected $fillable = ['user_id', 'email_mailbox_id', 'provider', 'email', 'status', 'access_token', 'refresh_token', 'token_expires_at', 'connected_at', 'last_synced_at'];
 
     protected $hidden = ['access_token', 'refresh_token'];
 
@@ -29,6 +29,11 @@ class EmailConnection extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function mailbox(): BelongsTo
+    {
+        return $this->belongsTo(EmailMailbox::class, 'email_mailbox_id');
     }
 
     public function syncRuns(): HasMany

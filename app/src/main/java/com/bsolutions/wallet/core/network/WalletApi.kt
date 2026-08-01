@@ -62,17 +62,25 @@ data class EmailConnectionDto(
     val email: String?,
     @SerializedName("configuration_ready") val configurationReady: Boolean,
     @SerializedName("connected_at") val connectedAt: String?,
-    @SerializedName("expires_at") val expiresAt: String?
+    @SerializedName("expires_at") val expiresAt: String?,
+    @SerializedName("sync_from_at") val syncFromAt: String? = null,
+    @SerializedName("sync_from_date") val syncFromDate: String? = null
 )
 
 data class EmailAuthorizationDto(
     @SerializedName("authorization_url") val authorizationUrl: String
 )
 
+data class EmailSyncRequest(
+    @SerializedName("sync_from_at") val syncFromAt: String? = null,
+    @SerializedName("sync_from_date") val syncFromDate: String? = null
+)
+
 data class EmailSyncDto(
     @SerializedName("sync_run_id") val syncRunId: Long,
     // El sync es asíncrono: 'queued' | 'running' | 'completed' | 'failed'.
     @SerializedName("status") val status: String? = null,
+    @SerializedName("sync_from_at") val syncFromAt: String? = null,
     @SerializedName("messages_discovered") val messagesDiscovered: Int = 0,
     @SerializedName("messages_created") val messagesCreated: Int = 0,
     @SerializedName("candidates_created") val candidatesCreated: Int = 0,
@@ -369,7 +377,8 @@ interface WalletApi {
 
     @POST("email-connections/{provider}/sync")
     suspend fun syncEmailConnection(
-        @Path("provider") provider: String
+        @Path("provider") provider: String,
+        @Body request: EmailSyncRequest = EmailSyncRequest()
     ): ApiEnvelope<EmailSyncDto>
 
     @GET("email-connections/{provider}/sync-runs/{run}")

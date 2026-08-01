@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\EmailCandidate;
+use App\Models\EmailMailbox;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Empareja el mismo cargo visto por dos buzones distintos.
@@ -38,6 +40,7 @@ class DuplicateEmailCandidateDetector
             ->where('user_id', $user->id)
             ->where('status', 'pending')
             ->whereNull('duplicate_of_id')
+            ->with('message.connection')
             ->orderBy('occurred_at')
             ->get();
 
@@ -56,7 +59,28 @@ class DuplicateEmailCandidateDetector
             }
 
             [$keep, $drop] = $this->decideWinner($candidate, $twin);
-            $drop->update(['status' => 'duplicate', 'duplicate_of_id' => $keep->id]);
+            $persisted = DB::transaction(function () use ($drop, $keep): bool {
+                $updated = EmailCandidate::query()
+                    ->whereKey($drop->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'duplicate', 'duplicate_of_id' => $keep->id]);
+                if ($updated !== 1) {
+                    return false;
+                }
+                $connection = $drop->message?->connection;
+                if ($connection) {
+                    $mailbox = EmailMailbox::forConnection($connection);
+                    $mailbox->decisions()->updateOrCreate(
+                        ['provider_message_id' => $drop->message->provider_message_id],
+                        ['status' => 'duplicate', 'category' => null, 'decided_at' => now()]
+                    );
+                }
+
+                return true;
+            });
+            if (! $persisted) {
+                continue;
+            }
             $discarded[] = $drop->id;
             $marked++;
         }

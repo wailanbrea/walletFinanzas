@@ -366,7 +366,10 @@ private class CategorySyncFakeApi : WalletApi {
     override suspend fun createAccount(request: CreateAccountRequest): ApiEnvelope<AccountDto> = unsupported()
     override suspend fun emailConnections(): ApiEnvelope<List<EmailConnectionDto>> = unsupported()
     override suspend fun emailAuthorizationUrl(provider: String): ApiEnvelope<EmailAuthorizationDto> = unsupported()
-    override suspend fun syncEmailConnection(provider: String): ApiEnvelope<EmailSyncDto> = unsupported()
+    override suspend fun syncEmailConnection(
+        provider: String,
+        request: com.bsolutions.wallet.core.network.EmailSyncRequest
+    ): ApiEnvelope<EmailSyncDto> = unsupported()
     override suspend fun emailSyncRun(provider: String, runId: Long): ApiEnvelope<EmailSyncDto> = unsupported()
     override suspend fun emailCandidates(): ApiEnvelope<List<EmailCandidateDto>> = unsupported()
     override suspend fun reviewEmailCandidate(

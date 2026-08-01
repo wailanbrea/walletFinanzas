@@ -5,14 +5,20 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\EmailCandidateResource;
 use App\Models\EmailCategorizationRule;
+use App\Models\EmailMailbox;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class EmailCandidateController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $candidates = $request->user()->emailCandidates()->latest('occurred_at')->limit(200)->get();
+        $candidates = $request->user()->emailCandidates()
+            ->where('status', 'pending')
+            ->latest('occurred_at')
+            ->limit(200)
+            ->get();
 
         return response()->json(['data' => EmailCandidateResource::collection($candidates)->resolve()]);
     }
@@ -27,7 +33,7 @@ class EmailCandidateController extends Controller
             // el original sigue siendo útil para quitarlo de la lista.
             'duplicate_of_id' => ['sometimes', 'nullable', 'uuid'],
         ]);
-        $record = $request->user()->emailCandidates()->find($candidate);
+        $record = $request->user()->emailCandidates()->with('message.connection')->find($candidate);
         if (! $record) {
             return response()->json(['message' => 'El candidato de correo no existe.', 'code' => 'email_candidate_not_found'], 404);
         }
@@ -51,24 +57,35 @@ class EmailCandidateController extends Controller
             $keptId = $kept->id;
         }
 
-        $record->update([
-            'status' => match ($validated['action']) {
-                'categorize' => 'categorized',
-                'duplicate' => 'duplicate',
-                default => 'dismissed',
-            },
-            'category' => $validated['action'] === 'categorize' ? $validated['category'] : null,
-            'duplicate_of_id' => $validated['action'] === 'duplicate' ? $keptId : null,
-        ]);
-        // Un duplicado no enseña nada al clasificador: el remitente sí manda avisos de
-        // movimientos reales, solo que ese cargo ya llegó por otro buzón. Aprender de
-        // aquí envenenaría las detecciones futuras.
-        if (($validated['learn'] ?? false) && $validated['action'] === 'categorize' && $record->merchant && $record->category) {
-            EmailCategorizationRule::query()->updateOrCreate(
-                ['user_id' => $request->user()->id, 'merchant' => $record->merchant],
-                ['category' => $record->category]
-            );
-        }
+        $status = match ($validated['action']) {
+            'categorize' => 'categorized',
+            'duplicate' => 'duplicate',
+            default => 'dismissed',
+        };
+        $category = $validated['action'] === 'categorize' ? $validated['category'] : null;
+        DB::transaction(function () use ($request, $record, $validated, $keptId, $status, $category): void {
+            $record->update([
+                'status' => $status,
+                'category' => $category,
+                'duplicate_of_id' => $validated['action'] === 'duplicate' ? $keptId : null,
+            ]);
+
+            $connection = $record->message?->connection;
+            if ($connection) {
+                $mailbox = EmailMailbox::forConnection($connection);
+                $mailbox->decisions()->updateOrCreate(
+                    ['provider_message_id' => $record->message->provider_message_id],
+                    ['status' => $status, 'category' => $category, 'decided_at' => now()]
+                );
+            }
+
+            if (($validated['learn'] ?? false) && $status === 'categorized' && $record->merchant && $category) {
+                EmailCategorizationRule::query()->updateOrCreate(
+                    ['user_id' => $request->user()->id, 'merchant' => $record->merchant],
+                    ['category' => $category]
+                );
+            }
+        });
 
         return new EmailCandidateResource($record);
     }

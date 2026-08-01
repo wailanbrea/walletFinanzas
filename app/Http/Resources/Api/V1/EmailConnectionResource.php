@@ -16,6 +16,8 @@ class EmailConnectionResource extends JsonResource
             'email' => $this->email,
             'configuration_ready' => (bool) ($this->configuration_ready ?? true),
             'connected_at' => $this->connected_at?->toISOString(),
+            'sync_from_date' => $this->mailbox?->sync_from_date?->toDateString(),
+            'sync_from_at' => $this->mailbox?->sync_from_at?->toISOString(),
             'expires_at' => $this->token_expires_at?->toISOString(),
         ];
     }
