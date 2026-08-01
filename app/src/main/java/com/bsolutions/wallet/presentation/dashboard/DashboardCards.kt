@@ -229,6 +229,23 @@ internal fun CashFlowCard(uiState: DashboardUiState) {
             color = MaterialTheme.colorScheme.error,
             hidden = false
         )
+        if (uiState.spendingPacePercent != null) {
+            Spacer(Modifier.height(10.dp))
+            val pace = uiState.spendingPacePercent
+            val isUnderPace = pace <= 0
+            Surface(
+                color = if (isUnderPace) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = if (isUnderPace) "Vas ${kotlin.math.abs(pace)}% por debajo del ritmo estimado de gasto 👏" else "Ritmo de gasto: +$pace% sobre lo proyectado ⚠️",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isUnderPace) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
         // Un prestamo no es gasto, pero el dinero si salio de la cuenta. Sin esta linea
         // el flujo no cuadra con el balance y parece que falta plata sin explicacion.
         if (uiState.monthlyLent > 0L || uiState.monthlyCollected > 0L) {

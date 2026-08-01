@@ -51,7 +51,7 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 google-dagger-hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt-android" }
 devtools-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-androidx-room = { id = "androidx.room", version.ref = "room" }
+androidx-room = { id = "androidx.room", version.ref = "room" }  
 
 [versions]
 core-ktx = "1.19.0"

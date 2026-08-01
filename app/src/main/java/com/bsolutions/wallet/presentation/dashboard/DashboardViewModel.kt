@@ -86,6 +86,18 @@ enum class DashboardPeriodFilter {
         }
         return startDate.atStartOfDay(zoneId).toInstant().toEpochMilli()
     }
+
+    fun endMillis(nowMillis: Long, zoneId: ZoneId = ZoneId.systemDefault()): Long {
+        val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+        val endDate = when (this) {
+            TODAY -> today
+            THIS_WEEK -> today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).plusDays(6)
+            THIS_MONTH -> today.with(TemporalAdjusters.lastDayOfMonth())
+            THIS_YEAR -> today.with(TemporalAdjusters.lastDayOfYear())
+            else -> today
+        }
+        return endDate.atTime(23, 59, 59, 999_000_000).atZone(zoneId).toInstant().toEpochMilli()
+    }
 }
 
 private data class DashboardFilters(
@@ -124,6 +136,8 @@ data class DashboardUiState(
     val waterLevel: Float = 0.5f,
     /** Variación % del gasto de este mes vs el anterior; null si no hay base de comparación. */
     val expenseTrendPercent: Int? = null,
+    /** Ritmo de gasto acumulado vs lo esperado para el día del mes (% ritmico). */
+    val spendingPacePercent: Int? = null,
     val categorySpending: List<CategorySpend> = emptyList(),
     val recentTransactions: List<Transaction> = emptyList(),
     val accounts: List<Account> = emptyList(),
@@ -219,14 +233,25 @@ class DashboardViewModel @Inject constructor(
             return cal.get(Calendar.MONTH) == month && cal.get(Calendar.YEAR) == year
         }
 
-        // Ingresos/Gastos del filtro: solo movimientos en RD$ (no se mezclan divisas).
-        // Los importados en €, US$, etc. se excluyen de estos totales base.
+        fun isPrimaryCurrency(currency: String?): Boolean {
+            if (currency.isNullOrBlank()) return true
+            val c = currency.trim().uppercase()
+            return c == "DOP" || c == "RD$" || c == "RD"
+        }
+
+        // Ingresos/Gastos del filtro: solo movimientos del período seleccionado.
         val startMillis = activeFilters.period.startMillis(nowMillis)
+        val endMillis = activeFilters.period.endMillis(nowMillis)
         val filteredTransactions = transactions
-            .filter { it.date in startMillis..nowMillis }
+            .filter { it.date in startMillis..endMillis }
             .filter { effectiveCategoryId == null || it.categoryId == effectiveCategoryId }
-        val thisMonthTx = filteredTransactions
-            .filter { it.currency == MoneyFormat.DEFAULT_CURRENCY }
+
+        val primaryTx = filteredTransactions.filter { isPrimaryCurrency(it.currency) }
+        val thisMonthTx = if (primaryTx.isNotEmpty() || transactions.none { isPrimaryCurrency(it.currency) }) {
+            primaryTx.ifEmpty { filteredTransactions }
+        } else {
+            primaryTx
+        }
         // Prestar dinero y cobrarlo no es consumo: el patrimonio no cambia, se cambia
         // efectivo por un derecho de cobro. Si contara, el mes en que prestas se veria
         // como un gasto enorme y el mes en que te pagan como un ingreso que no ganaste.
@@ -246,11 +271,19 @@ class DashboardViewModel @Inject constructor(
         val prevExpenses = transactions
             .filter { inMonth(it.date, prev.get(Calendar.MONTH), prev.get(Calendar.YEAR)) }
             .filter { effectiveCategoryId == null || it.categoryId == effectiveCategoryId }
-            .filter { it.currency == MoneyFormat.DEFAULT_CURRENCY }
+            .filter { isPrimaryCurrency(it.currency) }
             .filter { it.isConsumption && it.type == "EXPENSE" }
             .sumOf { it.amount }
         val trend = if (activeFilters.period == DashboardPeriodFilter.THIS_MONTH && prevExpenses > 0) {
             (((expenses - prevExpenses).toDouble() / prevExpenses) * 100).toInt()
+        } else null
+
+        // Ritmo de gasto acumulado vs lo esperado para el día del mes
+        val daysInMonth = now.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val currentDay = now.get(Calendar.DAY_OF_MONTH).coerceAtLeast(1)
+        val expectedSpendingSoFar = if (prevExpenses > 0) (prevExpenses * (currentDay.toDouble() / daysInMonth)).toLong() else 0L
+        val pace = if (activeFilters.period == DashboardPeriodFilter.THIS_MONTH && expectedSpendingSoFar > 0) {
+            (((expenses - expectedSpendingSoFar).toDouble() / expectedSpendingSoFar) * 100).toInt()
         } else null
 
         // Gasto filtrado por categoría (para el donut del dashboard)
@@ -268,6 +301,17 @@ class DashboardViewModel @Inject constructor(
             }
             .sortedByDescending { it.amount }
 
+        // Transacciones recientes: las 5 más recientes (filtradas por categoría si hay filtro activo)
+        val recent = filteredTransactions
+            .sortedByDescending { it.date }
+            .take(5)
+            .ifEmpty {
+                transactions
+                    .filter { effectiveCategoryId == null || it.categoryId == effectiveCategoryId }
+                    .sortedByDescending { it.date }
+                    .take(5)
+            }
+
         DashboardUiState(
             totalBalance = balance,
             foreignBalancesSubtitle = foreignSubtitle,
@@ -275,8 +319,9 @@ class DashboardViewModel @Inject constructor(
             monthlyExpenses = expenses,
             periodDebtTransactions = thisMonthTx.filter { it.debtId != null },
             expenseTrendPercent = trend,
+            spendingPacePercent = pace,
             categorySpending = spending,
-            recentTransactions = filteredTransactions.sortedByDescending { it.date }.take(5),
+            recentTransactions = recent,
             accounts = accounts.toList(),
             categories = categoryMap,
             selectedPeriod = activeFilters.period,
@@ -385,4 +430,48 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    fun saveCategoryRule(keyword: String, categoryId: String) {
+        if (keyword.isBlank() || categoryId.isBlank()) return
+        viewModelScope.launch {
+            categoryRules.add(keyword, categoryId)
+        }
+    }
+
+    fun addSplitTransaction(
+        accountId: String,
+        type: String,
+        splits: List<Pair<Long, String>>,
+        note: String
+    ) {
+        if (splits.isEmpty() || accountId.isBlank()) return
+        viewModelScope.launch {
+            val account = accountRepository.getAccount(accountId) ?: return@launch
+            val now = System.currentTimeMillis()
+            val baseNote = note.ifBlank { "Transacción dividida" }
+
+            splits.forEachIndexed { index, (amount, categoryId) ->
+                if (amount > 0L) {
+                    val finalCategoryId = categoryId.ifBlank {
+                        ExpenseCategorizer.categoryIdFor(
+                            text = baseNote,
+                            categories = categoryRepository.getCategories().first(),
+                            customRules = categoryRules.rules.first()
+                        ).orEmpty()
+                    }
+                    transactionRepository.addTransactionWithBalance(
+                        Transaction(
+                            id = UUID.randomUUID().toString(),
+                            accountId = accountId,
+                            amount = amount,
+                            type = type,
+                            categoryId = finalCategoryId,
+                            date = now + index,
+                            note = "$baseNote (${index + 1}/${splits.size})",
+                            currency = account.currency
+                        )
+                    )
+                }
+            }
+        }
+    }
 }

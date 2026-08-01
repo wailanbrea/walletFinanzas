@@ -34,6 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FloatingActionButton
@@ -170,6 +171,7 @@ fun DashboardScreen(
             accounts = uiState.accounts,
             categories = uiState.categories,
             onDismiss = { showQuickActionSheet = false },
+            onSaveRule = viewModel::saveCategoryRule,
             onSaveExpense = { accId, amount, catId, note ->
                 viewModel.addTransaction(accId, amount, "EXPENSE", catId, note)
                 showQuickActionSheet = false
@@ -972,6 +974,7 @@ fun QuickActionBottomSheet(
     accounts: List<Account>,
     categories: Map<String, Category>,
     onDismiss: () -> Unit,
+    onSaveRule: (keyword: String, categoryId: String) -> Unit = { _, _ -> },
     onSaveExpense: (accountId: String, amount: Long, categoryId: String, note: String) -> Unit,
     onSaveIncome: (accountId: String, amount: Long, categoryId: String, note: String) -> Unit,
     onSaveTransfer: (fromAccountId: String, toAccountId: String, amount: Long, note: String) -> Unit
@@ -1031,6 +1034,7 @@ fun QuickActionBottomSheet(
             accounts = accounts,
             categories = categories.values.toList(),
             onDismiss = { selectedAction = null },
+            onSaveRule = onSaveRule,
             onSave = { accId, amount, catId, note ->
                 if (selectedAction == "EXPENSE") {
                     onSaveExpense(accId, amount, catId, note)
@@ -1105,6 +1109,7 @@ fun QuickActionFormSheet(
     accounts: List<Account>,
     categories: List<Category>,
     onDismiss: () -> Unit,
+    onSaveRule: (keyword: String, categoryId: String) -> Unit = { _, _ -> },
     onSave: (accountId: String, amount: Long, categoryId: String, note: String) -> Unit
 ) {
     var amountStr by remember { mutableStateOf("") }
@@ -1256,12 +1261,32 @@ fun QuickActionFormSheet(
                 shape = RoundedCornerShape(8.dp)
             )
 
+            var saveRule by remember { mutableStateOf(false) }
+            if (note.isNotBlank() && selectedCategoryId.isNotBlank()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Recordar esta nota para la categoría",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = saveRule,
+                        onCheckedChange = { isChecked -> saveRule = isChecked }
+                    )
+                }
+            }
+
             Button(
                 onClick = {
                     val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
                     if (amount > 0L && selectedAccountId.isNotEmpty()) {
-                        // Con categoría vacía, el ViewModel infiere por palabras clave
-                        // (reglas del usuario primero, luego las integradas).
+                        if (saveRule && note.isNotBlank() && selectedCategoryId.isNotBlank()) {
+                            onSaveRule(note, selectedCategoryId)
+                        }
                         onSave(selectedAccountId, amount, selectedCategoryId, note)
                     }
                 },

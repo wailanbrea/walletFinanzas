@@ -266,4 +266,50 @@ class TransactionsViewModel @Inject constructor(
             debtLedger.onTransactionDeleted(transaction)
         }
     }
+
+    fun saveCategoryRule(keyword: String, categoryId: String) {
+        if (keyword.isBlank() || categoryId.isBlank()) return
+        viewModelScope.launch {
+            categoryRules.add(keyword, categoryId)
+        }
+    }
+
+    /** Registra una transacción dividida en múltiples categorías atómicamente. */
+    fun addSplitTransaction(
+        accountId: String,
+        type: String,
+        splits: List<Pair<Long, String>>,
+        note: String
+    ) {
+        if (splits.isEmpty() || accountId.isBlank()) return
+        viewModelScope.launch {
+            val account = accountRepository.getAccount(accountId) ?: return@launch
+            val now = System.currentTimeMillis()
+            val baseNote = note.ifBlank { "Transacción dividida" }
+
+            splits.forEachIndexed { index, (amount, categoryId) ->
+                if (amount > 0L) {
+                    val finalCategoryId = categoryId.ifBlank {
+                        ExpenseCategorizer.categoryIdFor(
+                            text = baseNote,
+                            categories = categoryRepository.getCategories().first(),
+                            customRules = categoryRules.rules.first()
+                        ).orEmpty()
+                    }
+                    transactionRepository.addTransactionWithBalance(
+                        Transaction(
+                            id = UUID.randomUUID().toString(),
+                            accountId = accountId,
+                            amount = amount,
+                            type = type,
+                            categoryId = finalCategoryId,
+                            date = now + index,
+                            note = "$baseNote (${index + 1}/${splits.size})",
+                            currency = account.currency
+                        )
+                    )
+                }
+            }
+        }
+    }
 }
