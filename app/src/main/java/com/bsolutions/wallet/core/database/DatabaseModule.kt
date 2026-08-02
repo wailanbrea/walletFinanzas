@@ -51,7 +51,8 @@ object DatabaseModule {
                 WalletDatabaseMigrations.MIGRATION_8_9,
                 WalletDatabaseMigrations.MIGRATION_9_10,
                 WalletDatabaseMigrations.MIGRATION_10_11,
-                WalletDatabaseMigrations.MIGRATION_11_12
+                WalletDatabaseMigrations.MIGRATION_11_12,
+                WalletDatabaseMigrations.MIGRATION_12_13
             )
             // Nunca borrar datos financieros ante un upgrade no cubierto: si faltara una
             // migración preferimos fallar (y verlo) a perder el dinero del usuario en silencio.
@@ -102,6 +103,11 @@ object DatabaseModule {
     @Provides
     fun providePendingOperationDao(database: WalletDatabase): com.bsolutions.wallet.data.local.dao.PendingOperationDao {
         return database.pendingOperationDao()
+    }
+
+    @Provides
+    fun provideDetectedMovementDao(database: WalletDatabase): com.bsolutions.wallet.data.local.dao.DetectedMovementDao {
+        return database.detectedMovementDao()
     }
 
     @Provides

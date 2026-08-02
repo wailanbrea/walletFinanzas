@@ -273,6 +273,34 @@ object WalletDatabaseMigrations {
     }
 
     /**
+     * v12 -> v13: tabla detected_movements para guardar candidatos de correo y push.
+     */
+    val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS detected_movements (
+                    id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    senderOrApp TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
+                    rawBody TEXT NOT NULL DEFAULT '',
+                    merchant TEXT,
+                    amountMinor INTEGER,
+                    currency TEXT,
+                    last4Digits TEXT,
+                    detectedAt INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    suggestedCategoryId TEXT,
+                    confidence INTEGER NOT NULL DEFAULT 0,
+                    needsSync INTEGER NOT NULL DEFAULT 0,
+                    ownerId TEXT NOT NULL,
+                    PRIMARY KEY(ownerId, id)
+                )
+            """.trimIndent())
+        }
+    }
+
+    /**
      * v11 -> v12: un movimiento puede pertenecer a una deuda.
      *
      * Es el hilo que une prestar el dinero con cobrarlo: el gasto del prestamo y cada
