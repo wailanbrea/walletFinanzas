@@ -7,6 +7,7 @@ use App\Models\EmailConnection;
 use App\Models\ProviderMessage;
 use App\Models\User;
 use App\Services\DuplicateEmailCandidateDetector;
+use App\Services\FinancialEmailExtractor;
 use App\Services\UsdDopExchangeRateService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -92,6 +93,44 @@ class DuplicateEmailCandidateTest extends TestCase
         $this->assertSame(0, (new DuplicateEmailCandidateDetector)->reconcile($user));
     }
 
+    public function test_legacy_untyped_candidates_keep_the_established_duplicate_behavior(): void
+    {
+        $user = User::factory()->create();
+        $this->candidate($user, 'gmail', -2_100_000, 'DOP', '2026-07-20T18:30:00Z', eventType: null);
+        $this->candidate($user, 'microsoft', -2_100_000, 'DOP', '2026-07-20T18:35:00Z', eventType: null);
+
+        $this->assertSame(1, (new DuplicateEmailCandidateDetector)->reconcile($user));
+    }
+
+    public function test_different_cards_events_or_known_merchants_are_not_duplicates(): void
+    {
+        $user = User::factory()->create();
+        $detector = new DuplicateEmailCandidateDetector;
+
+        $this->candidate($user, 'gmail', -2_100_000, 'DOP', '2026-07-20T18:30:00Z', cardLastFour: '2910');
+        $this->candidate($user, 'microsoft', -2_100_000, 'DOP', '2026-07-20T18:35:00Z', cardLastFour: '8980');
+        $this->assertSame(0, $detector->reconcile($user));
+
+        EmailCandidate::query()->delete();
+
+        $this->candidate($user, 'gmail', -2_100_000, 'DOP', '2026-07-20T18:30:00Z');
+        $this->candidate(
+            $user,
+            'microsoft',
+            -2_100_000,
+            'DOP',
+            '2026-07-20T18:35:00Z',
+            eventType: FinancialEmailExtractor::BANK_FEE_TAX,
+        );
+        $this->assertSame(0, $detector->reconcile($user));
+
+        EmailCandidate::query()->delete();
+
+        $this->candidate($user, 'gmail', -2_100_000, 'DOP', '2026-07-20T18:30:00Z', merchant: 'Amazon');
+        $this->candidate($user, 'microsoft', -2_100_000, 'DOP', '2026-07-20T18:35:00Z', merchant: 'Jumbo');
+        $this->assertSame(0, $detector->reconcile($user));
+    }
+
     public function test_the_api_exposes_the_conversion_instead_of_null(): void
     {
         $user = User::factory()->create();
@@ -112,6 +151,33 @@ class DuplicateEmailCandidateTest extends TestCase
             ->assertJsonPath('data.0.exchange_rate_micros', 60_500_000)
             ->assertJsonPath('data.0.conversion_kind', 'historical_estimate')
             ->assertJsonPath('data.0.conversion_status', 'available');
+    }
+
+    public function test_gateway_receipt_can_match_the_bank_purchase_for_the_same_charge(): void
+    {
+        $user = User::factory()->create();
+        $gateway = $this->candidate(
+            $user,
+            'gmail',
+            -35_500,
+            'USD',
+            '2026-07-20T18:30:00Z',
+            converted: -2_100_000,
+            eventType: FinancialEmailExtractor::RECEIPT_CONFIRMED,
+            merchant: 'PayPal',
+        );
+        $bank = $this->candidate(
+            $user,
+            'microsoft',
+            -2_100_000,
+            'DOP',
+            '2026-07-20T18:35:00Z',
+            eventType: FinancialEmailExtractor::CARD_PURCHASE_APPROVED,
+            merchant: 'Amazon',
+        );
+
+        $this->assertSame(1, (new DuplicateEmailCandidateDetector)->reconcile($user));
+        $this->assertSame($bank->id, $gateway->fresh()->duplicate_of_id);
     }
 
     public function test_a_dop_candidate_reports_that_no_conversion_was_needed(): void
@@ -192,6 +258,9 @@ class DuplicateEmailCandidateTest extends TestCase
         string $occurredAt,
         ?int $converted = null,
         string $direction = 'expense',
+        ?string $eventType = FinancialEmailExtractor::CARD_PURCHASE_APPROVED,
+        ?string $cardLastFour = '1234',
+        string $merchant = 'Comercio',
     ): EmailCandidate {
         // Una sola conexión por buzón: la tabla tiene unique(user_id, provider).
         $connection = EmailConnection::query()->firstOrCreate(
@@ -215,7 +284,9 @@ class DuplicateEmailCandidateTest extends TestCase
             'user_id' => $user->id,
             'provider_message_id' => $message->id,
             'provider' => $provider,
-            'merchant' => 'Comercio',
+            'merchant' => $merchant,
+            'card_last_four' => $cardLastFour,
+            'event_type' => $eventType,
             'amount' => $amount,
             'currency' => $currency,
             'direction' => $direction,

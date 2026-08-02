@@ -7,6 +7,7 @@ use App\Models\EmailMailbox;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Empareja el mismo cargo visto por dos buzones distintos.
@@ -103,6 +104,18 @@ class DuplicateEmailCandidateDetector
             if ($other->provider === $candidate->provider) {
                 return false;
             }
+            if (! $this->eventsCompatible($candidate, $other)) {
+                return false;
+            }
+            if ($candidate->card_last_four && $other->card_last_four
+                && $candidate->card_last_four !== $other->card_last_four) {
+                return false;
+            }
+            if ($candidate->event_type === $other->event_type
+                && $candidate->merchant && $other->merchant
+                && $this->normalizedMerchant($candidate->merchant) !== $this->normalizedMerchant($other->merchant)) {
+                return false;
+            }
             if ($other->direction !== $candidate->direction) {
                 return false;
             }
@@ -146,6 +159,31 @@ class DuplicateEmailCandidateDetector
         }
 
         return null;
+    }
+
+    private function eventsCompatible(EmailCandidate $first, EmailCandidate $second): bool
+    {
+        if ($first->event_type === null || $second->event_type === null) {
+            return $first->event_type === null && $second->event_type === null;
+        }
+        if ($first->event_type === $second->event_type) {
+            return true;
+        }
+
+        $gatewayPair = [
+            FinancialEmailExtractor::CARD_PURCHASE_APPROVED,
+            FinancialEmailExtractor::RECEIPT_CONFIRMED,
+        ];
+
+        return in_array($first->event_type, $gatewayPair, true)
+            && in_array($second->event_type, $gatewayPair, true);
+    }
+
+    private function normalizedMerchant(string $merchant): string
+    {
+        $normalized = preg_replace('/[^a-z0-9]+/', ' ', Str::lower(Str::ascii($merchant)));
+
+        return trim($normalized ?? '');
     }
 
     /**

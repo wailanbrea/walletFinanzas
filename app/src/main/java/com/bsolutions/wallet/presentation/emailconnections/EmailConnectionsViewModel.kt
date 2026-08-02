@@ -90,6 +90,12 @@ data class EmailConnectionsUiState(
             if (other.id == candidate.id || other.provider == candidate.provider) return@firstOrNull false
             if (other.direction != candidate.direction) return@firstOrNull false
             val theirs = other.baseAmount() ?: return@firstOrNull false
+            if (candidate.cardLastFour != null && other.cardLastFour != null && candidate.cardLastFour != other.cardLastFour) {
+                return@firstOrNull false
+            }
+            if (candidate.merchant != null && other.merchant != null && normalizedMerchant(candidate.merchant) != normalizedMerchant(other.merchant)) {
+                return@firstOrNull false
+            }
             val theirDay = candidateLocalDate(other.occurredAt) ?: return@firstOrNull false
             if (kotlin.math.abs(myDay.toEpochDay() - theirDay.toEpochDay()) > DUPLICATE_WINDOW_DAYS) {
                 return@firstOrNull false
@@ -125,6 +131,9 @@ private fun EmailCandidate.baseAmount(): Long? = when {
     convertedCurrency == BASE_CURRENCY -> convertedAmount
     else -> null
 }
+private fun normalizedMerchant(merchant: String): String =
+    merchant.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+
 
 /** Día local del correo; null si la fecha viene ilegible. */
 internal fun candidateLocalDate(occurredAt: String, zoneId: ZoneId = ZoneId.systemDefault()): LocalDate? =
@@ -316,6 +325,14 @@ class EmailConnectionsViewModel @Inject constructor(
             var movementReady = false
             try {
                 val candidate = checkNotNull(_uiState.value.candidates.firstOrNull { it.id == candidateId })
+                if (candidate.direction == "transfer") {
+                    _uiState.value = _uiState.value.copy(
+                        reviewCandidateId = null,
+                        message = "Las transferencias y pagos de tarjeta requieren un flujo de traslado entre cuentas."
+                    )
+                    return@launch
+                }
+
                 val transactionId = emailTransactionId(candidate.id)
                 val existing = transactionRepository.getTransaction(transactionId)
                 val transaction: Transaction

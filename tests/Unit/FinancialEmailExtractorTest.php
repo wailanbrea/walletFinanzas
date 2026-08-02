@@ -52,10 +52,10 @@ class FinancialEmailExtractorTest extends TestCase
         // "Pago de nomina" es el sueldo, no un gasto. La palabra "pago" ganaba y el
         // sueldo se restaba del balance ademas de inflar los gastos del mes.
         $cases = [
-            'Pago de nómina por RD$22,173.10',
+            'Pago de nómina acreditado por RD$22,173.10',
             'Se ha realizado el pago de su nómina RD$22,173.10',
             // Estos dos no casaban con ninguna de las dos listas y se descartaban.
-            'Acreditación de salario RD$22,173.10',
+            'Acreditación de salario completada RD$22,173.10',
             'Su sueldo quincenal fue pagado RD$22,173.10',
         ];
 
@@ -68,12 +68,13 @@ class FinancialEmailExtractorTest extends TestCase
         }
     }
 
-    public function test_paying_a_card_is_still_an_expense(): void
+    public function test_paying_a_card_is_a_transfer_not_an_expense(): void
     {
-        // El contrapeso: no todo lo que dice "pago" pasa a ser ingreso.
-        $candidate = $this->extractor->extract('Aviso', 'Pago de tu tarjeta de crédito RD$5,000.00', null);
+        $candidate = $this->extractor->extract('Aviso', 'Pago de tu tarjeta de crédito realizado por RD$5,000.00', null);
 
-        $this->assertSame('expense', $candidate['direction']);
+        $this->assertSame('transfer', $candidate['direction']);
+        $this->assertSame(FinancialEmailExtractor::CARD_PAYMENT, $candidate['event_type']);
+        $this->assertNotSame('expense', $candidate['direction']);
     }
 
     public function test_it_rejects_payment_reminders_but_not_transactional_messages_with_promo_footers(): void
@@ -96,15 +97,88 @@ class FinancialEmailExtractorTest extends TestCase
         $this->assertNull($this->extractor->extract('150% of budget reached', 'Payment USD 3.60', null));
     }
 
+    public function test_it_requires_a_definitive_execution_expression(): void
+    {
+        $this->assertNull($this->extractor->extract('Pago PayPal', 'Próximo pago USD 25.00 en 10 días', null));
+        $this->assertNull($this->extractor->extract('Aviso de compra', 'Compra por RD$500.00', null));
+        $this->assertNull($this->extractor->extract('Renovación', 'Tu pago de USD 12.00 será procesado mañana', null));
+
+        $completed = $this->extractor->extract('Pago PayPal realizado con éxito', 'Payment completed USD 25.00', null);
+        $this->assertSame(FinancialEmailExtractor::RECEIPT_CONFIRMED, $completed['event_type']);
+    }
+
+    public function test_it_classifies_the_observed_bank_event_taxonomy(): void
+    {
+        $cases = [
+            ['Compra aprobada', 'Comercio: Amazon | RD$1,000.00', FinancialEmailExtractor::CARD_PURCHASE_APPROVED, 'expense'],
+            ['Transferencia enviada satisfactoriamente', 'Monto RD$2,000.00', FinancialEmailExtractor::TRANSFER_OUT, 'transfer'],
+            ['Transferencia recibida', 'Monto acreditado RD$2,000.00', FinancialEmailExtractor::TRANSFER_IN, 'income'],
+            ['Transferencia entre mis productos realizada', 'Monto RD$2,000.00', FinancialEmailExtractor::INTERNAL_TRANSFER, 'transfer'],
+            ['Pago de tu tarjeta realizado', 'Monto RD$5,000.00', FinancialEmailExtractor::CARD_PAYMENT, 'transfer'],
+            ['Reverso realizado a cuenta por sobregiro', 'Monto RD$350.00', FinancialEmailExtractor::REFUND_REVERSAL, 'income'],
+            ['Comisión descontada satisfactoriamente', 'Monto RD$175.00', FinancialEmailExtractor::BANK_FEE_TAX, 'expense'],
+            ['Retiro realizado en cajero', 'Monto RD$3,000.00', FinancialEmailExtractor::CASH_WITHDRAWAL, 'transfer'],
+            ['Depósito acreditado', 'Monto RD$9,000.00', FinancialEmailExtractor::DEPOSIT, 'income'],
+            ['Recibo de su pago', 'Pago completado USD 15.00', FinancialEmailExtractor::RECEIPT_CONFIRMED, 'expense'],
+        ];
+
+        foreach ($cases as [$subject, $snippet, $eventType, $direction]) {
+            $candidate = $this->extractor->extract($subject, $snippet, null);
+            $this->assertNotNull($candidate, "Se descartó: $subject");
+            $this->assertSame($eventType, $candidate['event_type'], "Tipo incorrecto: $subject");
+            $this->assertSame($direction, $candidate['direction'], "Dirección incorrecta: $subject");
+        }
+
+        $outgoing = $this->extractor->extract(
+            'Transferencia enviada satisfactoriamente',
+            'El beneficiario la ha recibido. Monto DOP 2,000.00',
+            null,
+        );
+        $this->assertSame(FinancialEmailExtractor::TRANSFER_OUT, $outgoing['event_type']);
+        $this->assertSame('transfer', $outgoing['direction']);
+    }
+
+    public function test_it_rejects_non_transactional_bank_and_marketing_notices(): void
+    {
+        $cases = [
+            ['Aumentamos el límite de tu tarjeta', 'Nuevo límite RD$150,000.00'],
+            ['Préstamo preaprobado', 'Tienes hasta RD$500,000.00 disponibles'],
+            ['Oferta cashback', 'Compra mínima RD$1,000.00 y devolución de hasta RD$500.00'],
+            ['Newsletter semanal', 'Equipos desde USD 99.00'],
+            ['Estado de cuenta disponible', 'Balance RD$25,000.00'],
+            ['Alerta de saldo', 'Tu saldo disponible es RD$5,000.00'],
+            ['Código de seguridad OTP', 'No compartas el código 123456. Monto RD$1.00'],
+            ['Tarjeta activada', 'Tu límite es RD$50,000.00'],
+            ['Compra declinada', 'Intento por RD$700.00'],
+            ['Promoción aprobada de cashback', 'Compra desde RD$1,000.00 y recibe devolución de hasta RD$500.00'],
+        ];
+
+        foreach ($cases as [$subject, $snippet]) {
+            $this->assertNull($this->extractor->extract($subject, $snippet, null), "Falso positivo: $subject");
+        }
+    }
+
+    public function test_unknown_merchants_are_always_low_confidence(): void
+    {
+        $candidate = $this->extractor->extract(
+            'Compra aprobada',
+            'Comercio: NEGOCIO NUEVO | Monto RD$700.00',
+            null,
+        );
+
+        $this->assertSame('Otros', $candidate['category_suggestion']);
+        $this->assertSame(40, $candidate['confidence']);
+    }
+
     public function test_it_extracts_card_last_four_from_masked_and_labeled_formats(): void
     {
         $cases = [
             'Tarjeta ****1234 compra aprobada RD$1,000.00' => '1234',
             'Tarjeta terminada en 5678 compra aprobada RD$1,000.00' => '5678',
             'Card ending in 4321 was charged USD 10.00' => '4321',
-            'Tarjeta xxxx-8765 cargo por RD$500.00' => '8765',
-            'Tarjeta 401234******9012 compra de RD$250.00' => '9012',
-            'Tarjeta No.: 3456 pago de RD$100.00' => '3456',
+            'Tarjeta xxxx-8765 cargo aprobado por RD$500.00' => '8765',
+            'Tarjeta 401234******9012 compra aprobada de RD$250.00' => '9012',
+            'Tarjeta No.: 3456 pago realizado de RD$100.00' => '3456',
         ];
 
         foreach ($cases as $subject => $expected) {
@@ -244,7 +318,7 @@ class FinancialEmailExtractorTest extends TestCase
         // el aviso trae los dos campos, el comercio manda y la ciudad no lo pisa.
         $result = $this->extractor->extract(
             'Consumo',
-            'Compra RD$500.00 | Localidad | SANTO DOMINGO | Comercio | FERRETERIA OCHOA',
+            'Compra aprobada RD$500.00 | Localidad | SANTO DOMINGO | Comercio | FERRETERIA OCHOA',
             null
         );
 

@@ -8,7 +8,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ProviderMessage extends Model
 {
-    protected $fillable = ['user_id', 'email_connection_id', 'provider', 'provider_message_id', 'subject', 'snippet', 'occurred_at'];
+    protected $fillable = [
+        'user_id', 'email_connection_id', 'provider', 'provider_message_id', 'subject',
+        'snippet', 'sender_name', 'sender_address', 'sender_domain', 'occurred_at',
+    ];
 
     protected function casts(): array
     {

@@ -4,6 +4,26 @@ namespace App\Services;
 
 class FinancialEmailExtractor
 {
+    public const CARD_PURCHASE_APPROVED = 'CARD_PURCHASE_APPROVED';
+
+    public const TRANSFER_OUT = 'TRANSFER_OUT';
+
+    public const TRANSFER_IN = 'TRANSFER_IN';
+
+    public const INTERNAL_TRANSFER = 'INTERNAL_TRANSFER';
+
+    public const CARD_PAYMENT = 'CARD_PAYMENT';
+
+    public const REFUND_REVERSAL = 'REFUND_REVERSAL';
+
+    public const BANK_FEE_TAX = 'BANK_FEE_TAX';
+
+    public const CASH_WITHDRAWAL = 'CASH_WITHDRAWAL';
+
+    public const DEPOSIT = 'DEPOSIT';
+
+    public const RECEIPT_CONFIRMED = 'RECEIPT_CONFIRMED';
+
     public function extract(?string $subject, ?string $snippet, mixed $occurredAt): ?array
     {
         $text = trim(($subject ?? '').' '.($snippet ?? ''));
@@ -11,19 +31,8 @@ class FinancialEmailExtractor
             return null;
         }
 
-        $expense = preg_match('/\b(compra|pago|cargo|debito|débito|consumo|purchase|payment|charged|spent)\b|usaste tu tarjeta/iu', $text) === 1;
-        $income = preg_match('/\b(abono|deposito|depósito|ingreso|acreditaci[oó]n|acreditad[ao]|transferencia recibida|crédito recibido|received|deposit)\b/iu', $text) === 1;
-
-        // Un aviso de nomina es dinero que entra aunque diga "pago": "pago de nomina" es
-        // el sueldo, no un gasto. Sin esto el sueldo se restaba del balance y ademas
-        // inflaba los gastos del mes. Y "sueldo quincenal fue pagado" no casaba con
-        // ninguna de las dos listas, asi que el aviso se descartaba entero.
-        if (preg_match('/\b(n[oó]mina|salario|sueldo|quincena|honorarios?|pensi[oó]n|jubilaci[oó]n)\b/iu', $text) === 1) {
-            $expense = false;
-            $income = true;
-        }
-
-        if ($expense === $income) {
+        $eventType = $this->eventType($text);
+        if ($eventType === null) {
             return null;
         }
 
@@ -42,20 +51,81 @@ class FinancialEmailExtractor
             return null;
         }
 
+        $direction = match ($eventType) {
+            self::TRANSFER_OUT, self::INTERNAL_TRANSFER, self::CARD_PAYMENT,
+            self::CASH_WITHDRAWAL => 'transfer',
+            self::TRANSFER_IN, self::REFUND_REVERSAL, self::DEPOSIT => 'income',
+            default => 'expense',
+        };
         $merchant = $this->merchant($text);
-        $category = $this->category($text, $expense);
+        $category = $this->category($text, $direction, $eventType);
+        // Un comercio desconocido o una categoria generica nunca merece confianza alta.
+        $confidence = $merchant !== null && $category !== 'Otros' ? 90 : 40;
 
         return [
             'merchant' => $merchant,
             'card_last_four' => $this->cardLastFour($text),
             'amount' => $amount,
             'currency' => $currency,
-            'direction' => $expense ? 'expense' : 'income',
+            'direction' => $direction,
+            'event_type' => $eventType,
             'category_suggestion' => $category,
             'occurred_at' => $occurredAt ?? now(),
-            'confidence' => $merchant && $category ? 90 : 80,
+            'confidence' => $confidence,
             'subject' => $subject,
         ];
+    }
+
+    private function eventType(string $text): ?string
+    {
+        if (! $this->hasExecutionPhrase($text)) {
+            return null;
+        }
+
+        if (preg_match('/\b(n[oó]mina|salario|sueldo|quincena|honorarios?|pensi[oó]n|jubilaci[oó]n)\b/iu', $text)) {
+            return self::DEPOSIT;
+        }
+        if (preg_match('/\b(?:pago|abono)\s+(?:de|a)\s+(?:tu|su|la)?\s*tarjeta|\bpago\s+tarjeta\b/iu', $text)) {
+            return self::CARD_PAYMENT;
+        }
+        if (preg_match('/\b(?:revers[oa]|devoluci[oó]n|reembolso|refund|reversal)\b/iu', $text)) {
+            return self::REFUND_REVERSAL;
+        }
+        if (preg_match('/\b(?:comisi[oó]n|impuesto|itbis|cargo bancario|sobregiro|dgii|marbete|bank fee|tax)\b/iu', $text)) {
+            return self::BANK_FEE_TAX;
+        }
+        if (preg_match('/\b(?:retiro|cajero|atm|cash withdrawal)\b/iu', $text)) {
+            return self::CASH_WITHDRAWAL;
+        }
+        if (preg_match('/\b(?:transferencia|transferiste|traspaso)\b/iu', $text)) {
+            if (preg_match('/\b(?:entre (?:mis|tus|sus) productos|interna|internal)\b/iu', $text)) {
+                return self::INTERNAL_TRANSFER;
+            }
+            if (preg_match('/\b(?:enviad[ao]|saliente|debitad[ao]|descontad[ao]|transferiste|sent|outgoing)\b/iu', $text)) {
+                return self::TRANSFER_OUT;
+            }
+            if (preg_match('/\b(?:recibid[ao]|entrante|acreditad[ao]|received|incoming)\b/iu', $text)) {
+                return self::TRANSFER_IN;
+            }
+
+            return null;
+        }
+        if (preg_match('/\b(?:dep[oó]sito|abono|ingreso|acreditaci[oó]n|cr[eé]dito recibido|deposit)\b/iu', $text)) {
+            return self::DEPOSIT;
+        }
+        if (preg_match('/\b(?:recibo|receipt)\b|\bha pagado\b|\bpago\b.{0,40}\brealizad[ao]\b|\bpayment completed\b/iu', $text)) {
+            return self::RECEIPT_CONFIRMED;
+        }
+        if (preg_match('/\b(?:compra|cargo|d[eé]bito|consumo|purchase|charged|spent|transacci[oó]n)\b|usaste tu tarjeta/iu', $text)) {
+            return self::CARD_PURCHASE_APPROVED;
+        }
+
+        return null;
+    }
+
+    private function hasExecutionPhrase(string $text): bool
+    {
+        return preg_match('/\b(?:aprobad[ao]|completad[ao]|procesad[ao]|acreditad[ao]|recibid[ao]|pagad[ao]|cobrad[ao]|debitad[ao]|descontad[ao]|realizad[ao](?:\s+(?:con [eé]xito|satisfactoriamente))?|enviad[ao](?:\s+satisfactoriamente)?|successful(?:ly)?|completed|approved|charged|paid|received)\b|\bse\s+(?:hizo|realiz[oó]|ha realizado|cobr[oó]|debit[oó]|descont[oó]|acredit[oó]|recibi[oó])\b|\busaste tu tarjeta\b/iu', $text) === 1;
     }
 
     /**
@@ -126,7 +196,18 @@ class FinancialEmailExtractor
     {
         $text = trim(($subject ?? '').' '.($snippet ?? ''));
 
-        return preg_match('/\b(preaprob(?:ad[ao]|ación)|l[ií]mite disponible|recordatorio de pago|pago m[ií]nimo|payment due|saldo pendiente|budget reached|presupuesto alcanzado|declinad[ao]|rechazad[ao]|cancelad[ao]|pending|declined|rejected)\b/iu', $text) === 1;
+        $hardNegative = preg_match('/\b(?:programad[ao]|pr[oó]ximo pago|pago futuro|renovaci[oó]n futura|recordatorio|payment due|pago m[ií]nimo|saldo pendiente|budget reached|presupuesto alcanzado|declinad[ao]|rechazad[ao]|cancelad[ao]|pendiente|pending|declined|rejected|estado de cuenta|balance alert|alerta de saldo|l[ií]mite disponible|aumentamos (?:el |tu |su )?l[ií]mite|cambio de l[ií]mite|preaprob(?:ad[ao]|aci[oó]n)|c[oó]digo (?:de seguridad|otp|de un solo uso)|clave otp|tarjeta (?:activada|bloqueada|desbloqueada|vencida))\b/iu', $text) === 1;
+        if ($hardNegative) {
+            return true;
+        }
+
+        $promotion = preg_match('/\b(?:oferta|promoci[oó]n|publicidad|newsletter|cashback|devoluci[oó]n de hasta|tope de devoluci[oó]n|monto m[ií]nimo|precio desde|preaprob(?:ad[ao]|aci[oó]n))\b/iu', $text) === 1;
+        $promotionalSubject = preg_match('/\b(?:oferta|promoci[oó]n|publicidad|newsletter|cashback|preaprob(?:ad[ao]|aci[oó]n))\b/iu', $subject ?? '') === 1;
+        $offerStructure = preg_match('/\b(?:compra|consumo|precio)\s+(?:m[ií]nim[oa]|desde)|\b(?:recibe|obt[eé]n)\b.{0,50}\b(?:hasta|cashback|devoluci[oó]n)\b/iu', $text) === 1;
+
+        // Muchos bancos agregan un pie promocional a un consumo real. Solo manda el
+        // lenguaje promocional cuando el aviso no contiene una ejecucion definitiva.
+        return $promotion && ($promotionalSubject || $offerStructure || ! $this->hasExecutionPhrase($text));
     }
 
     private function merchant(string $text): ?string
@@ -136,6 +217,7 @@ class FinancialEmailExtractor
             'amazon' => 'Amazon',
             'netflix' => 'Netflix',
             'spotify' => 'Spotify',
+            'uber eats' => 'Uber Eats',
             'uber' => 'Uber',
             'didi' => 'DiDi',
             'indriver' => 'inDrive',
@@ -152,6 +234,17 @@ class FinancialEmailExtractor
             'super pola' => 'Super Pola',
             'epic games' => 'Epic Games',
             'aliexpress' => 'AliExpress',
+            'google play' => 'Google Play',
+            'habbo' => 'Habbo',
+            'contabo' => 'Contabo',
+            'boxpaq' => 'Boxpaq',
+            'itla' => 'ITLA',
+            'dgii' => 'DGII',
+            'mcdonald' => "McDonald's",
+            'jade' => 'Jade',
+            'domino' => "Domino's",
+            'shell' => 'Shell',
+            'totalenergies' => 'TotalEnergies',
         ];
 
         // Primero las marcas conocidas: dan un nombre canonico y limpio ("PayPal" y no
@@ -229,21 +322,29 @@ class FinancialEmailExtractor
         return mb_substr($value, 0, 60);
     }
 
-    private function category(string $text, bool $expense): string
+    private function category(string $text, string $direction, string $eventType): string
     {
-        if (! $expense) {
+        if ($eventType === self::BANK_FEE_TAX) {
+            return 'Impuestos';
+        }
+        if ($direction === 'transfer') {
+            return 'Otros';
+        }
+        if ($direction === 'income') {
             return preg_match('/\b(salario|sueldo|n[oó]mina|quincena|honorarios?)\b/iu', $text) ? 'Salario' : 'Otros';
         }
 
         $rules = [
+            'Impuestos' => '/\b(dgii|marbete|impuesto|itbis|tax)\b/iu',
             'Alimentación' => '/\b(supermercado|colmado|nacional|jumbo|sirena|pola|bravo|grocer|market|panader[ií]a)\b/iu',
-            'Restaurantes' => '/\b(restaurante|pizza|burger|mcdonald|kfc|domino|sushi|pedidosya|helad(?:o|os|er[ií]a))\b/iu',
-            'Transporte' => '/\b(uber|didi|indriver|taxi|gasolina|combustible|peaje|parqueo|metro)\b/iu',
-            'Servicios' => '/\b(claro|altice|viva|edesur|edenorte|edeeste|internet|tel[eé]fono|factura|electricidad|agua|openai|chatgpt)\b/iu',
-            'Entretenimiento' => '/\b(netflix|spotify|hbo|disney|cine|steam|epic games|concierto|juego)\b/iu',
+            'Restaurantes' => '/\b(restaurante|pizza|burger|mcdonald|kfc|domino|jade|sushi|pedidosya|uber eats|helad(?:o|os|er[ií]a))\b/iu',
+            'Combustible' => '/\b(shell|totalenergies|estaci[oó]n total|gasolina|combustible)\b/iu',
+            'Transporte' => '/\b(uber|didi|indriver|taxi|peaje|parqueo|metro)\b/iu',
+            'Servicios' => '/\b(claro|altice|viva|edesur|edenorte|edeeste|internet|tel[eé]fono|factura|electricidad|agua|openai|chatgpt|contabo|boxpaq|courier)\b/iu',
+            'Entretenimiento' => '/\b(netflix|spotify|hbo|disney|cine|steam|epic games|google play|habbo|concierto|juego)\b/iu',
             'Salud' => '/\b(farmacia|cl[ií]nica|hospital|m[eé]dic|dentista|laboratorio)\b/iu',
             'Viajes' => '/\b(vuelo|hotel|airbnb|aeropuerto|arajet|jetblue|resort)\b/iu',
-            'Educación' => '/\b(colegio|universidad|curso|libro|matr[ií]cula|inscripci[oó]n)\b/iu',
+            'Educación' => '/\b(colegio|universidad|itla|curso|libro|matr[ií]cula|inscripci[oó]n)\b/iu',
             'Vivienda' => '/\b(alquiler|renta|hipoteca|condominio|ferreter[ií]a)\b/iu',
             'Compras' => '/\b(paypal|amazon|aliexpress|google|apple|zara|shein|temu|tienda|shopping|ropa|calzado)\b/iu',
         ];

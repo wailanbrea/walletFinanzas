@@ -339,6 +339,26 @@ class EmailConnectionsViewModelTest {
         )
         assertEquals(emptyList<EmailCandidate>(), viewModel.uiState.value.candidates)
     }
+    @Test
+    fun `transfer candidate cannot enter the expense booking path`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
+            candidates = listOf(financialCandidate().copy(direction = "transfer"))
+        }
+        val transactions = FakeTransactionRepository()
+        val viewModel = createViewModel(repository, transactionRepository = transactions)
+        advanceUntilIdle()
+
+        viewModel.classify("candidate-1", "account-1", "cat_alimentacion")
+        advanceUntilIdle()
+
+        assertEquals(emptyList<Transaction>(), transactions.added)
+        assertEquals(emptyList<Triple<String, String, String?>>(), repository.reviews)
+        assertEquals(
+            "Las transferencias y pagos de tarjeta requieren un flujo de traslado entre cuentas.",
+            viewModel.uiState.value.message
+        )
+    }
+
 
     @Test
     fun `retry after backend failure does not duplicate local movement`() = runTest {
@@ -594,6 +614,27 @@ class EmailConnectionsViewModelTest {
         assertEquals("dop", state.duplicateCandidateFor(paypal)?.id)
         assertNull(state.duplicateCandidateFor(qik))
     }
+    @Test
+    fun `different cards or merchants are not offered as duplicates`() {
+        val paypal = financialCandidate(id = "usd", provider = EmailProvider.GMAIL).copy(
+            merchant = "Amazon",
+            cardLastFour = "2910",
+            amount = -35_500,
+            currency = "USD",
+            convertedAmount = -2_100_000,
+            convertedCurrency = "DOP"
+        )
+        val otherCard = financialCandidate(id = "dop", provider = EmailProvider.MICROSOFT).copy(
+            merchant = "Amazon",
+            cardLastFour = "8980",
+            amount = -2_100_000
+        )
+        assertNull(EmailConnectionsUiState(candidates = listOf(paypal, otherCard)).duplicateCandidateFor(paypal))
+
+        val otherMerchant = otherCard.copy(cardLastFour = "2910", merchant = "Jumbo")
+        assertNull(EmailConnectionsUiState(candidates = listOf(paypal, otherMerchant)).duplicateCandidateFor(paypal))
+    }
+
 
     @Test
     fun `a usd charge without conversion is never offered as duplicate`() {

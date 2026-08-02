@@ -17,6 +17,7 @@ class EmailCandidateController extends Controller
         $candidates = $request->user()->emailCandidates()
             ->where('status', 'pending')
             ->latest('occurred_at')
+            ->with('message')
             ->limit(200)
             ->get();
 

@@ -95,6 +95,35 @@ class EmailMailboxScannerDateTest extends TestCase
         ]);
     }
 
+    public function test_gmail_sender_uses_the_mailbox_inside_angle_brackets(): void
+    {
+        $user = User::factory()->create();
+        $this->connection($user);
+        Sanctum::actingAs($user);
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/messages/sender-mailbox')) {
+                return Http::response($this->gmailMessage(
+                    'sender-mailbox',
+                    'Mon, 20 Jul 2026 12:00:00 +0000',
+                    null,
+                    'Trusted alerts@trusted-bank.com <fraud@evil.test>',
+                ));
+            }
+
+            return Http::response(['messages' => [['id' => 'sender-mailbox']]]);
+        });
+
+        $this->postJson('/api/v1/email-connections/gmail/sync', [
+            'sync_from_at' => '2026-07-01T00:00:00Z',
+            'sync_from_date' => '2026-07-01',
+        ])->assertStatus(202);
+
+        $this->assertDatabaseHas('provider_messages', [
+            'sender_address' => 'fraud@evil.test',
+            'sender_domain' => 'evil.test',
+        ]);
+    }
+
     public function test_microsoft_non_multiple_limit_continues_on_page_boundaries_without_skipping(): void
     {
         config(['email_sync.max_messages_per_run' => 75]);
@@ -218,8 +247,12 @@ class EmailMailboxScannerDateTest extends TestCase
         ]);
     }
 
-    private function gmailMessage(string $id, string $date, ?string $internalDate = null): array
-    {
+    private function gmailMessage(
+        string $id,
+        string $date,
+        ?string $internalDate = null,
+        string $from = 'Banco <alerts@example.test>',
+    ): array {
         return [
             'id' => $id,
             'snippet' => 'Compra aprobada USD 3.60',
@@ -227,6 +260,7 @@ class EmailMailboxScannerDateTest extends TestCase
             'payload' => ['headers' => [
                 ['name' => 'Subject', 'value' => 'Pago con tarjeta'],
                 ['name' => 'Date', 'value' => $date],
+                ['name' => 'From', 'value' => $from],
             ]],
         ];
     }

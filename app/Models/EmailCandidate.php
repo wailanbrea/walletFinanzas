@@ -12,8 +12,8 @@ class EmailCandidate extends Model
 
     protected $fillable = [
         'user_id', 'provider_message_id', 'provider', 'merchant', 'card_last_four',
-        'amount', 'currency', 'direction', 'category_suggestion', 'occurred_at',
-        'confidence', 'status', 'subject', 'category',
+        'amount', 'currency', 'direction', 'event_type', 'category_suggestion',
+        'occurred_at', 'confidence', 'status', 'subject', 'category',
         // Instantanea de la conversion: la tasa se guarda con el movimiento para que
         // un gasto pasado siga valiendo lo que valia ese dia.
         'converted_amount', 'converted_currency', 'exchange_rate_micros',

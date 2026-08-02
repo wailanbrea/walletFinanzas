@@ -13,6 +13,7 @@ use App\Models\ProviderMessage;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\EmailMailboxScanner;
+use App\Services\FinancialEmailExtractor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -161,6 +162,7 @@ class EmailOAuthAndSyncApiTest extends TestCase
                     'payload' => ['headers' => [
                         ['name' => 'Subject', 'value' => 'Pago con tarjeta'],
                         ['name' => 'Date', 'value' => 'Wed, 22 Jul 2026 12:00:00 +0000'],
+                        ['name' => 'From', 'value' => 'Banco Popular <alertas@popularenlinea.com>'],
                     ]],
                 ]);
             }
@@ -185,13 +187,21 @@ class EmailOAuthAndSyncApiTest extends TestCase
             ->assertJsonPath('data.messages_created', 0)
             ->assertJsonPath('data.candidates_created', 0);
         $this->assertDatabaseCount('provider_messages', 5);
-        $this->assertDatabaseCount('email_candidates', 4);
-        $this->assertDatabaseMissing('email_candidates', ['id' => $staleCandidate->id]);
+        $this->assertDatabaseCount('email_candidates', 5);
+        $this->assertDatabaseHas('email_candidates', ['id' => $staleCandidate->id, 'status' => 'pending']);
         $this->assertDatabaseHas('email_candidates', ['id' => $categorizedCandidate->id]);
         $this->assertDatabaseHas('email_candidates', ['id' => $microsoftCandidate->id]);
         $this->assertDatabaseHas('email_candidates', ['id' => $otherCandidate->id]);
         $this->assertDatabaseHas('email_candidates', ['amount' => 12345, 'currency' => 'USD', 'direction' => 'expense']);
         $this->assertDatabaseCount('transactions', 0);
+        $this->getJson('/api/v1/email-candidates')
+            ->assertOk()
+            ->assertJsonFragment([
+                'event_type' => FinancialEmailExtractor::CARD_PURCHASE_APPROVED,
+                'sender_name' => 'Banco Popular',
+                'sender_address' => 'alertas@popularenlinea.com',
+                'sender_domain' => 'popularenlinea.com',
+            ]);
     }
 
     public function test_microsoft_sync_refreshes_token_and_follows_only_bounded_graph_pages(): void
@@ -206,7 +216,13 @@ class EmailOAuthAndSyncApiTest extends TestCase
             ]),
             'https://graph.microsoft.com/v1.0/me/messages*' => Http::sequence()
                 ->push([
-                    'value' => [['id' => 'm1', 'subject' => 'Deposito EUR 10.00', 'bodyPreview' => 'Ingreso recibido', 'receivedDateTime' => '2026-07-22T10:00:00Z']],
+                    'value' => [[
+                        'id' => 'm1',
+                        'subject' => 'Deposito EUR 10.00',
+                        'bodyPreview' => 'Ingreso recibido',
+                        'receivedDateTime' => '2026-07-22T10:00:00Z',
+                        'from' => ['emailAddress' => ['name' => 'Banco BHD', 'address' => 'alertas@bhd.com.do']],
+                    ]],
                     '@odata.nextLink' => 'https://graph.microsoft.com/v1.0/me/messages?$skiptoken=next',
                 ])
                 ->push(['value' => [['id' => 'm2', 'subject' => 'Cargo $20.00', 'bodyPreview' => 'Compra aprobada', 'receivedDateTime' => '2026-07-22T11:00:00Z']]]),
@@ -221,6 +237,14 @@ class EmailOAuthAndSyncApiTest extends TestCase
         Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'graph.microsoft.com/v1.0/me/messages')
             && str_contains((string) ($request->data()['$filter'] ?? ''), 'receivedDateTime ge')
         );
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'graph.microsoft.com/v1.0/me/messages')
+            && str_contains((string) ($request->data()['$select'] ?? ''), 'from,sender')
+        );
+        $this->assertDatabaseHas('provider_messages', [
+            'sender_name' => 'Banco BHD',
+            'sender_address' => 'alertas@bhd.com.do',
+            'sender_domain' => 'bhd.com.do',
+        ]);
     }
 
     public function test_invalid_grant_pauses_sync_until_oauth_reconnects_the_connection(): void

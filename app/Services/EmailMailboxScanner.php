@@ -63,25 +63,8 @@ class EmailMailboxScanner
             ->pluck('provider_message_id')
             ->flip();
 
-        // Rotate reviewed candidates so bounded cleanup batches eventually cover every pending item.
-        EmailCandidate::query()
-            ->where('user_id', $connection->user_id)
-            ->where('provider', $connection->provider)
-            ->where('status', 'pending')
-            ->with('message')
-            ->oldest('updated_at')
-            ->orderBy('id')
-            ->limit($this->messageLimit())
-            ->get()
-            ->each(function (EmailCandidate $candidate): void {
-                if ($candidate->message && $this->extractor->isDefiniteNonTransaction($candidate->message->subject, $candidate->message->snippet)) {
-                    EmailCandidate::query()->whereKey($candidate->id)->where('status', 'pending')->delete();
-
-                    return;
-                }
-
-                EmailCandidate::query()->whereKey($candidate->id)->where('status', 'pending')->update(['updated_at' => now()->addSecond()]);
-            });
+        // Historical pending candidates are preserved until the user reviews them.
+        // No historical cleanup runs here: a safer extractor cannot rewrite prior decisions.
 
         foreach ($messages as $item) {
             if ($decidedIds->has($item['id'])) {
@@ -94,6 +77,9 @@ class EmailMailboxScanner
                     'email_connection_id' => $connection->id,
                     'subject' => $item['subject'],
                     'snippet' => $item['snippet'],
+                    'sender_name' => $item['sender_name'],
+                    'sender_address' => $item['sender_address'],
+                    'sender_domain' => $item['sender_domain'],
                     'occurred_at' => $item['occurred_at'],
                 ]
             );
@@ -101,12 +87,7 @@ class EmailMailboxScanner
             $existingCandidate = $message->candidate()->first();
             $candidate = $this->extractor->extract($message->subject, $message->snippet, $message->occurred_at);
             if (! $candidate) {
-                if ($existingCandidate && $this->extractor->isDefiniteNonTransaction($message->subject, $message->snippet)) {
-                    EmailCandidate::query()->whereKey($existingCandidate->id)
-                        ->where('status', 'pending')
-                        ->delete();
-                }
-
+                // Existing pending candidates are never deleted by a later extractor version.
                 continue;
             }
             if ($candidate['merchant']) {
@@ -230,7 +211,7 @@ class EmailMailboxScanner
                     'snippet' => $this->bodyText->fromGmailPayload($detail['payload'] ?? null)
                         ?? $this->limited($detail['snippet'] ?? null, 1000),
                     'occurred_at' => $this->gmailDate($detail['internalDate'] ?? null, $headers['date'] ?? null),
-                ];
+                ] + $this->sender(null, $headers['from'] ?? null);
             }
             $pageToken = is_string($page['nextPageToken'] ?? null) ? $page['nextPageToken'] : null;
         } while ($pageToken && count($messages) < $limit);
@@ -253,7 +234,7 @@ class EmailMailboxScanner
         // de la tabla con el comercio y la tarjeta.
         $query = $cursor ? [] : [
             '$top' => min(50, $limit),
-            '$select' => 'id,subject,bodyPreview,body,receivedDateTime',
+            '$select' => 'id,subject,bodyPreview,body,receivedDateTime,from,sender',
             '$filter' => sprintf('receivedDateTime ge %s and receivedDateTime le %s', $from->toISOString(), $until->toISOString()),
             '$orderby' => 'receivedDateTime desc',
         ];
@@ -266,13 +247,14 @@ class EmailMailboxScanner
             if (! is_string($item['id'] ?? null)) {
                 continue;
             }
+            $sender = $item['from']['emailAddress'] ?? $item['sender']['emailAddress'] ?? [];
             $messages[] = [
                 'id' => $item['id'],
                 'subject' => $this->limited($item['subject'] ?? null, 500),
                 'snippet' => $this->bodyText->fromGraphBody($item['body'] ?? null)
                     ?? $this->limited($item['bodyPreview'] ?? null, 1000),
                 'occurred_at' => $this->date($item['receivedDateTime'] ?? null),
-            ];
+            ] + $this->sender($sender['name'] ?? null, $sender['address'] ?? null);
         }
         $next = $page['@odata.nextLink'] ?? null;
         $url = is_string($next) && str_starts_with($next, 'https://graph.microsoft.com/v1.0/') ? $next : null;
@@ -340,6 +322,42 @@ class EmailMailboxScanner
         } catch (Throwable $exception) {
             throw new RuntimeException('email_provider_date_invalid', previous: $exception);
         }
+    }
+
+    /** @return array{sender_name: ?string, sender_address: ?string, sender_domain: ?string} */
+    private function sender(mixed $name, mixed $address): array
+    {
+        $rawAddress = is_string($address) ? trim($address) : '';
+        $email = filter_var($rawAddress, FILTER_VALIDATE_EMAIL) ? $rawAddress : null;
+        $displayName = is_string($name) && trim($name) !== '' ? trim($name) : null;
+        if ($email === null && preg_match('/<\s*([^<>\s,;]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*>\s*$/iu', $rawAddress, $mailbox)
+            && filter_var($mailbox[1], FILTER_VALIDATE_EMAIL)) {
+            // The mailbox inside angle brackets is authoritative; the display name is not.
+            $email = $mailbox[1];
+            $displayName ??= trim(substr($rawAddress, 0, (int) strrpos($rawAddress, '<')), " \t\n\r\0\x0B\"'");
+        } elseif ($email === null) {
+            preg_match_all('/[A-Z0-9.!#$%&*+\/=\?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu', $rawAddress, $matches);
+            $valid = array_values(array_filter(array_unique($matches[0] ?? []), fn (string $candidate): bool => (bool) filter_var($candidate, FILTER_VALIDATE_EMAIL)));
+            if (count($valid) === 1) {
+                $email = $valid[0];
+                $displayName ??= trim(str_replace($email, '', $rawAddress), " \t\n\r\0\x0B\"'<>[]()");
+            }
+        }
+        if ($email === null) {
+            return ['sender_name' => null, 'sender_address' => null, 'sender_domain' => null];
+        }
+
+        $email = strtolower($email);
+        if ($displayName === '') {
+            $displayName = null;
+        }
+        $domain = substr(strrchr($email, '@') ?: '', 1) ?: null;
+
+        return [
+            'sender_name' => $displayName === '' ? null : $this->limited($displayName, 255),
+            'sender_address' => $this->limited($email, 320),
+            'sender_domain' => $this->limited($domain, 255),
+        ];
     }
 
     private function limited(mixed $value, int $length): ?string
