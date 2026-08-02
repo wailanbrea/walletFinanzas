@@ -27,7 +27,8 @@ val DEFAULT_DASHBOARD_CARD_IDS: Set<String> = setOf(
     "total_balance",
     "cash_flow",
     "expense_structure",
-    "recent_transactions"
+    "recent_transactions",
+    "account_balances"
 )
 
 /**

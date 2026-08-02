@@ -50,7 +50,7 @@ enum class DashboardCardType(val storageId: String) {
     ACCOUNT_BALANCES("account_balances");
 
     companion object {
-        val defaultCards: Set<DashboardCardType> = entries.take(4).toSet()
+        val defaultCards: Set<DashboardCardType> = entries.toSet()
 
         fun fromStorageIds(ids: Set<String>): Set<DashboardCardType> =
             entries.filterTo(linkedSetOf()) { it.storageId in ids }

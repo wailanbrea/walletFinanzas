@@ -482,7 +482,7 @@ internal fun AccountBalancesCard(uiState: DashboardUiState) {
             val largestCardDebt = uiState.accounts
                 .filter { it.type == "CREDIT_CARD" && (it.creditLimit ?: 0L) <= 0L }
                 .maxOfOrNull { creditCardDebt(it.balance) } ?: 0L
-            uiState.accounts.take(5).forEachIndexed { index, account ->
+            uiState.accounts.forEachIndexed { index, account ->
                 if (index > 0) Spacer(Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(account.name, style = MaterialTheme.typography.bodyMedium)

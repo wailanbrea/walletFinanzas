@@ -70,13 +70,21 @@ object FinancialInstitutions {
     )
 
     fun findByName(name: String?): FinancialInstitution? {
-        val canonicalName = when (name) {
-            "APAP" -> "Asociación Popular de Ahorros y Préstamos"
-            "Asociación Cibao" -> "Asociación Cibao de Ahorros y Préstamos"
-            "Asociación La Nacional" -> "Asociación La Nacional de Ahorros y Préstamos"
-            else -> name
+        if (name.isNullOrBlank()) return null
+        val query = name.trim().lowercase(java.util.Locale.ROOT)
+        return dominicanRepublic.firstOrNull { inst ->
+            val instName = inst.name.lowercase(java.util.Locale.ROOT)
+            val instId = inst.id.lowercase(java.util.Locale.ROOT)
+            instName == query || instId.endsWith(query) ||
+            ((query == "bhd" || query == "bhd leon" || query == "bhd león") && instId.endsWith("bhd")) ||
+            ((query == "popular" || query == "banco popular") && instId.endsWith("popular")) ||
+            ((query == "banreservas" || query == "reservas") && instId.endsWith("banreservas")) ||
+            ((query == "santa cruz" || query == "banco santa cruz") && instId.endsWith("santa_cruz")) ||
+            ((query == "scotiabank" || query == "scotia") && instId.endsWith("scotiabank")) ||
+            (query == "apap" && instId.endsWith("apap")) ||
+            (query.contains("cibao") && instId.endsWith("cibao")) ||
+            ((query.contains("la nacional") || query == "alnap") && instId.endsWith("la_nacional"))
         }
-        return dominicanRepublic.firstOrNull { it.name == canonicalName }
     }
 
     fun forCountry(countryCode: String): List<FinancialInstitution> =
