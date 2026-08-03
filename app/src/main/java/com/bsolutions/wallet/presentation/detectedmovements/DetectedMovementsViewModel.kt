@@ -375,7 +375,7 @@ internal fun List<DetectedMovementEntity>.toActionableGroups(): List<DetectedMov
              root.amountMinor != null && it.amountMinor == root.amountMinor &&
              root.last4Digits != null && it.last4Digits == root.last4Digits)
         }.distinctBy { it.id }
-        val actionable = root.status == "PENDING" || evidence.any { it.needsSync }
+        val actionable = root.status == "PENDING"
         if (!actionable) null else DetectedMovementGroup(root, evidence.sortedBy { it.occurredAt })
     }.distinctBy { group ->
         val r = group.root

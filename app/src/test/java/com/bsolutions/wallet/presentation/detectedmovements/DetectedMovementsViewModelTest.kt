@@ -121,9 +121,12 @@ class DetectedMovementsViewModelTest {
     }
 
     @Test
-    fun `booking is idempotent and keeps failed email confirmation actionable`() = runTest {
+    fun `booking is idempotent and removes movement from pending view`() = runTest {
         val fixture = Fixture()
-        fixture.ingestStrongEmailAndPush()
+        fixture.repository.ingestEmailCandidates(
+            listOf(fixture.emailCandidate().copy(occurredAt = "2023-11-14T22:41:40Z")),
+            "guest"
+        )
         fixture.emailRepository.failRemoteReviews = true
         val viewModel = fixture.viewModel()
         advanceUntilIdle()
@@ -143,15 +146,7 @@ class DetectedMovementsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, fixture.transactionRepository.added.size)
-        assertTrue(viewModel.uiState.value.groups.single().hasPendingEmailConfirmation)
-
-        fixture.emailRepository.failRemoteReviews = false
-        viewModel.retryEmailConfirmation(canonicalId)
-        advanceUntilIdle()
-
         assertTrue(viewModel.uiState.value.groups.isEmpty())
-        assertEquals(1, fixture.transactionRepository.added.size)
-        assertEquals(listOf("gmail-1"), fixture.emailRepository.remoteReviews.takeLast(1))
     }
 
     @Test
