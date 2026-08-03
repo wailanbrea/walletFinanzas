@@ -344,7 +344,15 @@ class DetectedMovementRepository @Inject constructor(
                 FinancialMatchResult.NoMatch -> {
                     val manual = findManualPossibleDuplicate(incoming)
                     if (manual != null) {
-                        insertPossible(incoming, "transaction:${manual.id}", manualMatchReason())
+                        val duplicate = incoming.copy(
+                            canonicalId = incoming.id,
+                            duplicateOfId = "transaction:${manual.id}",
+                            possibleDuplicateOfId = null,
+                            status = "DISMISSED",
+                            dedupeState = "DUPLICATE",
+                            dedupeReason = manualMatchReason()
+                        )
+                        insertResolved(duplicate, DedupeDisposition.DUPLICATE)
                     } else {
                         insertCanonical(incoming)
                     }
