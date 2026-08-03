@@ -27,6 +27,19 @@ interface TransactionDao {
         toInclusive: Long
     ): List<TransactionEntity>
 
+    /** Like [findRecentPotentialDuplicates] but without currency filter – caller does normalised comparison. */
+    @Query(
+        "SELECT * FROM transactions WHERE ownerId = :ownerId AND isDeleted = 0 " +
+            "AND type = :type AND date BETWEEN :fromInclusive AND :toInclusive " +
+            "ORDER BY date DESC"
+    )
+    suspend fun findRecentByTypeAndDate(
+        ownerId: String,
+        type: String,
+        fromInclusive: Long,
+        toInclusive: Long
+    ): List<TransactionEntity>
+
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND accountId = :accountId AND isDeleted = 0 ORDER BY date DESC")
     fun getTransactionsByAccount(ownerId: String, accountId: String): Flow<List<TransactionEntity>>
     

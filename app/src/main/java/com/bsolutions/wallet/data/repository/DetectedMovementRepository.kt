@@ -442,18 +442,15 @@ class DetectedMovementRepository @Inject constructor(
         incoming: DetectedMovementEntity
     ): TransactionEntity? {
         val comparableAmount = incoming.baseAmountMinor ?: incoming.amountMinor ?: return null
-        val rawCurrency = incoming.baseCurrency ?: incoming.currency ?: "DOP"
-        val comparableCurrency = FinancialEventMatcher.normalizeCurrency(rawCurrency)
         val transactionType = when (incoming.direction.lowercase(Locale.ROOT)) {
             "expense", "debit", "compra", "egreso", "" -> "EXPENSE"
             "income", "credit", "deposito", "ingreso" -> "INCOME"
             "transfer" -> "TRANSFER"
             else -> "EXPENSE"
         }
-        val manual = transactionDao.findRecentPotentialDuplicates(
+        val manual = transactionDao.findRecentByTypeAndDate(
             ownerId = incoming.ownerId,
             type = transactionType,
-            currency = comparableCurrency,
             fromInclusive = incoming.occurredAt - FinancialEventMatcher.EMAIL_WINDOW_MILLIS,
             toInclusive = incoming.occurredAt + FinancialEventMatcher.EMAIL_WINDOW_MILLIS
         )
@@ -547,7 +544,8 @@ private fun unsupportedTransactionDao(): TransactionDao = java.lang.reflect.Prox
     arrayOf(TransactionDao::class.java)
 ) { _, method, _ ->
     when (method.name) {
-        "findRecentPotentialDuplicates" -> emptyList<TransactionEntity>()
+        "findRecentPotentialDuplicates", "findRecentByTypeAndDate" -> emptyList<TransactionEntity>()
+        "getTransactionById" -> null
         else -> error("TransactionDao.${method.name} no está disponible en esta prueba.")
     }
 } as TransactionDao
