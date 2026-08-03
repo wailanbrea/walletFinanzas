@@ -104,7 +104,7 @@ object FinancialEventMatcher {
         second: FinancialEventEvidence
     ): PairCompatibility? {
         if (first.id == second.id) return null
-        if (first.direction.lowercase(Locale.ROOT) != second.direction.lowercase(Locale.ROOT)) return null
+        if (!directionsCompatible(first.direction, second.direction)) return null
         if (!eventsCompatible(first.eventType, second.eventType)) return null
 
         val window = matchingWindow(first.source, second.source) ?: return null
@@ -190,6 +190,16 @@ object FinancialEventMatcher {
             return first.baseAmountMinor to second.baseAmountMinor
         }
         return null
+    }
+
+    private fun directionsCompatible(dir1: String, dir2: String): Boolean {
+        if (dir1.isBlank() || dir2.isBlank()) return true
+        val d1 = dir1.lowercase(Locale.ROOT)
+        val d2 = dir2.lowercase(Locale.ROOT)
+        if (d1 == d2) return true
+        val expenseSet = setOf("expense", "debit", "out", "egreso", "gasto", "compra", "consumo")
+        val incomeSet = setOf("income", "credit", "in", "ingreso", "deposito", "abono")
+        return (d1 in expenseSet && d2 in expenseSet) || (d1 in incomeSet && d2 in incomeSet)
     }
 
     private fun eventsCompatible(first: String?, second: String?): Boolean {
