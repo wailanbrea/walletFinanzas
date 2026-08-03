@@ -181,18 +181,27 @@ object FinancialEventMatcher {
         else -> null
     }
 
+    private fun normalizeCurrency(currency: String?): String {
+        if (currency.isNullOrBlank()) return BASE_CURRENCY
+        val norm = currency.trim().uppercase(Locale.ROOT)
+        if (norm in setOf("DOP", "RD$", "RD", "RD $", "DOP$", "R$")) return "DOP"
+        if (norm in setOf("USD", "US$", "$")) return "USD"
+        return norm
+    }
+
     private fun comparableAmounts(
         first: FinancialEventEvidence,
         second: FinancialEventEvidence
     ): Pair<Long, Long>? {
-        val firstCurrency = first.currency?.uppercase(Locale.ROOT)
-        val secondCurrency = second.currency?.uppercase(Locale.ROOT)
-        if (firstCurrency != null && firstCurrency == secondCurrency &&
-            first.amountMinor != null && second.amountMinor != null
-        ) {
-            return first.amountMinor to second.amountMinor
+        val firstCurrency = normalizeCurrency(first.currency ?: first.baseCurrency)
+        val secondCurrency = normalizeCurrency(second.currency ?: second.baseCurrency)
+        if (firstCurrency == secondCurrency) {
+            val amount1 = first.amountMinor ?: first.baseAmountMinor
+            val amount2 = second.amountMinor ?: second.baseAmountMinor
+            if (amount1 != null && amount2 != null) {
+                return amount1 to amount2
+            }
         }
-
         val firstBaseCurrency = first.baseCurrency?.uppercase(Locale.ROOT)
         val secondBaseCurrency = second.baseCurrency?.uppercase(Locale.ROOT)
         if (firstBaseCurrency == BASE_CURRENCY && secondBaseCurrency == BASE_CURRENCY &&

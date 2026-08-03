@@ -232,7 +232,8 @@ class MainActivity : FragmentActivity() {
                             composable("splash") {
                                 // MVP offline-first: entra directo, sin login obligatorio (auth llega en Fase 2)
                                 SplashScreen(onFinished = {
-                                    navController.navigate("dashboard") {
+                                    val destination = intent?.getStringExtra("route") ?: "dashboard"
+                                    navController.navigate(destination) {
                                         popUpTo("splash") { inclusive = true }
                                     }
                                 })

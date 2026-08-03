@@ -323,11 +323,23 @@ internal fun amountForAccount(movement: DetectedMovementEntity, account: Account
 internal fun List<DetectedMovementEntity>.toActionableGroups(): List<DetectedMovementGroup> {
     val roots = filter { it.duplicateOfId == null }
     return roots.mapNotNull { root ->
-        val evidence = filter { it.id == root.id || it.canonicalId == root.id }.distinctBy { it.id }
+        val evidence = filter {
+            it.id == root.id ||
+            it.canonicalId == root.id ||
+            (root.merchant != null && it.merchant == root.merchant &&
+             root.amountMinor != null && it.amountMinor == root.amountMinor &&
+             root.last4Digits != null && it.last4Digits == root.last4Digits)
+        }.distinctBy { it.id }
         val actionable = root.status == "PENDING" || evidence.any { it.needsSync }
         if (!actionable) null else DetectedMovementGroup(root, evidence.sortedBy { it.occurredAt })
-    }.distinctBy { it.root.canonicalId ?: it.root.id }
-        .sortedByDescending { it.root.occurredAt }
+    }.distinctBy { group ->
+        val r = group.root
+        if (r.merchant != null && r.amountMinor != null && r.last4Digits != null) {
+            "${r.merchant.lowercase(Locale.ROOT)}_${r.amountMinor}_${r.last4Digits}_${r.occurredAt / 3600000}"
+        } else {
+            r.canonicalId ?: r.id
+        }
+    }.sortedByDescending { it.root.occurredAt }
 }
 
 internal fun List<DetectedMovementGroup>.filterByDate(
