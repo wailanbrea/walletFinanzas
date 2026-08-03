@@ -63,6 +63,18 @@ class DetectedMovementRepository @Inject constructor(
         for (i in pending.indices) {
             val current = pending[i]
             val currentCanonicalId = current.canonicalId ?: current.id
+
+            val manualMatch = findManualPossibleDuplicate(current)
+            if (manualMatch != null) {
+                dao.resolveCanonicalAsTransactionDuplicate(
+                    ownerId = ownerId,
+                    canonicalId = currentCanonicalId,
+                    transactionReference = "transaction:${manualMatch.id}",
+                    reason = "Movimiento ya registrado previamente."
+                )
+                continue
+            }
+
             for (j in i + 1 until pending.size) {
                 val candidate = pending[j]
                 val candidateCanonicalId = candidate.canonicalId ?: candidate.id
