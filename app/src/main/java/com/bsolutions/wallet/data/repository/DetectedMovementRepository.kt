@@ -64,6 +64,12 @@ class DetectedMovementRepository @Inject constructor(
             val current = pending[i]
             val currentCanonicalId = current.canonicalId ?: current.id
 
+            val bookedTxId = transactionIdForCanonical(currentCanonicalId)
+            if (transactionDao.getTransactionById(ownerId, bookedTxId) != null) {
+                dao.updateCanonicalGroupStatus(ownerId, currentCanonicalId, "APPROVED", needsSync = false)
+                continue
+            }
+
             val manualMatch = findManualPossibleDuplicate(current)
             if (manualMatch != null) {
                 dao.resolveCanonicalAsTransactionDuplicate(
@@ -428,19 +434,20 @@ class DetectedMovementRepository @Inject constructor(
         incoming: DetectedMovementEntity
     ): TransactionEntity? {
         val comparableAmount = incoming.baseAmountMinor ?: incoming.amountMinor ?: return null
-        val comparableCurrency = incoming.baseCurrency ?: incoming.currency ?: return null
+        val rawCurrency = incoming.baseCurrency ?: incoming.currency ?: "DOP"
+        val comparableCurrency = FinancialEventMatcher.normalizeCurrency(rawCurrency)
         val transactionType = when (incoming.direction.lowercase(Locale.ROOT)) {
-            "expense" -> "EXPENSE"
-            "income" -> "INCOME"
+            "expense", "debit", "compra", "egreso", "" -> "EXPENSE"
+            "income", "credit", "deposito", "ingreso" -> "INCOME"
             "transfer" -> "TRANSFER"
-            else -> return null
+            else -> "EXPENSE"
         }
         val manual = transactionDao.findRecentPotentialDuplicates(
             ownerId = incoming.ownerId,
             type = transactionType,
             currency = comparableCurrency,
-            fromInclusive = incoming.occurredAt - FinancialEventMatcher.MANUAL_WINDOW_MILLIS,
-            toInclusive = incoming.occurredAt + FinancialEventMatcher.MANUAL_WINDOW_MILLIS
+            fromInclusive = incoming.occurredAt - FinancialEventMatcher.EMAIL_WINDOW_MILLIS,
+            toInclusive = incoming.occurredAt + FinancialEventMatcher.EMAIL_WINDOW_MILLIS
         )
         return manual.filter { transaction ->
             FinancialEventMatcher.amountsMatch(

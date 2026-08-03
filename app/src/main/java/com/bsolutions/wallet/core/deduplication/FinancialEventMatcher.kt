@@ -181,7 +181,7 @@ object FinancialEventMatcher {
         else -> null
     }
 
-    private fun normalizeCurrency(currency: String?): String {
+    fun normalizeCurrency(currency: String?): String {
         if (currency.isNullOrBlank()) return BASE_CURRENCY
         val norm = currency.trim().uppercase(Locale.ROOT)
         if (norm in setOf("DOP", "RD$", "RD", "RD $", "DOP$", "R$")) return "DOP"
