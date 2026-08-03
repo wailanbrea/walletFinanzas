@@ -52,6 +52,9 @@ class DetectedMovementRepository @Inject constructor(
     fun observeAll(ownerId: String = WALLET_GUEST_OWNER_ID): Flow<List<DetectedMovementEntity>> =
         dao.observeAll(ownerId)
 
+    suspend fun getAllMovements(ownerId: String = WALLET_GUEST_OWNER_ID): List<DetectedMovementEntity> =
+        dao.getAll(ownerId)
+
     fun getPendingMovements(ownerId: String = WALLET_GUEST_OWNER_ID): Flow<List<DetectedMovementEntity>> =
         dao.getPendingMovements(ownerId)
 

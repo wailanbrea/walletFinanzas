@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import com.bsolutions.wallet.core.common.ExpenseCategorizer
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -96,7 +98,10 @@ class DetectedMovementsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            runCatching { detectedMovementRepository.deduplicateExistingPendingMovements() }
+            runCatching {
+                detectedMovementRepository.deduplicateExistingPendingMovements()
+                autoBookMultiEvidenceMovements()
+            }
         }
         viewModelScope.launch {
             combine(
@@ -125,6 +130,46 @@ class DetectedMovementsViewModel @Inject constructor(
             }.collect(_uiState)
         }
         refresh()
+    }
+
+    private suspend fun autoBookMultiEvidenceMovements() {
+        runCatching {
+            val ownerId = ownerScope.currentOwnerId()
+            val movements = detectedMovementRepository.getAllMovements(ownerId)
+            val groups = movements.toActionableGroups().filter {
+                it.root.status == "PENDING" && !it.isPossibleDuplicate && it.evidence.size >= 2
+            }
+            if (groups.isEmpty()) return
+            val accounts = accountRepository.getAccounts().first()
+            val categories = categoryRepository.getCategories().first()
+
+            for (group in groups) {
+                val root = group.root
+                val amount = root.amountMinor ?: continue
+                val account = accounts.firstOrNull { acc ->
+                    root.last4Digits != null && acc.cardLastFour == root.last4Digits
+                } ?: accounts.firstOrNull() ?: continue
+
+                val targetText = root.merchant ?: root.title
+                val catId = root.suggestedCategoryId
+                    ?: ExpenseCategorizer.inferCategoryId(targetText)
+                    ?: "cat_alimentacion"
+
+                val category = categories.firstOrNull { it.id == catId }
+                    ?: categories.firstOrNull { it.id == "cat_alimentacion" }
+                    ?: categories.firstOrNull() ?: continue
+
+                val request = DetectedMovementBookingRequest(
+                    canonicalId = root.canonicalId ?: root.id,
+                    accountId = account.id,
+                    categoryId = category.id,
+                    amountMinor = amount,
+                    direction = root.direction,
+                    occurredAt = root.occurredAt
+                )
+                book(request)
+            }
+        }
     }
 
     fun refresh() {
