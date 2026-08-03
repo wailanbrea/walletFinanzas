@@ -59,17 +59,18 @@ class DetectedMovementRepository @Inject constructor(
         val pending = dao.getAll(ownerId).filter { it.status == "PENDING" && it.duplicateOfId == null }
         for (i in pending.indices) {
             val current = pending[i]
-            if (current.duplicateOfId != null) continue
+            val currentCanonicalId = current.canonicalId ?: current.id
             for (j in i + 1 until pending.size) {
                 val candidate = pending[j]
-                if (candidate.duplicateOfId != null) continue
+                val candidateCanonicalId = candidate.canonicalId ?: candidate.id
+                if (currentCanonicalId == candidateCanonicalId) continue
+
                 val match = FinancialEventMatcher.match(current.toEvidence(), listOf(candidate.toEvidence()))
                 if (match is FinancialMatchResult.StrongMatch) {
-                    val canonicalId = current.canonicalId ?: current.id
                     dao.reassignCanonicalGroup(
                         ownerId = ownerId,
-                        oldCanonicalId = candidate.canonicalId ?: candidate.id,
-                        newCanonicalId = canonicalId,
+                        oldCanonicalId = candidateCanonicalId,
+                        newCanonicalId = currentCanonicalId,
                         reason = "Depuración de duplicados detectada automáticamente."
                     )
                 }

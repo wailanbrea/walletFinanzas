@@ -67,11 +67,22 @@ object FinancialEventMatcher {
             return FinancialMatchResult.StrongMatch(candidate, compatibility.reason)
         }
         if (strong.size > 1) {
+            val firstCand = strong.first().first
+            val allSameEvent = strong.all { (cand, _) ->
+                cand.merchant == firstCand.merchant &&
+                cand.amountMinor == firstCand.amountMinor &&
+                cand.last4Digits == firstCand.last4Digits &&
+                abs(cand.occurredAt - firstCand.occurredAt) < 1_000L
+            }
             val nearest = strong.minBy { (candidate, _) -> abs(incoming.occurredAt - candidate.occurredAt) }
-            return FinancialMatchResult.PossibleDuplicate(
-                candidate = nearest.first,
-                reason = "Más de una evidencia coincide; requiere revisión manual."
-            )
+            return if (allSameEvent) {
+                FinancialMatchResult.StrongMatch(nearest.first, nearest.second.reason)
+            } else {
+                FinancialMatchResult.PossibleDuplicate(
+                    candidate = nearest.first,
+                    reason = "Más de una evidencia coincide; requiere revisión manual."
+                )
+            }
         }
 
         val nearest = compatible.minBy { (candidate, _) -> abs(incoming.occurredAt - candidate.occurredAt) }
