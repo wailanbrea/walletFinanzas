@@ -27,8 +27,31 @@ data class PlannedPaymentsUiState(
     val payments: List<PlannedPayment> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val categories: List<Category> = emptyList(),
-    val monthlyTotal: Long = 0L
+    val expensePayments: List<PlannedPayment> = emptyList(),
+    val incomePayments: List<PlannedPayment> = emptyList(),
+    val activeExpenseTotal: Long = 0L,
+    val activeIncomeTotal: Long = 0L
 )
+
+internal fun buildPlannedPaymentsUiState(
+    payments: List<PlannedPayment>,
+    accounts: List<Account>,
+    categories: List<Category>
+): PlannedPaymentsUiState {
+    // Los datos antiguos sin tipo reconocido se conservan como gasto: antes de admitir
+    // ingresos, EXPENSE era el único valor y ocultarlos rompería compatibilidad.
+    val expenses = payments.filter { it.type != "INCOME" }
+    val incomes = payments.filter { it.type == "INCOME" }
+    return PlannedPaymentsUiState(
+        payments = payments,
+        accounts = accounts,
+        categories = categories,
+        expensePayments = expenses,
+        incomePayments = incomes,
+        activeExpenseTotal = expenses.filter { it.isActive }.sumOf { it.amount },
+        activeIncomeTotal = incomes.filter { it.isActive }.sumOf { it.amount }
+    )
+}
 
 @HiltViewModel
 class PlannedPaymentsViewModel @Inject constructor(
@@ -44,14 +67,7 @@ class PlannedPaymentsViewModel @Inject constructor(
         accountRepository.getAccounts(),
         categoryRepository.getCategories()
     ) { payments, accounts, categories ->
-        PlannedPaymentsUiState(
-            payments = payments,
-            accounts = accounts,
-            categories = categories,
-            monthlyTotal = payments
-                .filter { it.isActive && it.type == "EXPENSE" && it.frequency == "MONTHLY" }
-                .sumOf { it.amount }
-        )
+        buildPlannedPaymentsUiState(payments, accounts, categories)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -173,9 +189,14 @@ internal fun nextDueDate(fromMillis: Long, frequency: String): Long {
         // Mismo día cada mes; si ese día no existe (31 en febrero) cae en el último.
         "MONTHLY" -> {
             val day = cal.get(Calendar.DAY_OF_MONTH)
+            val wasLastDayOfMonth = day == cal.getActualMaximum(Calendar.DAY_OF_MONTH)
             cal.set(Calendar.DAY_OF_MONTH, 1)
             cal.add(Calendar.MONTH, 1)
-            cal.set(Calendar.DAY_OF_MONTH, minOf(day, cal.getActualMaximum(Calendar.DAY_OF_MONTH)))
+            val targetMonthLastDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            cal.set(
+                Calendar.DAY_OF_MONTH,
+                if (wasLastDayOfMonth) targetMonthLastDay else minOf(day, targetMonthLastDay)
+            )
         }
         "YEARLY" -> cal.add(Calendar.YEAR, 1)
     }

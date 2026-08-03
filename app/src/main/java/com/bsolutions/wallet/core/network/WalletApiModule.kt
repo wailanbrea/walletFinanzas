@@ -95,8 +95,15 @@ object WalletApiModule {
     @Singleton
     fun provideEmailConnectionsRepository(
         api: WalletApi,
-        session: WalletSessionStore
-    ): EmailConnectionsRepository = DefaultEmailConnectionsRepository(api, session)
+        session: WalletSessionStore,
+        detectedMovementRepository: com.bsolutions.wallet.data.repository.DetectedMovementRepository,
+        ownerScope: com.bsolutions.wallet.core.database.WalletOwnerScope
+    ): EmailConnectionsRepository = DefaultEmailConnectionsRepository(
+        api,
+        session,
+        detectedMovementRepository,
+        ownerScope
+    )
 }
 
 fun walletDeviceName(model: String, installationId: String): String =

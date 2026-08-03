@@ -4,6 +4,83 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 object WalletDatabaseMigrations {
+    /** v14 -> v15: identidad por origen y grupos canónicos para dedupe cruzado. */
+    val MIGRATION_14_15 = object : Migration(14, 15) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN sourceReference TEXT")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN occurredAt INTEGER NOT NULL DEFAULT 0")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN direction TEXT NOT NULL DEFAULT 'expense'")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN eventType TEXT")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN baseAmountMinor INTEGER")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN baseCurrency TEXT")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN canonicalId TEXT")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN duplicateOfId TEXT")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN possibleDuplicateOfId TEXT")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN dedupeState TEXT NOT NULL DEFAULT 'CANONICAL'")
+            database.execSQL("ALTER TABLE detected_movements ADD COLUMN dedupeReason TEXT")
+            database.execSQL("UPDATE detected_movements SET occurredAt = detectedAt, canonicalId = id")
+            database.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS index_detected_movements_ownerId_source_sourceReference " +
+                    "ON detected_movements(ownerId, source, sourceReference)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_detected_movements_ownerId_occurredAt " +
+                    "ON detected_movements(ownerId, occurredAt)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_detected_movements_ownerId_canonicalId " +
+                    "ON detected_movements(ownerId, canonicalId)"
+            )
+        }
+    }
+
+    /** v13 -> v14: fuentes autorizadas y avisos push crudos de la Fase A. */
+    val MIGRATION_13_14 = object : Migration(13, 14) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS notification_sources (
+                    ownerId TEXT NOT NULL,
+                    packageName TEXT NOT NULL,
+                    displayName TEXT NOT NULL,
+                    isEnabled INTEGER NOT NULL,
+                    lastSeenAt INTEGER NOT NULL,
+                    observedCount INTEGER NOT NULL,
+                    PRIMARY KEY(ownerId, packageName)
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS raw_bank_notices (
+                    ownerId TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    packageName TEXT NOT NULL,
+                    appLabel TEXT NOT NULL,
+                    notificationKeyHash TEXT NOT NULL,
+                    contentHash TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    bigText TEXT NOT NULL,
+                    postTime INTEGER NOT NULL,
+                    capturedAt INTEGER NOT NULL,
+                    expiresAt INTEGER NOT NULL,
+                    PRIMARY KEY(ownerId, id)
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_raw_bank_notices_ownerId_postTime ON raw_bank_notices(ownerId, postTime)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_raw_bank_notices_ownerId_packageName ON raw_bank_notices(ownerId, packageName)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_raw_bank_notices_ownerId_expiresAt ON raw_bank_notices(ownerId, expiresAt)"
+            )
+        }
+    }
+
     /** v1 -> v4: Migración para asegurar compatibilidad de usuarios antiguos. */
     val MIGRATION_1_4 = object : Migration(1, 4) {
         override fun migrate(database: SupportSQLiteDatabase) {

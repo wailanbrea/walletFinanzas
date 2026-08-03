@@ -242,6 +242,73 @@ class EmailConnectionsViewModelTest {
         assertEquals("BIWEEKLY", recurring.frequency)
         assertEquals("INCOME", recurring.type)
         assertEquals(transactions.added.single().amount, recurring.amount)
+        assertEquals(emailPlannedPaymentId("candidate-1"), recurring.id)
+    }
+
+    @Test
+    fun `an email expense can be saved as a monthly fixed expense`() = runTest {
+        val repository = FakeRepository(connections = listOf(gmailConnected())).apply {
+            candidates = listOf(financialCandidate())
+        }
+        val transactions = FakeTransactionRepository()
+        val planned = FakePlannedPaymentRepository()
+        val viewModel = createViewModel(
+            repository,
+            transactionRepository = transactions,
+            plannedPaymentRepository = planned
+        )
+        advanceUntilIdle()
+
+        viewModel.classify(
+            candidateId = "candidate-1",
+            accountId = "account-1",
+            categoryId = "cat_alimentacion",
+            recurringFrequency = "MONTHLY"
+        )
+        advanceUntilIdle()
+
+        val transaction = transactions.added.single()
+        val fixedExpense = planned.added.single()
+        assertEquals("EXPENSE", fixedExpense.type)
+        assertEquals("MONTHLY", fixedExpense.frequency)
+        assertEquals(transaction.accountId, fixedExpense.accountId)
+        assertEquals(transaction.categoryId, fixedExpense.categoryId)
+        assertEquals(transaction.amount, fixedExpense.amount)
+        assertEquals(nextOccurrence(transaction.date, "MONTHLY"), fixedExpense.nextDueDate)
+    }
+
+    @Test
+    fun `retrying email confirmation replaces the same planned movement`() = runTest {
+        val repository = FakeRepository(
+            connections = listOf(gmailConnected()),
+            reviewError = true
+        ).apply {
+            candidates = listOf(financialCandidate())
+        }
+        val transactions = FakeTransactionRepository()
+        val planned = FakePlannedPaymentRepository()
+        val viewModel = createViewModel(
+            repository,
+            transactionRepository = transactions,
+            plannedPaymentRepository = planned
+        )
+        advanceUntilIdle()
+
+        repeat(2) { attempt ->
+            repository.reviewError = attempt == 0
+            viewModel.classify(
+                candidateId = "candidate-1",
+                accountId = "account-1",
+                categoryId = "cat_alimentacion",
+                recurringFrequency = "MONTHLY"
+            )
+            advanceUntilIdle()
+        }
+
+        assertEquals(1, transactions.added.size)
+        assertEquals(1, planned.added.size)
+        assertEquals(emailPlannedPaymentId("candidate-1"), planned.added.single().id)
+        assertEquals(emptyList<EmailCandidate>(), viewModel.uiState.value.candidates)
     }
 
     @Test
@@ -261,6 +328,14 @@ class EmailConnectionsViewModelTest {
         // El intervalo si cuenta dias, que es lo que hay que poder elegir aparte.
         val treinta = nextOccurrence(Instant.parse("2026-07-10T12:00:00Z").toEpochMilli(), "EVERY_30_DAYS")
         assertEquals(9, dia(Instant.ofEpochMilli(treinta).toString()))
+
+        // Un cobro de fin de mes no debe quedarse para siempre en el 28 después
+        // de atravesar febrero: vuelve al último día disponible del mes siguiente.
+        val enero31 = Instant.parse("2027-01-31T12:00:00Z").toEpochMilli()
+        val febrero = nextOccurrence(enero31, "MONTHLY")
+        val marzo = nextOccurrence(febrero, "MONTHLY")
+        assertEquals(28, dia(Instant.ofEpochMilli(febrero).toString()))
+        assertEquals(31, dia(Instant.ofEpochMilli(marzo).toString()))
     }
 
     @Test
@@ -575,7 +650,10 @@ class EmailConnectionsViewModelTest {
         val added = mutableListOf<PlannedPayment>()
         override fun getPlannedPayments(): Flow<List<PlannedPayment>> = MutableStateFlow(added.toList())
         override suspend fun getPlannedPayment(id: String): PlannedPayment? = added.firstOrNull { it.id == id }
-        override suspend fun addPlannedPayment(payment: PlannedPayment) { added += payment }
+        override suspend fun addPlannedPayment(payment: PlannedPayment) {
+            added.removeAll { it.id == payment.id }
+            added += payment
+        }
         override suspend fun updatePlannedPayment(payment: PlannedPayment) = Unit
         override suspend fun deletePlannedPayment(id: String) = Unit
     }

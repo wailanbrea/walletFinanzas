@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
@@ -58,7 +57,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.bsolutions.wallet.R
 import com.bsolutions.wallet.presentation.common.walletTopBarColors
 import com.bsolutions.wallet.core.common.MoneyFormat
@@ -66,16 +65,17 @@ import com.bsolutions.wallet.core.common.MoneyParser
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
 import com.bsolutions.wallet.domain.model.PlannedPayment
-import com.bsolutions.wallet.presentation.common.GradientSummaryCard
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 private fun formatMoney(minorUnits: Long): String = MoneyFormat.format(minorUnits)
 
 private val frequencyLabelRes = mapOf(
     "WEEKLY" to R.string.freq_weekly,
     "BIWEEKLY" to R.string.freq_biweekly,
+    "SEMIMONTHLY" to R.string.email_candidate_freq_semimonthly,
+    "EVERY_15_DAYS" to R.string.email_candidate_freq_every15,
+    "EVERY_30_DAYS" to R.string.email_candidate_freq_every30,
     "MONTHLY" to R.string.freq_monthly,
     "YEARLY" to R.string.freq_yearly,
     "ONCE" to R.string.freq_once
@@ -185,21 +185,90 @@ fun PlannedPaymentsScreen(
             ) {
                 item {
                     Spacer(modifier = Modifier.height(4.dp))
-                    // Resumen con degradado de marca y monto animado
-                    GradientSummaryCard(
-                        title = stringResource(R.string.planned_monthly_total),
-                        amount = uiState.monthlyTotal
-                    )
                 }
-                items(uiState.payments, key = { it.id }) { payment ->
-                    PlannedPaymentCard(
-                        payment = payment,
-                        onPayNow = { payingPayment = payment },
-                        onDelete = { viewModel.deletePayment(payment.id) }
-                    )
+                if (uiState.expensePayments.isNotEmpty()) {
+                    item {
+                        PlannedPaymentsSectionHeader(
+                            title = stringResource(R.string.planned_expenses_title),
+                            activeCount = uiState.expensePayments.count { it.isActive },
+                            total = uiState.activeExpenseTotal,
+                            isIncome = false
+                        )
+                    }
+                    items(uiState.expensePayments, key = { "expense_${it.id}" }) { payment ->
+                        PlannedPaymentCard(
+                            payment = payment,
+                            onPayNow = { payingPayment = payment },
+                            onDelete = { viewModel.deletePayment(payment.id) }
+                        )
+                    }
+                }
+                if (uiState.incomePayments.isNotEmpty()) {
+                    item {
+                        PlannedPaymentsSectionHeader(
+                            title = stringResource(R.string.planned_incomes_title),
+                            activeCount = uiState.incomePayments.count { it.isActive },
+                            total = uiState.activeIncomeTotal,
+                            isIncome = true
+                        )
+                    }
+                    items(uiState.incomePayments, key = { "income_${it.id}" }) { payment ->
+                        PlannedPaymentCard(
+                            payment = payment,
+                            onPayNow = { payingPayment = payment },
+                            onDelete = { viewModel.deletePayment(payment.id) }
+                        )
+                    }
                 }
                 item { Spacer(modifier = Modifier.height(80.dp)) }
             }
+        }
+    }
+}
+
+@Composable
+private fun PlannedPaymentsSectionHeader(
+    title: String,
+    activeCount: Int,
+    total: Long,
+    isIncome: Boolean
+) {
+    val containerColor = if (isIncome) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.errorContainer
+    }
+    val contentColor = if (isIncome) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onErrorContainer
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    text = stringResource(R.string.planned_active_count, activeCount),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Text(
+                text = formatMoney(total),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -212,6 +281,7 @@ private fun PlannedPaymentCard(
 ) {
     val dateStr = SimpleDateFormat("dd MMM yyyy", LocalConfiguration.current.locales[0]).format(Date(payment.nextDueDate))
     val overdue = payment.isActive && payment.nextDueDate < System.currentTimeMillis()
+    val isIncome = payment.type == "INCOME"
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -257,11 +327,22 @@ private fun PlannedPaymentCard(
                         color = if (overdue) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Text(
+                        text = stringResource(
+                            if (isIncome) R.string.planned_type_income else R.string.planned_type_expense
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isIncome) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
                 Text(
                     text = formatMoney(payment.amount),
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = if (isIncome) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.error
                 )
             }
             if (payment.isActive) {
@@ -279,7 +360,9 @@ private fun PlannedPaymentCard(
                         )
                     }
                     Text(
-                        text = stringResource(R.string.planned_pay_now),
+                        text = stringResource(
+                            if (isIncome) R.string.planned_receive_now else R.string.planned_pay_now
+                        ),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold,
@@ -494,7 +577,11 @@ private fun ConfirmAmountDialog(
         },
         confirmButton = {
             Button(onClick = { onConfirm(amount) }, enabled = amount > 0L) {
-                Text(stringResource(R.string.planned_pay_now))
+                Text(
+                    stringResource(
+                        if (isIncome) R.string.planned_receive_now else R.string.planned_pay_now
+                    )
+                )
             }
         },
         dismissButton = {

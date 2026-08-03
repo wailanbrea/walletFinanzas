@@ -10,9 +10,12 @@ import com.bsolutions.wallet.data.local.entity.BankConnectionEntity
 import com.bsolutions.wallet.data.local.entity.BudgetEntity
 import com.bsolutions.wallet.data.local.entity.CategoryEntity
 import com.bsolutions.wallet.data.local.entity.DebtEntity
+import com.bsolutions.wallet.data.local.entity.DetectedMovementEntity
 import com.bsolutions.wallet.data.local.entity.GoalEntity
 import com.bsolutions.wallet.data.local.entity.PendingOperationEntity
 import com.bsolutions.wallet.data.local.entity.PlannedPaymentEntity
+import com.bsolutions.wallet.data.local.entity.NotificationSourceEntity
+import com.bsolutions.wallet.data.local.entity.RawBankNoticeEntity
 import com.bsolutions.wallet.data.local.entity.TransactionEntity
 import com.bsolutions.wallet.data.local.entity.WALLET_GUEST_OWNER_ID
 import com.bsolutions.wallet.data.repository.WalletSessionStore
@@ -101,6 +104,9 @@ interface OwnerIsolationDao {
     @Query("SELECT * FROM debts WHERE ownerId = :ownerId") suspend fun debts(ownerId: String): List<DebtEntity>
     @Query("SELECT * FROM bank_connections WHERE ownerId = :ownerId") suspend fun bankConnections(ownerId: String): List<BankConnectionEntity>
     @Query("SELECT * FROM pending_operations WHERE ownerId = :ownerId") suspend fun pendingOperations(ownerId: String): List<PendingOperationEntity>
+    @Query("SELECT * FROM detected_movements WHERE ownerId = :ownerId") suspend fun detectedMovements(ownerId: String): List<DetectedMovementEntity>
+    @Query("SELECT * FROM notification_sources WHERE ownerId = :ownerId") suspend fun notificationSources(ownerId: String): List<NotificationSourceEntity>
+    @Query("SELECT * FROM raw_bank_notices WHERE ownerId = :ownerId") suspend fun rawBankNotices(ownerId: String): List<RawBankNoticeEntity>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertAccounts(values: List<AccountEntity>)
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertTransactions(values: List<TransactionEntity>)
@@ -111,6 +117,9 @@ interface OwnerIsolationDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertDebts(values: List<DebtEntity>)
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertBankConnections(values: List<BankConnectionEntity>)
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertPendingOperations(values: List<PendingOperationEntity>)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertDetectedMovements(values: List<DetectedMovementEntity>)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertNotificationSources(values: List<NotificationSourceEntity>)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertRawBankNotices(values: List<RawBankNoticeEntity>)
 
     @Query("DELETE FROM accounts WHERE ownerId = :ownerId") suspend fun deleteAccounts(ownerId: String)
     @Query("DELETE FROM transactions WHERE ownerId = :ownerId") suspend fun deleteTransactions(ownerId: String)
@@ -121,6 +130,9 @@ interface OwnerIsolationDao {
     @Query("DELETE FROM debts WHERE ownerId = :ownerId") suspend fun deleteDebts(ownerId: String)
     @Query("DELETE FROM bank_connections WHERE ownerId = :ownerId") suspend fun deleteBankConnections(ownerId: String)
     @Query("DELETE FROM pending_operations WHERE ownerId = :ownerId") suspend fun deletePendingOperations(ownerId: String)
+    @Query("DELETE FROM detected_movements WHERE ownerId = :ownerId") suspend fun deleteDetectedMovements(ownerId: String)
+    @Query("DELETE FROM notification_sources WHERE ownerId = :ownerId") suspend fun deleteNotificationSources(ownerId: String)
+    @Query("DELETE FROM raw_bank_notices WHERE ownerId = :ownerId") suspend fun deleteRawBankNotices(ownerId: String)
 
     @Transaction
     suspend fun mergeOwner(sourceOwnerId: String, targetOwnerId: String) {
@@ -135,7 +147,12 @@ interface OwnerIsolationDao {
         insertDebts(debts(sourceOwnerId).map { it.copy(ownerId = targetOwnerId) })
         insertBankConnections(bankConnections(sourceOwnerId).map { it.copy(ownerId = targetOwnerId) })
         insertPendingOperations(pendingOperations(sourceOwnerId).map { it.copy(ownerId = targetOwnerId) })
+        insertDetectedMovements(detectedMovements(sourceOwnerId).map { it.copy(ownerId = targetOwnerId) })
+        insertNotificationSources(notificationSources(sourceOwnerId).map { it.copy(ownerId = targetOwnerId) })
+        insertRawBankNotices(rawBankNotices(sourceOwnerId).map { it.copy(ownerId = targetOwnerId) })
 
+        deleteRawBankNotices(sourceOwnerId)
+        deleteNotificationSources(sourceOwnerId)
         deleteTransactions(sourceOwnerId)
         deleteBudgets(sourceOwnerId)
         deletePlannedPayments(sourceOwnerId)
@@ -143,6 +160,7 @@ interface OwnerIsolationDao {
         deleteGoals(sourceOwnerId)
         deleteBankConnections(sourceOwnerId)
         deletePendingOperations(sourceOwnerId)
+        deleteDetectedMovements(sourceOwnerId)
         deleteCategories(sourceOwnerId)
         deleteAccounts(sourceOwnerId)
     }

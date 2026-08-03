@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MonetizationOn
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PieChartOutline
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.SsidChart
@@ -91,6 +92,12 @@ data class DrawerItem(
 val drawerItems = listOf(
     DrawerItem("dashboard", R.string.drawer_home, Icons.Outlined.Home, IconRed),
     DrawerItem("transactions", R.string.drawer_records, Icons.Outlined.FormatListBulleted, IconOrange),
+    DrawerItem(
+        "detected_movements",
+        R.string.drawer_detected_movements,
+        Icons.Outlined.NotificationsActive,
+        IconGreen
+    ),
     DrawerItem("accounts", R.string.nav_accounts, Icons.Outlined.AccountBalance, IconBlue),
     DrawerItem("budgets", R.string.drawer_budgets, Icons.Outlined.TableRows, IconRed),
     DrawerItem(

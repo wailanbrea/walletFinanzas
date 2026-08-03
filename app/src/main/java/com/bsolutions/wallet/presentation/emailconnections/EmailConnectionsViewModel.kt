@@ -23,6 +23,8 @@ import com.bsolutions.wallet.data.repository.EmailProvider
 import com.bsolutions.wallet.data.repository.EmailSessionExpiredException
 import com.bsolutions.wallet.data.repository.EmailSyncResult
 import com.bsolutions.wallet.data.repository.EmailSyncStillQueuedException
+import com.bsolutions.wallet.data.repository.DetectedMovementRepository
+import com.bsolutions.wallet.core.database.WalletOwnerScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +36,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
-import java.util.UUID
 import javax.inject.Inject
 
 enum class EmailConnectionsPhase { LOADING, CONTENT, EMPTY, ERROR }
@@ -147,7 +148,9 @@ class EmailConnectionsViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
     private val debtRepository: DebtRepository,
     private val debtLedger: DebtLedger,
-    private val plannedPaymentRepository: PlannedPaymentRepository
+    private val plannedPaymentRepository: PlannedPaymentRepository,
+    private val detectedMovementRepository: DetectedMovementRepository? = null,
+    private val ownerScope: WalletOwnerScope? = null
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(EmailConnectionsUiState())
     val uiState: StateFlow<EmailConnectionsUiState> = _uiState.asStateFlow()
@@ -313,6 +316,11 @@ class EmailConnectionsViewModel @Inject constructor(
          */
         recurringFrequency: String? = null
     ) {
+        val validatedRecurringFrequency = recurringFrequency?.takeIf {
+            it in SUPPORTED_RECURRING_FREQUENCIES
+        }
+        if (recurringFrequency != null && validatedRecurringFrequency == null) return
+
         val bookedTransaction = _uiState.value.bookedCandidates[candidateId]
         // Con deuda no hace falta categoria: se usa la de prestamos.
         if (
@@ -323,6 +331,7 @@ class EmailConnectionsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(reviewCandidateId = candidateId, message = null)
         viewModelScope.launch {
             var movementReady = false
+            var plannedPaymentReady = validatedRecurringFrequency == null
             try {
                 val candidate = checkNotNull(_uiState.value.candidates.firstOrNull { it.id == candidateId })
                 if (candidate.direction == "transfer") {
@@ -333,7 +342,7 @@ class EmailConnectionsViewModel @Inject constructor(
                     return@launch
                 }
 
-                val transactionId = emailTransactionId(candidate.id)
+                val transactionId = transactionIdFor(candidate)
                 val existing = transactionRepository.getTransaction(transactionId)
                 val transaction: Transaction
                 val categoryName: String
@@ -388,35 +397,42 @@ class EmailConnectionsViewModel @Inject constructor(
                     debtLedger.onLinkedTransactionAdded(transaction)
                 }
                 movementReady = true
-                // El recurrente se crea despues del movimiento y sin tumbar el flujo si
-                // falla: lo importante ya quedo guardado y esto es una comodidad.
-                if (recurringFrequency != null) {
-                    runCatching {
-                        plannedPaymentRepository.addPlannedPayment(
-                            PlannedPayment(
-                                id = UUID.randomUUID().toString(),
-                                name = transaction.note.ifBlank { categoryName },
-                                accountId = transaction.accountId,
-                                categoryId = transaction.categoryId,
-                                amount = transaction.amount,
-                                type = transaction.type,
-                                frequency = recurringFrequency,
-                                nextDueDate = nextOccurrence(transaction.date, recurringFrequency),
-                                isActive = true
-                            )
-                        )
+                if (validatedRecurringFrequency != null) {
+                    val plannedPayment = PlannedPayment(
+                        id = emailPlannedPaymentId(candidate.id),
+                        name = transaction.note.ifBlank { categoryName },
+                        accountId = transaction.accountId,
+                        categoryId = transaction.categoryId,
+                        amount = transaction.amount,
+                        type = transaction.type,
+                        frequency = validatedRecurringFrequency,
+                        nextDueDate = nextOccurrence(transaction.date, validatedRecurringFrequency),
+                        isActive = true
+                    )
+                    // El id deriva del candidato. Room usa REPLACE, por lo que reintentar
+                    // una confirmacion de red actualiza el mismo plan en vez de duplicarlo.
+                    plannedPaymentRepository.addPlannedPayment(plannedPayment)
+                    check(plannedPaymentRepository.getPlannedPayment(plannedPayment.id) == plannedPayment) {
+                        "No se pudo verificar el movimiento fijo guardado"
                     }
+                    plannedPaymentReady = true
                 }
                 repository.reviewCandidate(candidateId, "categorize", categoryName)
                 _uiState.value = _uiState.value.copy(
                     candidates = _uiState.value.candidates.filterNot { it.id == candidateId },
                     reviewCandidateId = null,
-                    message = "Movimiento agregado a $accountName."
+                    message = if (validatedRecurringFrequency == null) {
+                        "Movimiento agregado a $accountName."
+                    } else {
+                        "Movimiento y recurrencia agregados a $accountName."
+                    }
                 )
             } catch (exception: Exception) {
                 _uiState.value = _uiState.value.copy(
                     reviewCandidateId = null,
-                    message = if (movementReady && exception is EmailSessionExpiredException) {
+                    message = if (movementReady && !plannedPaymentReady) {
+                        "El movimiento fue agregado, pero no se pudo crear la recurrencia. Reintenta para completarla."
+                    } else if (movementReady && exception is EmailSessionExpiredException) {
                         "El movimiento ya fue agregado. Inicia sesión nuevamente para confirmar el correo."
                     } else if (movementReady) {
                         "El movimiento ya fue agregado, pero no se pudo confirmar el correo. Reintenta para finalizar."
@@ -434,7 +450,8 @@ class EmailConnectionsViewModel @Inject constructor(
         if (_uiState.value.reviewCandidateId != null || _uiState.value.actionProvider != null) return
         _uiState.value = _uiState.value.copy(reviewCandidateId = candidateId, message = null)
         viewModelScope.launch {
-            if (transactionRepository.getTransaction(emailTransactionId(candidateId)) != null) {
+            val candidate = _uiState.value.candidates.firstOrNull { it.id == candidateId }
+            if (candidate != null && transactionRepository.getTransaction(transactionIdFor(candidate)) != null) {
                 _uiState.value = _uiState.value.copy(
                     reviewCandidateId = null,
                     message = "Este movimiento ya fue agregado. Clasifícalo para completar la confirmación."
@@ -443,6 +460,17 @@ class EmailConnectionsViewModel @Inject constructor(
             }
             review(candidateId, "dismiss", null, lockAlreadyHeld = true)
         }
+    }
+
+    private suspend fun transactionIdFor(candidate: EmailCandidate): String {
+        val legacyId = emailTransactionId(candidate.id)
+        if (transactionRepository.getTransaction(legacyId) != null) return legacyId
+        if (detectedMovementRepository == null || ownerScope == null) return legacyId
+        return detectedMovementRepository.transactionIdForEmailCandidate(
+            provider = candidate.provider,
+            candidateId = candidate.id,
+            ownerId = ownerScope.currentOwnerId()
+        ) ?: legacyId
     }
 
     /**
@@ -696,4 +724,15 @@ internal fun candidateTransactionDateMillis(
 /** Id ficticio que bloquea la pantalla mientras se limpia la lista completa. */
 private const val CLEAR_ALL_LOCK = "__clear_all__"
 private const val EMAIL_TRANSACTION_PREFIX = "email_"
+private const val EMAIL_PLANNED_PAYMENT_PREFIX = "email_planned_"
+private val SUPPORTED_RECURRING_FREQUENCIES = setOf(
+    "WEEKLY",
+    "BIWEEKLY",
+    "SEMIMONTHLY",
+    "EVERY_15_DAYS",
+    "EVERY_30_DAYS",
+    "MONTHLY",
+    "YEARLY"
+)
 private fun emailTransactionId(candidateId: String) = EMAIL_TRANSACTION_PREFIX + candidateId
+internal fun emailPlannedPaymentId(candidateId: String) = EMAIL_PLANNED_PAYMENT_PREFIX + candidateId

@@ -15,11 +15,12 @@
 
     <!-- Drawer -->
     <string name="drawer_email_sync">Sincronizar correo</string>
+    <string name="drawer_detected_movements">Movimientos detectados</string>
     <string name="drawer_imports">Importaciones</string>
     <string name="drawer_home">Inicio</string>
     <string name="drawer_records">Registros</string>
     <string name="drawer_statistics">Estadísticas</string>
-    <string name="drawer_planned_payments">Pagos planificados</string>
+    <string name="drawer_planned_payments">Movimientos planificados</string>
     <string name="drawer_budgets">Presupuestos</string>
     <string name="drawer_debts">Deudas</string>
     <string name="drawer_goals">Metas</string>
@@ -259,15 +260,19 @@
     <string name="debts_payment_no_accounts">Necesitas una cuenta para registrar el abono.</string>
 
     <!-- Pagos planificados -->
-    <string name="planned_title">Pagos planificados</string>
-    <string name="planned_new">Nuevo pago planificado</string>
-    <string name="planned_empty_title">Sin pagos planificados</string>
-    <string name="planned_empty_desc">Programa pagos recurrentes como renta, luz o suscripciones con el botón +</string>
+    <string name="planned_title">Movimientos planificados</string>
+    <string name="planned_new">Nuevo movimiento planificado</string>
+    <string name="planned_empty_title">Sin movimientos planificados</string>
+    <string name="planned_empty_desc">Programa gastos como renta o suscripciones e ingresos como sueldo con el botón +</string>
     <string name="planned_monthly_total">Total mensual planificado</string>
+    <string name="planned_expenses_title">Gastos planificados</string>
+    <string name="planned_incomes_title">Ingresos planificados</string>
+    <string name="planned_active_count">Activos: %1$d · suma de importes</string>
     <string name="planned_next">Próximo: %1$s</string>
     <string name="planned_overdue">Vencido: %1$s</string>
     <string name="planned_inactive">Inactivo</string>
     <string name="planned_pay_now">Pagar ahora</string>
+    <string name="planned_receive_now">Registrar ingreso</string>
     <string name="planned_type">Tipo</string>
     <string name="planned_type_expense">Gasto</string>
     <string name="planned_type_income">Ingreso</string>
@@ -275,7 +280,7 @@
     <string name="planned_register_expense">Registrar pago</string>
     <string name="planned_amount_hint">Confirma el monto real de esta vez. Si vino distinto de lo previsto, corrígelo aquí: el plan no cambia.</string>
     <string name="planned_delete">Eliminar pago</string>
-    <string name="planned_create_title">Nuevo Pago Planificado</string>
+    <string name="planned_create_title">Nuevo movimiento planificado</string>
     <string name="planned_name_hint">Nombre (ej. Renta)</string>
     <string name="planned_amount">Monto (%1$s)</string>
     <string name="planned_frequency">Frecuencia</string>
@@ -566,7 +571,9 @@
     <string name="email_candidate_classify">Clasificar</string>
     <string name="email_candidate_not_movement">No es movimiento</string>
     <string name="email_candidate_direction_label">¿Es un gasto o un ingreso?</string>
-    <string name="email_candidate_recurring">Se repite: anotarlo como movimiento fijo</string>
+    <string name="email_candidate_recurring_expense">Marcar como gasto fijo</string>
+    <string name="email_candidate_recurring_income">Marcar como ingreso fijo</string>
+    <string name="email_candidate_recurring_help">Se agregará a Movimientos planificados desde la próxima fecha; el movimiento de este correo se registra una sola vez.</string>
     <string name="email_candidate_freq_weekly">Semanal</string>
     <string name="email_candidate_freq_semimonthly">Quincenal (15 y fin de mes)</string>
     <string name="email_candidate_freq_every15">Cada 15 días</string>
@@ -594,4 +601,82 @@
     <string name="email_candidate_add_movement">Agregar movimiento</string>
     <string name="email_candidate_dismiss_title">Descartar correo</string>
     <string name="email_candidate_dismiss_confirm">Este correo no se tratará como movimiento y Wallet aprenderá esta plantilla de asunto. Los recibos reales con otros asuntos no se bloquearán.</string>
+    <string name="settings_bank_notifications">Notificaciones bancarias</string>
+    <string name="settings_bank_notifications_sub">Autoriza apps y revisa capturas locales</string>
+    <string name="bank_notifications_listener_label">Captura bancaria de Wallet</string>
+    <string name="bank_notices_title">Notificaciones bancarias</string>
+    <string name="bank_notices_access_title">1. Acceso del sistema</string>
+    <string name="bank_notices_access_granted">Acceso concedido. Wallet puede detectar las apps que te notifican.</string>
+    <string name="bank_notices_access_missing">Falta conceder acceso a notificaciones. Android te mostrará la lista de servicios.</string>
+    <string name="bank_notices_open_settings">Abrir acceso a notificaciones</string>
+    <string name="bank_notices_sources_title">2. Apps autorizadas</string>
+    <string name="bank_notices_sources_help">Wallet sugiere apps bancarias instaladas y apps que emitan avisos. Siempre aparecen desactivadas: activa solo las que reconozcas.</string>
+    <string name="bank_notices_sources_empty">Todavía no se ha detectado ninguna app financiera.</string>
+    <plurals name="bank_notices_seen_count">
+        <item quantity="one">%1$d aviso observado</item>
+        <item quantity="other">%1$d avisos observados</item>
+    </plurals>
+    <string name="bank_notices_installed_suggestion">Instalada en este dispositivo · captura desactivada</string>
+    <string name="bank_notices_captures_title">3. Capturas locales</string>
+    <string name="bank_notices_retention">Cifradas en este dispositivo y eliminadas a los 30 días.</string>
+    <string name="bank_notices_captures_empty">No hay avisos guardados de apps autorizadas.</string>
+    <string name="bank_notices_privacy">Wallet descarta códigos OTP y avisos de autenticación antes de guardarlos. En esta fase no crea movimientos ni envía estas capturas a un servidor.</string>
+    <string name="bank_notices_status_access_ok">Acceso activo</string>
+    <string name="bank_notices_status_access_pending">Sin acceso</string>
+    <plurals name="bank_notices_status_apps">
+        <item quantity="one">%1$d app</item>
+        <item quantity="other">%1$d apps</item>
+    </plurals>
+    <plurals name="bank_notices_status_captures">
+        <item quantity="one">%1$d captura</item>
+        <item quantity="other">%1$d capturas</item>
+    </plurals>
+    <string name="bank_notices_export">Exportar muestra anónima</string>
+    <string name="bank_notices_clear">Borrar capturas</string>
+    <string name="bank_notices_clear_title">Borrar capturas locales</string>
+    <string name="bank_notices_clear_confirmation">Se eliminarán todos los avisos guardados. Las apps autorizadas conservarán su configuración.</string>
+    <string name="bank_notices_export_success">Muestra anónima exportada</string>
+    <string name="bank_notices_export_error">No se pudo exportar la muestra</string>
+    <string name="detected_movements_title">Movimientos detectados</string>
+    <string name="detected_movements_description">Una sola bandeja para los movimientos encontrados en Gmail, Hotmail y las notificaciones bancarias.</string>
+    <string name="detected_movements_empty_filtered">No hay movimientos pendientes para este período.</string>
+    <string name="detected_movements_filter_today">Hoy</string>
+    <string name="detected_movements_filter_yesterday">Ayer</string>
+    <string name="detected_movements_filter_week">Semana</string>
+    <string name="detected_movements_filter_month">Mes</string>
+    <plurals name="detected_movements_filter_summary">
+        <item quantity="one">Mostrando %1$d de %2$d movimiento pendiente.</item>
+        <item quantity="other">Mostrando %1$d de %2$d movimientos pendientes.</item>
+    </plurals>
+    <string name="detected_movements_refresh">Actualizar movimientos detectados</string>
+    <string name="detected_movement_unknown_merchant">Comercio sin identificar</string>
+    <string name="detected_movement_evidence">Evidencias</string>
+    <string name="detected_movement_card">Tarjeta •••• %1$s</string>
+    <string name="detected_movement_possible_title">Posible duplicado</string>
+    <string name="detected_movement_possible_default">Coincide con otro movimiento, pero falta información para unirlos automáticamente.</string>
+    <string name="detected_movement_keep_separate">Son distintos</string>
+    <string name="detected_movement_confirm_same">Es el mismo</string>
+    <string name="detected_movement_confirm_same_title">¿Es el mismo movimiento?</string>
+    <string name="detected_movement_confirm_same_body">Se conservarán todas las evidencias, pero solo quedará un movimiento pendiente.</string>
+    <string name="detected_movement_add">Agregar movimiento</string>
+    <string name="detected_movement_discard">No es un movimiento</string>
+    <string name="detected_movement_discard_title">Descartar detección</string>
+    <string name="detected_movement_discard_body">Se descartará este grupo y se confirmará también en los buzones conectados.</string>
+    <string name="detected_movement_pending_email">El movimiento ya está guardado, pero falta confirmar uno o más correos.</string>
+    <string name="detected_movement_status_pending_review">Pendiente de confirmar</string>
+    <string name="detected_movement_status_registered_pending_sync">Registrado · falta sincronizar correo</string>
+    <string name="detected_movement_retry_email">Reintentar confirmación</string>
+    <string name="detected_movement_review_title">Revisar movimiento</string>
+    <string name="detected_movement_direction">Tipo</string>
+    <string name="detected_movement_account">Cuenta</string>
+    <string name="detected_movement_category">Categoría</string>
+    <string name="detected_movement_amount">Monto en %1$s</string>
+    <string name="detected_movement_amount_invalid">Introduce un monto válido mayor que cero.</string>
+    <string name="detected_movement_date">Fecha</string>
+    <string name="detected_movement_no_account">No existe una cuenta compatible con la divisa detectada.</string>
+    <string name="detected_movement_transfer_unsupported">Los traslados entre cuentas deben registrarse desde el flujo de transferencias.</string>
+    <string name="detected_source_gmail">Gmail</string>
+    <string name="detected_source_microsoft">Hotmail</string>
+    <string name="detected_source_bank">Banco</string>
+    <string name="detected_source_email">Correo</string>
 </resources>

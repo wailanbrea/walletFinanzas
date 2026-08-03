@@ -4,6 +4,8 @@ import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -70,7 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.core.net.toUri
 
 import com.bsolutions.wallet.R
@@ -218,8 +220,18 @@ fun EmailConnectionsScreen(
         var chargeToDebtId by remember(candidate.id) { mutableStateOf<String?>(null) }
         // Corregible porque la detección se equivoca: un aviso de nómina que dice "pago"
         // se leía como gasto, y una vez creado el movimiento el tipo ya no se puede cambiar.
-        var direction by remember(candidate.id) { mutableStateOf(candidate.direction) }
-        var recurringFrequency by remember(candidate.id) { mutableStateOf<String?>(null) }
+        var direction by remember(candidate.id, bookedTransaction) {
+            mutableStateOf(
+                when (bookedTransaction?.type) {
+                    "INCOME" -> "income"
+                    "EXPENSE" -> "expense"
+                    else -> candidate.direction
+                }
+            )
+        }
+        var recurringFrequency by remember(candidate.id, bookedTransaction) {
+            mutableStateOf<String?>(null)
+        }
         var showDatePicker by remember(candidate.id) { mutableStateOf(false) }
         if (showDatePicker && bookedTransaction == null) {
             val datePickerState = rememberDatePickerState(
@@ -252,7 +264,10 @@ fun EmailConnectionsScreen(
             onDismissRequest = { classifyCandidate = null },
             title = { Text(stringResource(R.string.email_candidate_classify_title)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     if (bookedTransaction == null) {
                         Text(
                             text = stringResource(R.string.email_candidate_direction_label),
@@ -261,7 +276,7 @@ fun EmailConnectionsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(
                                 selected = direction == "expense",
-                                onClick = { direction = "expense"; categoryId = ""; recurringFrequency = null },
+                                onClick = { direction = "expense"; categoryId = "" },
                                 label = { Text(stringResource(R.string.quick_expense)) }
                             )
                             FilterChip(
@@ -300,7 +315,7 @@ fun EmailConnectionsScreen(
                                 Text(
                                     stringResource(
                                         R.string.email_candidate_amount_label,
-                                        selectedAccount?.currency.orEmpty()
+                                        selectedAccount.currency
                                     )
                                 )
                             },
@@ -409,21 +424,32 @@ fun EmailConnectionsScreen(
                             Text(stringResource(R.string.email_candidate_reset_date))
                         }
                     }
-                    // Un sueldo llega siempre: dejarlo anotado desde el propio aviso evita
-                    // ir a crearlo aparte repitiendo monto, cuenta y categoría.
-                    // Solo para ingresos: un gasto fijo se lleva desde Pagos planificados.
-                    if (bookedTransaction == null && direction == "income") {
+                    // Se crea la ocurrencia actual y, aparte, el siguiente vencimiento.
+                    // También se ofrece durante un reintento: el id determinista evita
+                    // duplicar el plan si el backend falló después de guardarlo localmente.
+                    if (direction == "income" || direction == "expense") {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
                                 checked = recurringFrequency != null,
-                                onCheckedChange = { recurringFrequency = if (it) "SEMIMONTHLY" else null }
+                                onCheckedChange = { recurringFrequency = if (it) "MONTHLY" else null }
                             )
                             Text(
-                                text = stringResource(R.string.email_candidate_recurring),
+                                text = stringResource(
+                                    if (direction == "income") {
+                                        R.string.email_candidate_recurring_income
+                                    } else {
+                                        R.string.email_candidate_recurring_expense
+                                    }
+                                ),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
                         if (recurringFrequency != null) {
+                            Text(
+                                text = stringResource(R.string.email_candidate_recurring_help),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 items(recurringFrequencies) { (value, label) ->
                                     FilterChip(
@@ -587,7 +613,10 @@ fun EmailConnectionsScreen(
                 title = { Text(stringResource(R.string.email_connections_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back)
+                        )
                     }
                 },
                 actions = {
@@ -1144,7 +1173,7 @@ internal fun candidateDatePickerInitialMillis(
 }.getOrNull()
 
 internal fun formatDatePickerSelection(value: Long): String =
-    LocalDate.ofInstant(Instant.ofEpochMilli(value), ZoneOffset.UTC)
+    Instant.ofEpochMilli(value).atZone(ZoneOffset.UTC).toLocalDate()
         .format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
 
 private fun formatTransactionDate(

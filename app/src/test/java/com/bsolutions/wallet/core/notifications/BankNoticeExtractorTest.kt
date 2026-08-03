@@ -19,6 +19,8 @@ class BankNoticeExtractorTest {
         assertEquals(245000L, parsed?.amountMinor)
         assertEquals("DOP", parsed?.currency)
         assertEquals("5678", parsed?.last4Digits)
+        assertEquals("expense", parsed?.direction)
+        assertEquals("CARD_PURCHASE_APPROVED", parsed?.eventType)
         assertEquals("cat_alimentacion", parsed?.suggestedCategoryId)
     }
 

@@ -51,6 +51,7 @@ fun SettingsScreen(
     onNavigateToCategoryRules: () -> Unit = {},
     onNavigateToSecurity: () -> Unit = {},
     onNavigateToSyncSettings: () -> Unit = {},
+    onNavigateToBankNotifications: () -> Unit = {},
     onNavigateToImportCsv: () -> Unit = {},
     onNavigateToLogin: () -> Unit = {},
     onLogout: () -> Unit = {},
@@ -215,6 +216,13 @@ fun SettingsScreen(
                     icon = Icons.Default.Sync,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     onClick = onNavigateToSyncSettings
+                )
+                SettingsItem(
+                    title = stringResource(R.string.settings_bank_notifications),
+                    subtitle = stringResource(R.string.settings_bank_notifications_sub),
+                    icon = Icons.Default.NotificationsActive,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    onClick = onNavigateToBankNotifications
                 )
                 // Sincronización con el backend (push/pull offline-first)
                 SettingsItem(

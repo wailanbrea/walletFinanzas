@@ -34,8 +34,10 @@ import com.bsolutions.wallet.presentation.accounts.AccountsScreen
 import com.bsolutions.wallet.presentation.auth.LoginScreen
 import com.bsolutions.wallet.presentation.auth.RecoverPasswordScreen
 import com.bsolutions.wallet.presentation.auth.RegisterScreen
+import com.bsolutions.wallet.presentation.detectedmovements.DetectedMovementsScreen
 import com.bsolutions.wallet.presentation.auth.SplashScreen
 import com.bsolutions.wallet.presentation.budgets.BudgetsScreen
+import com.bsolutions.wallet.presentation.banknotifications.BankNotificationsScreen
 import com.bsolutions.wallet.presentation.categories.CategoriesScreen
 import com.bsolutions.wallet.presentation.categoryrules.CategoryRulesScreen
 
@@ -181,7 +183,8 @@ class MainActivity : FragmentActivity() {
                     "reports",
                     "goals",
                     "debts",
-                    "planned_payments"
+                    "planned_payments",
+                    "detected_movements"
                 )
 
                 // El drawer solo se puede abrir con gesto en las pantallas principales
@@ -277,6 +280,9 @@ class MainActivity : FragmentActivity() {
                             composable("transactions") {
                                 TransactionsScreen(onOpenDrawer = openDrawer)
                             }
+                            composable("detected_movements") {
+                                DetectedMovementsScreen(onOpenDrawer = openDrawer)
+                            }
                             composable("budgets") {
                                 BudgetsScreen(onOpenDrawer = openDrawer)
                             }
@@ -293,6 +299,7 @@ class MainActivity : FragmentActivity() {
                                     onNavigateToCategoryRules = { navController.navigate("category_rules") },
                                     onNavigateToSecurity = { navController.navigate("security") },
                                     onNavigateToSyncSettings = { navController.navigate("email_connections") },
+                                    onNavigateToBankNotifications = { navController.navigate("bank_notifications") },
                                     onNavigateToImportCsv = { navController.navigate("import_csv") },
 
                                     onNavigateToLogin = { navController.navigate("login") },
@@ -301,6 +308,9 @@ class MainActivity : FragmentActivity() {
                             }
                             composable("notifications") {
                                 NotificationsScreen(onNavigateBack = { navController.popBackStack() })
+                            }
+                            composable("bank_notifications") {
+                                BankNotificationsScreen(onNavigateBack = { navController.popBackStack() })
                             }
                             composable("profile") {
                                 ProfileScreen(onNavigateBack = { navController.popBackStack() })
@@ -349,4 +359,3 @@ class MainActivity : FragmentActivity() {
         }
     }
 }
-

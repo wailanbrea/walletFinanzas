@@ -9,6 +9,7 @@ import com.bsolutions.wallet.data.local.dao.CategoryDao
 import com.bsolutions.wallet.data.local.dao.DebtDao
 import com.bsolutions.wallet.data.local.dao.GoalDao
 import com.bsolutions.wallet.data.local.dao.PlannedPaymentDao
+import com.bsolutions.wallet.data.local.dao.RawBankNoticeDao
 import com.bsolutions.wallet.data.local.dao.TransactionDao
 import dagger.Module
 import dagger.Provides
@@ -52,7 +53,9 @@ object DatabaseModule {
                 WalletDatabaseMigrations.MIGRATION_9_10,
                 WalletDatabaseMigrations.MIGRATION_10_11,
                 WalletDatabaseMigrations.MIGRATION_11_12,
-                WalletDatabaseMigrations.MIGRATION_12_13
+                WalletDatabaseMigrations.MIGRATION_12_13,
+                WalletDatabaseMigrations.MIGRATION_13_14,
+                WalletDatabaseMigrations.MIGRATION_14_15
             )
             // Nunca borrar datos financieros ante un upgrade no cubierto: si faltara una
             // migración preferimos fallar (y verlo) a perder el dinero del usuario en silencio.
@@ -109,6 +112,10 @@ object DatabaseModule {
     fun provideDetectedMovementDao(database: WalletDatabase): com.bsolutions.wallet.data.local.dao.DetectedMovementDao {
         return database.detectedMovementDao()
     }
+
+    @Provides
+    fun provideRawBankNoticeDao(database: WalletDatabase): RawBankNoticeDao =
+        database.rawBankNoticeDao()
 
     @Provides
     @Singleton

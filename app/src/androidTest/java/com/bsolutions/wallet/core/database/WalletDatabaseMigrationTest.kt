@@ -20,21 +20,86 @@ class WalletDatabaseMigrationTest {
     )
 
     @Test
+    fun migration14To15_addsCanonicalDedupeWithoutLosingDetectedMovements() {
+        val databaseName = "migration_14_15_test.db"
+        migrationHelper.createDatabase(databaseName, 14).apply {
+            execSQL(
+                "INSERT INTO detected_movements " +
+                    "(ownerId, id, source, senderOrApp, title, rawBody, merchant, amountMinor, currency, " +
+                    "last4Digits, detectedAt, status, suggestedCategoryId, confidence, needsSync) VALUES " +
+                    "('owner-1', 'legacy-1', 'EMAIL', 'Gmail', 'Compra', '', 'Amazon', 10000, 'DOP', " +
+                    "'1234', 1000, 'PENDING', NULL, 90, 0)"
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            15,
+            true,
+            WalletDatabaseMigrations.MIGRATION_14_15
+        )
+
+        migrated.query(
+            "SELECT occurredAt, canonicalId, dedupeState, duplicateOfId " +
+                "FROM detected_movements WHERE id = 'legacy-1'"
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1000L, cursor.getLong(0))
+            assertEquals("legacy-1", cursor.getString(1))
+            assertEquals("CANONICAL", cursor.getString(2))
+            assertTrue(cursor.isNull(3))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migration13To14_addsSecureRawNoticeCorpus() {
+        val databaseName = "migration_13_14_test.db"
+        migrationHelper.createDatabase(databaseName, 13).close()
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            14,
+            true,
+            WalletDatabaseMigrations.MIGRATION_13_14
+        )
+        migrated.execSQL(
+            "INSERT INTO notification_sources " +
+                "(ownerId, packageName, displayName, isEnabled, lastSeenAt, observedCount) " +
+                "VALUES ('guest', 'com.bank.app', 'Banco', 1, 1000, 1)"
+        )
+        migrated.execSQL(
+            "INSERT INTO raw_bank_notices " +
+                "(ownerId, id, packageName, appLabel, notificationKeyHash, contentHash, title, text, bigText, postTime, capturedAt, expiresAt) " +
+                "VALUES ('guest', 'notice-1', 'com.bank.app', 'Banco', 'key-hash', 'content-hash', " +
+                "'Compra', 'RD$ 100.00', '', 1000, 1001, 2000)"
+        )
+
+        migrated.query("SELECT packageName, text FROM raw_bank_notices").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("com.bank.app", cursor.getString(0))
+            assertEquals("RD$ 100.00", cursor.getString(1))
+        }
+        migrated.close()
+    }
+
+    @Test
     fun migration2To3_addsFinancialInstitutionColumns_andPreservesAccounts() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val helper = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name("migration_2_3_test.db")
                 .callback(object : SupportSQLiteOpenHelper.Callback(2) {
-                    override fun onCreate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
-                        database.execSQL(
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL(
                             "CREATE TABLE accounts (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, " +
                                 "balance INTEGER NOT NULL, currency TEXT NOT NULL, isDeleted INTEGER NOT NULL)"
                         )
                     }
 
                     override fun onUpgrade(
-                        database: androidx.sqlite.db.SupportSQLiteDatabase,
+                        db: androidx.sqlite.db.SupportSQLiteDatabase,
                         oldVersion: Int,
                         newVersion: Int
                     ) = Unit
@@ -66,15 +131,15 @@ class WalletDatabaseMigrationTest {
             SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name("migration_7_8_test.db")
                 .callback(object : SupportSQLiteOpenHelper.Callback(7) {
-                    override fun onCreate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
-                        database.execSQL(
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL(
                             "CREATE TABLE categories (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, " +
                                 "icon TEXT NOT NULL, colorHex TEXT NOT NULL, isDeleted INTEGER NOT NULL)"
                         )
                     }
 
                     override fun onUpgrade(
-                        database: androidx.sqlite.db.SupportSQLiteDatabase,
+                        db: androidx.sqlite.db.SupportSQLiteDatabase,
                         oldVersion: Int,
                         newVersion: Int
                     ) = Unit

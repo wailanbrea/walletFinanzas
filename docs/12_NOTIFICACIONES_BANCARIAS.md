@@ -1,6 +1,9 @@
 # Notificaciones bancarias y motor de categorización
 
-> Plan. 1 de agosto de 2026. Nada de esto está implementado todavía.
+> Plan actualizado el 2 de agosto de 2026. La Fase A está implementada; la Fase B
+> tiene un extractor base pendiente de medir con corpus real; y la Fase C está
+> implementada con persistencia, deduplicado y bandeja unificada. La siguiente fase
+> de producto es la D, el motor de categorización medible.
 > Complementa `10_OBTENCION_DATOS.md` (correo, CSV) y reutiliza el pipeline de
 > `docs/email-integration/`.
 
@@ -30,6 +33,19 @@ a existir: correo, notificación y CSV.
 Es decir: el **flujo de revisión y alta ya existe y está probado**. Lo que falta es
 una fuente nueva (la notificación) y subir el listón del motor que decide.
 
+### Estado del flujo base de correo (2 de agosto de 2026)
+
+- Al clasificar se puede corregir tipo, monto y fecha del movimiento.
+- Tanto un gasto como un ingreso pueden marcarse como fijos y elegir su frecuencia.
+- La ocurrencia del correo se registra una sola vez; el plan empieza en la próxima
+  fecha válida y usa un identificador determinista para no duplicarse al reintentar.
+- "Movimientos planificados" separa gastos e ingresos, con total activo y acciones
+  semánticas para pagar o registrar un ingreso.
+
+Esto completa la pieza reutilizable de recurrencia del correo. La captura segura de
+la Fase A también está terminada; el siguiente trabajo es la Fase B, extracción
+on-device medida contra el corpus real.
+
 ## 3. Decisiones de arquitectura
 
 ### D1 — La extracción de notificaciones corre en el teléfono, no en Laravel
@@ -56,7 +72,7 @@ salen a un `lexicon.json` versionado:
 La gramática dura (montos, divisas, últimos 4 dígitos) sí se porta a Kotlin: es
 lógica, no vocabulario, y ya está bien cubierta por `FinancialEmailExtractorTest`.
 
-### D3 — Una sola bandeja, persistida en Room
+### D3 — Una sola bandeja, persistida en Room ✅
 
 Hoy los candidatos de correo viven solo en el backend y se pierden sin conexión.
 Se crea `detected_movements` en Room (con `(ownerId, id)` como el resto de tablas,
@@ -65,18 +81,25 @@ Room v13) que guarda candidatos de **las dos** fuentes. La pantalla pasa a ser
 
 Beneficio lateral: los candidatos de correo empiezan a sobrevivir sin conexión.
 
-### D4 — El deduplicado cruzado corre donde se cruzan las fuentes: el teléfono
+### D4 — El deduplicado cruzado corre donde se cruzan las fuentes: el teléfono ✅
 
 Una misma compra llega como push (segundos) y como correo (minutos). Con D3 las dos
 están en Room, así que ahí se emparejan, con la misma regla que ya usa
 `DuplicateEmailCandidateDetector` pero afinada:
 
 - push ↔ correo: ventana ±6 h (no 72: el push es inmediato).
-- correo ↔ correo entre proveedores: se queda en el backend como está.
+- correo ↔ correo entre proveedores: se reconcilia en backend y también en Room para
+  cubrir sincronizaciones parciales o llegadas fuera de orden.
 - monto comparado en DOP con tolerancia 3 %; si ambos traen últimos 4 dígitos,
   **tienen que coincidir** — dígitos distintos son dos cargos distintos, no un duplicado.
 - también se compara contra movimientos ya registrados a mano en las últimas 24 h,
   para no duplicar lo que el usuario ya anotó.
+
+Implementado en Room v15 con un identificador de origen único por propietario,
+agrupación canónica y evidencia conservada. Push tiene prioridad sobre correo; una
+coincidencia fuerte se muestra una sola vez y los casos basados solo en monto y hora
+se mantienen visibles como posibles duplicados. Los movimientos manuales nunca se
+ocultan automáticamente. Clasificar un correo cierra todo su grupo canónico.
 
 ### D5 — El autoregistro es una decisión con umbral, no el comportamiento por defecto
 
@@ -119,21 +142,44 @@ con un chip "Automático", se deshace con un toque y entra en el resumen diario.
 
 ## 5. Fases
 
-### Fase A — Captura y corpus real
+### Fase A — Captura y corpus real ✅
 
 `BankNotificationListenerService` (`NotificationListenerService`), pantalla para
 conceder el acceso (`ACTION_NOTIFICATION_LISTENER_SETTINGS`, no es un permiso de
-manifiesto normal), y una tabla `raw_notices` con paquete, título, texto,
+manifiesto normal), y una tabla `raw_bank_notices` con paquete, título, texto,
 `EXTRA_BIG_TEXT`, `postTime` y hash. **No crea ningún movimiento todavía.**
 
 Incluye una pantalla de diagnóstico que lista lo capturado y deja marcar qué apps
 son bancos: así la lista blanca de emisores sale de los bancos reales del usuario y
 no de nombres de paquete inventados.
 
-*Sale cuando:* los avisos de los bancos del usuario aparecen íntegros en U1, con su
-texto largo, y se pueden exportar anonimizados como fixtures.
+Implementado:
 
-### Fase B — Extractor on-device
+- acceso guiado a `ACTION_NOTIFICATION_LISTENER_SETTINGS` y estado actualizado al
+  volver desde Ajustes de Android;
+- fuentes descubiertas desactivadas por defecto y lista blanca explícita por usuario;
+- detección proactiva, también desactivada, de siete apps instaladas conocidas de
+  República Dominicana mediante visibilidad limitada por paquete: Banreservas, Qik,
+  Banco Popular, Móvil Banking BHD, BDI App, gnial y Toke; no se solicita
+  `QUERY_ALL_PACKAGES` y se excluye la app BHD Digital Key de autenticación;
+- filtro de OTP/autenticación antes de cualquier escritura en Room;
+- `notification_sources` y `raw_bank_notices` en Room v14, cifradas por SQLCipher,
+  aisladas por propietario y con retención máxima de 30 días;
+- captura de título, texto, `EXTRA_BIG_TEXT`/líneas, hora y hashes; identificador
+  determinista para no duplicar una notificación reemitida;
+- diagnóstico local, borrado y exportación JSON anonimizada para construir fixtures;
+- el listener no crea `DetectedMovementEntity`, transacciones ni sincroniza el texto.
+
+Validado en el emulador Android con acceso real del sistema, fuente no autorizada,
+autorización explícita, captura y deduplicado. La migración 13→14, el aislamiento por
+usuario, el descarte de OTP y la anonimización tienen pruebas automatizadas.
+
+*Criterio de salida alcanzado:* los avisos de apps autorizadas aparecen con el texto
+largo y pueden exportarse anonimizados. Para sustituir fixtures sintéticos por un
+corpus representativo aún hay que usar la app con bancos reales y revisar cada JSON
+antes de compartirlo.
+
+### Fase B — Extractor on-device (base implementada; validación pendiente)
 
 `BankNoticeExtractor` en Kotlin: monto, divisa, dirección, comercio, últimos 4
 dígitos, con los negativos de `isDefiniteNonTransaction()`. Fixtures de la Fase A +
@@ -143,13 +189,37 @@ emisor y se publica la tabla en `docs/`.
 *Sale cuando:* ≥ 95 % de precisión de monto y dirección sobre el corpus real, y cero
 falsos positivos sobre avisos que no son transacciones (promociones, OTP, saldos).
 
-### Fase C — Bandeja unificada y deduplicado
+### Fase C — Bandeja unificada y deduplicado ✅
 
 Room v13 con `detected_movements`, migración probada, `DetectedMovementsScreen`
 reutilizando el sheet de revisión actual, y el deduplicado cruzado de D4.
 
+Implementado:
+
+- `detected_movements`, migración hasta Room v15 y aislamiento por propietario;
+- persistencia local de correo, ingestión de pushes autorizados y deduplicado
+  Gmail ↔ Microsoft ↔ push ↔ movimiento manual;
+- destino principal "Movimientos detectados", con una tarjeta por raíz canónica y
+  las evidencias de cada canal identificadas;
+- filtro temporal sobre `occurredAt`: Hoy por defecto, Ayer, semana calendario
+  actual y mes calendario actual; el contador indica cuántas detecciones quedan
+  fuera del período seleccionado;
+- cada tarjeta distingue una detección pendiente de confirmar de un movimiento ya
+  registrado cuya confirmación remota de correo todavía debe reintentarse;
+- resolución explícita de ambigüedades: conservar por separado o unir sin borrar
+  la evidencia original;
+- alta manual con cuenta, categoría, monto, tipo y fecha corregibles;
+- identificador determinista de transacción: reintentar después de un fallo de red
+  no vuelve a modificar el saldo;
+- si el movimiento se guardó pero un buzón no confirmó, la tarjeta permanece como
+  acción pendiente y permite reintentar solo esa confirmación;
+- el autoregistro continúa apagado: ninguna detección altera el saldo sin una acción
+  explícita del usuario.
+
 *Sale cuando:* una compra que llega por push y por correo aparece una sola vez, y
 aceptarla desde cualquiera de las dos deja un único movimiento.
+
+*Criterio alcanzado con pruebas unitarias y Room real.*
 
 ### Fase D — Motor de categorización
 

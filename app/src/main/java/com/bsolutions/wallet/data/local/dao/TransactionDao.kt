@@ -14,6 +14,19 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND isDeleted = 0")
     suspend fun getAllTransactionsOnce(ownerId: String): List<TransactionEntity>
 
+    @Query(
+        "SELECT * FROM transactions WHERE ownerId = :ownerId AND isDeleted = 0 " +
+            "AND type = :type AND currency = :currency AND date BETWEEN :fromInclusive AND :toInclusive " +
+            "ORDER BY date DESC"
+    )
+    suspend fun findRecentPotentialDuplicates(
+        ownerId: String,
+        type: String,
+        currency: String,
+        fromInclusive: Long,
+        toInclusive: Long
+    ): List<TransactionEntity>
+
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND accountId = :accountId AND isDeleted = 0 ORDER BY date DESC")
     fun getTransactionsByAccount(ownerId: String, accountId: String): Flow<List<TransactionEntity>>
     

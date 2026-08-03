@@ -6,6 +6,7 @@ import com.bsolutions.wallet.core.network.EmailCandidateReviewRequest
 import com.bsolutions.wallet.core.network.EmailSyncRequest
 import com.bsolutions.wallet.core.network.EmailSyncDto
 import com.bsolutions.wallet.core.network.WalletApi
+import com.bsolutions.wallet.core.database.WalletOwnerScope
 import kotlinx.coroutines.delay
 import retrofit2.HttpException
 
@@ -50,6 +51,10 @@ data class EmailCandidate(
     val amount: Long,
     val currency: String,
     val direction: String,
+    val eventType: String? = null,
+    val senderName: String? = null,
+    val senderAddress: String? = null,
+    val senderDomain: String? = null,
     val categorySuggestion: String?,
     val occurredAt: String,
     val confidence: Int,
@@ -77,6 +82,17 @@ interface EmailConnectionsRepository {
         category: String?,
         duplicateOfId: String? = null
     ): EmailCandidate
+    /**
+     * Confirma el candidato en el servidor sin cerrar por su cuenta el grupo local.
+     * La bandeja unificada confirma varias evidencias y debe decidir el estado del
+     * grupo solo después de conocer cuáles llamadas fallaron.
+     */
+    suspend fun reviewCandidateRemotely(
+        id: String,
+        action: String,
+        category: String?,
+        duplicateOfId: String? = null
+    ): EmailCandidate = reviewCandidate(id, action, category, duplicateOfId)
     suspend fun disconnect(provider: EmailProvider)
 }
 
@@ -99,13 +115,20 @@ private const val SYNC_POLL_DELAY_MS = 1_500L
 
 class DefaultEmailConnectionsRepository(
     private val api: WalletApi,
-    private val session: WalletSessionStore
+    private val session: WalletSessionStore,
+    private val detectedMovementRepository: DetectedMovementRepository? = null,
+    private val ownerScope: WalletOwnerScope? = null
 ) : EmailConnectionsRepository {
     override suspend fun getConnections(): List<EmailConnection> =
         authenticatedCall { api.emailConnections().data.map(EmailConnectionDto::toDomain) }
 
-    override suspend fun getCandidates(): List<EmailCandidate> =
-        authenticatedCall { api.emailCandidates().data.map(EmailCandidateDto::toDomain) }
+    override suspend fun getCandidates(): List<EmailCandidate> = authenticatedCall {
+        val candidates = api.emailCandidates().data.map(EmailCandidateDto::toDomain)
+        if (detectedMovementRepository != null && ownerScope != null) {
+            detectedMovementRepository.ingestEmailCandidates(candidates, ownerScope.currentOwnerId())
+        }
+        candidates
+    }
 
     override suspend fun getAuthorizationUrl(provider: EmailProvider): String =
         authenticatedCall { api.emailAuthorizationUrl(provider.apiValue).data.authorizationUrl }
@@ -130,6 +153,22 @@ class DefaultEmailConnectionsRepository(
     }
 
     override suspend fun reviewCandidate(
+        id: String,
+        action: String,
+        category: String?,
+        duplicateOfId: String?
+    ): EmailCandidate = authenticatedCall {
+        val reviewed = api.reviewEmailCandidate(
+            id,
+            EmailCandidateReviewRequest(action, category, duplicateOfId = duplicateOfId)
+        ).data.toDomain()
+        if (action == "categorize" && detectedMovementRepository != null && ownerScope != null) {
+            detectedMovementRepository.markEmailCandidateApproved(reviewed, ownerScope.currentOwnerId())
+        }
+        reviewed
+    }
+
+    override suspend fun reviewCandidateRemotely(
         id: String,
         action: String,
         category: String?,
@@ -187,6 +226,10 @@ private fun EmailCandidateDto.toDomain() = EmailCandidate(
     amount = amount,
     currency = currency,
     direction = direction,
+    eventType = eventType,
+    senderName = senderName,
+    senderAddress = senderAddress,
+    senderDomain = senderDomain,
     categorySuggestion = categorySuggestion,
     occurredAt = occurredAt,
     confidence = confidence,

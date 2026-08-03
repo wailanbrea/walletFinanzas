@@ -9,7 +9,9 @@ data class ParsedBankNotice(
     val amountMinor: Long?,
     val currency: String?,
     val last4Digits: String?,
-    val suggestedCategoryId: String?
+    val suggestedCategoryId: String?,
+    val direction: String = "expense",
+    val eventType: String = "CARD_PURCHASE_APPROVED"
 )
 
 object BankNoticeExtractor {
