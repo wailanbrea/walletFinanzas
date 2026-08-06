@@ -27,20 +27,35 @@ class BankNotificationListenerService : NotificationListenerService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        val notification = sbn?.notification ?: return
-        val sourcePackage = sbn.packageName?.takeIf(String::isNotBlank) ?: return
-        if (sourcePackage == packageName || sourcePackage in IGNORED_SYSTEM_PACKAGES) return
+        val capture = captureOf(sbn) ?: return
+        serviceScope.launch {
+            // El resultado no se registra: incluso un log de diagnóstico puede revelar
+            // que llegó un código o un aviso financiero.
+            repository.processNotification(capture)
+        }
+    }
 
-        val extras = notification.extras ?: return
+    /**
+     * Los datos de una notificación, o null si no hay nada que leer en ella.
+     *
+     * Se saca aparte porque entran por dos puertas: la que llega mientras el servicio
+     * escucha, y las que ya estaban en la barra cuando se le concedió el permiso.
+     */
+    private fun captureOf(sbn: StatusBarNotification?): NotificationCaptureData? {
+        val notification = sbn?.notification ?: return null
+        val sourcePackage = sbn.packageName?.takeIf(String::isNotBlank) ?: return null
+        if (sourcePackage == packageName || sourcePackage in IGNORED_SYSTEM_PACKAGES) return null
+
+        val extras = notification.extras ?: return null
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
         val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
             ?: extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
                 ?.joinToString(separator = "\n") { it.toString() }
                 .orEmpty()
-        if (title.isBlank() && text.isBlank() && bigText.isBlank()) return
+        if (title.isBlank() && text.isBlank() && bigText.isBlank()) return null
 
-        val capture = NotificationCaptureData(
+        return NotificationCaptureData(
             packageName = sourcePackage,
             appLabel = appLabel(sourcePackage),
             notificationKey = sbn.key.orEmpty(),
@@ -49,16 +64,21 @@ class BankNotificationListenerService : NotificationListenerService() {
             bigText = bigText,
             postTime = sbn.postTime
         )
-        serviceScope.launch {
-            // El resultado no se registra: incluso un log de diagnóstico puede revelar
-            // que llegó un código o un aviso financiero.
-            repository.processNotification(capture)
-        }
     }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-        serviceScope.launch { repository.purgeExpired() }
+        serviceScope.launch {
+            repository.purgeExpired()
+
+            // Las que ya estaban en la barra tambien cuentan. Al conceder el permiso, el
+            // servicio solo empezaba a oir lo que llegara despues: un consumo de hace un
+            // rato seguia ahi, a la vista, y no se recogia nunca. Repetir una no duplica
+            // nada porque cada captura se reconoce por su huella.
+            runCatching { activeNotifications }.getOrNull().orEmpty().forEach { active ->
+                captureOf(active)?.let { repository.processNotification(it) }
+            }
+        }
     }
 
     override fun onListenerDisconnected() {

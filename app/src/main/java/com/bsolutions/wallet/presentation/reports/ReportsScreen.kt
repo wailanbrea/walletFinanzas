@@ -2,6 +2,7 @@ package com.bsolutions.wallet.presentation.reports
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,6 +29,9 @@ import com.bsolutions.wallet.presentation.common.DonutChart
 import com.bsolutions.wallet.presentation.common.DonutSegment
 import com.bsolutions.wallet.presentation.common.parseHexColor
 import com.bsolutions.wallet.presentation.dashboard.CategoryLegendItem
+import java.text.DateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +41,7 @@ fun ReportsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var isMonthlySelected by remember { mutableStateOf(true) }
+    var expandedCategoryId by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -176,7 +181,7 @@ fun ReportsScreen(
                                 } else {
                                     uiState.categoryItems.take(4).forEach { item ->
                                         Row(
-                                            modifier = Modifier.fillMaxWidth(),
+                                             modifier = Modifier.fillMaxWidth().clickable { expandedCategoryId = item.category.id },
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
@@ -283,11 +288,88 @@ fun ReportsScreen(
             }
 
             item {
+                CategoryExpenseDetailsCard(
+                    items = uiState.categoryItems,
+                    expandedCategoryId = expandedCategoryId,
+                    onCategoryClick = { id -> expandedCategoryId = if (expandedCategoryId == id) null else id }
+                )
+            }
+
+            item {
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
 }
+
+@Composable
+private fun CategoryExpenseDetailsCard(
+    items: List<CategoryReportItem>,
+    expandedCategoryId: String?,
+    onCategoryClick: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = stringResource(R.string.reports_category_details_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            if (items.isEmpty()) {
+                Text(stringResource(R.string.reports_no_expenses), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                items.forEach { item ->
+                    val expanded = item.category.id == expandedCategoryId
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { onCategoryClick(item.category.id) }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier.size(12.dp).clip(CircleShape).background(parseHexColor(item.category.colorHex, MaterialTheme.colorScheme.primary))
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(item.category.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                            Text(MoneyFormat.formatCompact(item.amount), fontWeight = FontWeight.Bold)
+                            Icon(
+                                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null
+                            )
+                        }
+                        if (expanded) {
+                            if (item.transactions.isEmpty()) {
+                                Text(stringResource(R.string.reports_category_details_empty), style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                item.transactions.forEach { transaction ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(start = 22.dp, bottom = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(transaction.note.ifBlank { stringResource(R.string.dashboard_other_category) }, style = MaterialTheme.typography.bodyMedium)
+                                            Text(formatReportDate(transaction.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        Text(MoneyFormat.formatSigned(transaction.amount, transaction.type == "INCOME", transaction.currency), style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatReportDate(value: Long): String = DateFormat.getDateInstance(
+    DateFormat.MEDIUM,
+    Locale.forLanguageTag("es-DO")
+).format(Date(value))
 
 @Composable
 fun LegendDot(text: String, color: Color) {

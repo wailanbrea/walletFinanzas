@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bsolutions.wallet.core.common.CategoryPlaceholders
 import com.bsolutions.wallet.domain.model.Category
+import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.CategoryRepository
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,7 +18,8 @@ import javax.inject.Inject
 data class CategoryReportItem(
     val category: Category,
     val amount: Long,
-    val percentage: Int
+    val percentage: Int,
+    val transactions: List<Transaction> = emptyList()
 )
 
 data class MonthlyBarData(
@@ -53,12 +55,16 @@ class ReportsViewModel @Inject constructor(
         // Spent per category
         val spentMap = expenses
             .groupBy { CategoryPlaceholders.aggregateId(it.categoryId, categoryMap) }
-            .mapValues { it.value.sumOf { transaction -> transaction.amount } }
-
-        val categoryReportList = spentMap.map { (catId, amount) ->
+        val categoryReportList = spentMap.map { (catId, categoryTransactions) ->
             val cat = categoryMap[catId] ?: CategoryPlaceholders.uncategorized()
+            val amount = categoryTransactions.sumOf { it.amount }
             val pct = if (totalExp > 0) ((amount.toDouble() / totalExp.toDouble()) * 100).toInt() else 0
-            CategoryReportItem(cat, amount, pct)
+            CategoryReportItem(
+                category = cat,
+                amount = amount,
+                percentage = pct,
+                transactions = categoryTransactions.sortedByDescending { it.date }
+            )
         }.sortedByDescending { it.amount }
 
         // Últimos 6 meses reales (mes + año, no solo mes)

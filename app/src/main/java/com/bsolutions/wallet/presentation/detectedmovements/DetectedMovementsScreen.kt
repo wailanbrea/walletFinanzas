@@ -29,6 +29,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -74,6 +75,8 @@ import java.math.RoundingMode
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.time.Instant
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.Currency
@@ -93,12 +96,39 @@ fun DetectedMovementsScreen(
     var bookingGroup by remember { mutableStateOf<DetectedMovementGroup?>(null) }
     var duplicateGroup by remember { mutableStateOf<DetectedMovementGroup?>(null) }
     var dismissGroup by remember { mutableStateOf<DetectedMovementGroup?>(null) }
+    var showDateFilter by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.message) {
         state.message?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.consumeMessage()
         }
+    }
+
+    if (showDateFilter) {
+        val picker = rememberDatePickerState(
+            initialSelectedDateMillis = state.selectedDate
+                ?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDateFilter = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.setCustomDate(picker.selectedDateMillis?.let {
+                            Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+                        })
+                        showDateFilter = false
+                    },
+                    enabled = picker.selectedDateMillis != null
+                ) { Text(stringResource(R.string.common_accept)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDateFilter = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        ) { DatePicker(picker) }
     }
 
     duplicateGroup?.let { group ->
@@ -196,6 +226,9 @@ fun DetectedMovementsScreen(
             DetectedMovementsPhase.EMPTY -> EmptyState(
                 state = state,
                 onFilterSelected = viewModel::setDateFilter,
+                onDateSelected = { showDateFilter = true },
+                onClearDate = { viewModel.setCustomDate(null) },
+                onToggleSort = viewModel::toggleSortOrder,
                 modifier = Modifier.fillMaxSize().padding(innerPadding)
             )
 
@@ -206,7 +239,10 @@ fun DetectedMovementsScreen(
                 item {
                     DetectedMovementFilterHeader(
                         state = state,
-                        onFilterSelected = viewModel::setDateFilter
+                        onFilterSelected = viewModel::setDateFilter,
+                        onDateSelected = { showDateFilter = true },
+                        onClearDate = { viewModel.setCustomDate(null) },
+                        onToggleSort = viewModel::toggleSortOrder
                     )
                 }
                 items(state.groups, key = { it.root.id }) { group ->
@@ -215,9 +251,7 @@ fun DetectedMovementsScreen(
                         busy = state.activeMovementId != null,
                         onBook = { bookingGroup = group },
                         onDismiss = { dismissGroup = group },
-                        onKeepSeparate = {
-                            viewModel.resolvePossibleDuplicate(group.root.id, keepSeparate = true)
-                        },
+                        onKeepSeparate = { viewModel.resolvePossibleDuplicate(group.root.id, keepSeparate = true) },
                         onConfirmDuplicate = { duplicateGroup = group },
                         onRetryEmail = { viewModel.retryEmailConfirmation(group.root.id) }
                     )
@@ -232,19 +266,17 @@ fun DetectedMovementsScreen(
 private fun EmptyState(
     state: DetectedMovementsUiState,
     onFilterSelected: (DetectedMovementDateFilter) -> Unit,
+    onDateSelected: () -> Unit,
+    onClearDate: () -> Unit,
+    onToggleSort: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.padding(horizontal = 16.dp)) {
-        DetectedMovementFilterHeader(state, onFilterSelected)
+        DetectedMovementFilterHeader(state, onFilterSelected, onDateSelected, onClearDate, onToggleSort)
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.Outlined.AccountBalance,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(12.dp))
+                Icon(Icons.Outlined.AccountBalance, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(12.dp))
                 Text(stringResource(R.string.detected_movements_empty_filtered))
             }
         }
@@ -254,39 +286,54 @@ private fun EmptyState(
 @Composable
 private fun DetectedMovementFilterHeader(
     state: DetectedMovementsUiState,
-    onFilterSelected: (DetectedMovementDateFilter) -> Unit
+    onFilterSelected: (DetectedMovementDateFilter) -> Unit,
+    onDateSelected: () -> Unit,
+    onClearDate: () -> Unit,
+    onToggleSort: () -> Unit
 ) {
-    Column(
-        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.detected_movements_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = Modifier.padding(top = 8.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             items(DetectedMovementDateFilter.entries) { filter ->
                 FilterChip(
-                    selected = state.selectedDateFilter == filter,
+                    selected = state.selectedDateFilter == filter && state.selectedDate == null,
                     onClick = { onFilterSelected(filter) },
                     label = { Text(dateFilterLabel(filter)) }
                 )
             }
+            item {
+                OutlinedButton(onClick = onDateSelected) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(state.selectedDate?.let { formatFilterDate(it) } ?: stringResource(R.string.detected_movements_filter_date))
+                }
+            }
+            if (state.selectedDate != null) {
+                item {
+                    TextButton(onClick = onClearDate) {
+                        Text(stringResource(R.string.detected_movements_filter_clear_date))
+                    }
+                }
+            }
+            item {
+                FilterChip(selected = !state.sortAscending, onClick = { if (state.sortAscending) onToggleSort() }, label = { Text(stringResource(R.string.detected_movements_sort_newest)) })
+            }
+            item {
+                FilterChip(selected = state.sortAscending, onClick = { if (!state.sortAscending) onToggleSort() }, label = { Text(stringResource(R.string.detected_movements_sort_oldest)) })
+            }
         }
         Text(
-            text = pluralStringResource(
-                R.plurals.detected_movements_filter_summary,
-                state.allActionableCount,
-                state.groups.size,
-                state.allActionableCount
-            ),
+            text = pluralStringResource(R.plurals.detected_movements_filter_summary, state.allActionableCount, state.groups.size, state.allActionableCount),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
+private fun formatFilterDate(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
 @Composable
 private fun dateFilterLabel(filter: DetectedMovementDateFilter): String = stringResource(
     when (filter) {
@@ -522,17 +569,25 @@ private fun BookingDialog(
 ) {
     val root = group.root
     var direction by remember(root.id) { mutableStateOf(root.direction) }
-    val compatibleAccounts = state.accounts.filter { amountForAccount(root, it) != null }
-    var accountId by remember(root.id, compatibleAccounts) {
-        mutableStateOf(preselectedAccountId(root, compatibleAccounts))
+    val compatibleAccounts = state.accounts.filter { amountForAccount(root, it, state.currentUsdDopRateMicros) != null }
+    var accountId by remember(root.id, compatibleAccounts, state.currentUsdDopRateMicros) {
+        mutableStateOf(preselectedAccountId(root, compatibleAccounts, state.currentUsdDopRateMicros))
     }
     val selectedAccount = compatibleAccounts.firstOrNull { it.id == accountId }
-    val automaticAmount = selectedAccount?.let { amountForAccount(root, it) }
+    val automaticAmount = selectedAccount?.let { amountForAccount(root, it, state.currentUsdDopRateMicros) }
     var amountText by remember(root.id, accountId) {
         mutableStateOf(automaticAmount?.let(::formatEditableAmount).orEmpty())
     }
     val amountMinor = parseAmount(amountText)
-    var categoryId by remember(root.id, direction, state.categories) {
+    val usesCurrentUsdRate = selectedAccount != null &&
+        root.currency.equals("USD", ignoreCase = true) &&
+        selectedAccount?.currency.equals("DOP", ignoreCase = true) &&
+        state.currentUsdDopRateMicros != null
+    val usesHistoricalEstimate = selectedAccount != null &&
+        !root.currency.equals(selectedAccount.currency, ignoreCase = true) &&
+        root.baseCurrency.equals(selectedAccount.currency, ignoreCase = true)
+    val usesEstimatedAmount = usesCurrentUsdRate || usesHistoricalEstimate
+    var categoryId by remember(root.id, direction, root.suggestedCategoryId, state.categories) {
         mutableStateOf(
             root.suggestedCategoryId?.takeIf { suggestion ->
                 state.categories.any { it.id == suggestion && it.accepts(direction) }
@@ -540,6 +595,7 @@ private fun BookingDialog(
         )
     }
     var selectedDate by remember(root.id) { mutableLongStateOf(root.occurredAt) }
+    var rememberCategory by remember(root.id, categoryId) { mutableStateOf(false) }
     var showDatePicker by remember(root.id) { mutableStateOf(false) }
 
     if (showDatePicker) {
@@ -621,6 +677,26 @@ private fun BookingDialog(
                         )
                     }
                 }
+                if (usesCurrentUsdRate) {
+                    Text(
+                        stringResource(
+                            R.string.detected_movement_current_rate,
+                            formatRate(state.currentUsdDopRateMicros)
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (usesEstimatedAmount) {
+                    Text(
+                        stringResource(
+                            R.string.detected_movement_amount_estimated,
+                            formatAmount(root.amountMinor, root.currency, root.direction)
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Text(stringResource(R.string.detected_movement_category), style = MaterialTheme.typography.labelLarge)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(state.categories.filter { it.accepts(direction) }, key = { it.id }) { category ->
@@ -630,6 +706,10 @@ private fun BookingDialog(
                             label = { Text(category.name) }
                         )
                     }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = rememberCategory, onCheckedChange = { rememberCategory = it })
+                    Text(stringResource(R.string.detected_movement_remember_category))
                 }
                 Text(stringResource(R.string.detected_movement_date), style = MaterialTheme.typography.labelLarge)
                 OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
@@ -649,7 +729,8 @@ private fun BookingDialog(
                             categoryId = categoryId,
                             amountMinor = requireNotNull(amountMinor),
                             direction = direction,
-                            occurredAt = selectedDate
+                            occurredAt = selectedDate,
+                            rememberCategory = rememberCategory
                         )
                     )
                 },
@@ -662,10 +743,18 @@ private fun BookingDialog(
     )
 }
 
-private fun preselectedAccountId(movement: DetectedMovementEntity, accounts: List<Account>): String {
+private fun preselectedAccountId(
+    movement: DetectedMovementEntity,
+    accounts: List<Account>,
+    usdDopRateMicros: Long?
+): String {
     val byCard = movement.last4Digits?.let { last4 -> accounts.filter { it.cardLastFour == last4 } }.orEmpty()
+    val dopAccounts = accounts.filter {
+        it.currency.equals("DOP", ignoreCase = true) && amountForAccount(movement, it, usdDopRateMicros) != null
+    }
     return when {
         byCard.size == 1 -> byCard.single().id
+        movement.currency.equals("USD", ignoreCase = true) && dopAccounts.isNotEmpty() -> dopAccounts.first().id
         accounts.size == 1 -> accounts.single().id
         else -> ""
     }
@@ -683,6 +772,10 @@ private fun formatEditableAmount(amountMinor: Long): String = BigDecimal.valueOf
 private fun parseAmount(value: String): Long? = runCatching {
     BigDecimal(value.trim().replace(',', '.')).movePointRight(2).longValueExact().takeIf { it > 0L }
 }.getOrNull()
+
+private fun formatRate(rateMicros: Long?): String = rateMicros?.let {
+    BigDecimal.valueOf(it, 6).stripTrailingZeros().toPlainString()
+} ?: "—"
 
 private fun formatAmount(amountMinor: Long?, currencyCode: String?, direction: String): String {
     if (amountMinor == null || currencyCode.isNullOrBlank()) return "—"

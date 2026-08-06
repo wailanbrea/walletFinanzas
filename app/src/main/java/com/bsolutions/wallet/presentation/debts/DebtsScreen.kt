@@ -92,9 +92,10 @@ fun DebtsScreen(
 
     if (showCreateSheet) {
         CreateDebtSheet(
+            accounts = uiState.accounts,
             onDismiss = { showCreateSheet = false },
-            onSave = { name, description, direction, amount ->
-                viewModel.addDebt(name, description, direction, amount)
+            onSave = { name, description, direction, amount, accountId ->
+                viewModel.addDebt(name, description, direction, amount, accountId)
                 showCreateSheet = false
             }
         )
@@ -492,12 +493,16 @@ private fun DebtCard(
 @Composable
 private fun CreateDebtSheet(
     onDismiss: () -> Unit,
-    onSave: (name: String, description: String, direction: String, amount: Long) -> Unit
+    accounts: List<Account>,
+    onSave: (name: String, description: String, direction: String, amount: Long, accountId: String?) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var amountStr by remember { mutableStateOf("") }
     var direction by remember { mutableStateOf("I_OWE") }
+    // Null es "no mover dinero": sirve para apuntar una deuda vieja, cuyo dinero ya se
+    // movio hace tiempo y volver a moverlo descuadraria la cuenta.
+    var selectedAccountId by remember(accounts) { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -546,11 +551,39 @@ private fun CreateDebtSheet(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
+            // De donde sale (o entra) el dinero. Sin esto la deuda era solo un apunte:
+            // prestabas RD$5,000 y ninguna cuenta bajaba, asi que el saldo seguia diciendo
+            // que tenias ese dinero encima.
+            Text(
+                text = stringResource(
+                    if (direction == "OWED_TO_ME") R.string.debts_money_from
+                    else R.string.debts_money_into
+                ),
+                style = MaterialTheme.typography.labelLarge
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    // Para deudas viejas, cuyo dinero se movio hace tiempo: volver a
+                    // moverlo ahora descuadraria la cuenta.
+                    FilterChip(
+                        selected = selectedAccountId == null,
+                        onClick = { selectedAccountId = null },
+                        label = { Text(stringResource(R.string.debts_no_account)) }
+                    )
+                }
+                items(accounts) { account ->
+                    FilterChip(
+                        selected = selectedAccountId == account.id,
+                        onClick = { selectedAccountId = account.id },
+                        label = { Text(account.name, maxLines = 1) }
+                    )
+                }
+            }
             Button(
                 onClick = {
                     val amount = MoneyParser.parseMinorUnits(amountStr) ?: 0L
                     if (name.isNotBlank() && amount > 0L) {
-                        onSave(name, description, direction, amount)
+                        onSave(name, description, direction, amount, selectedAccountId)
                     }
                 },
                 enabled = name.isNotBlank() && (MoneyParser.parseMinorUnits(amountStr) ?: 0L) > 0L,

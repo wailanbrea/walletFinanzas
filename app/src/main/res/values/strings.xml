@@ -213,6 +213,9 @@
     <string name="debts_empty_desc">Registra lo que debes o lo que te deben con el botón +</string>
     <string name="debts_i_owe">Yo debo</string>
     <string name="debts_owed_to_me">Me deben</string>
+    <string name="debts_money_from">¿De qué cuenta sale el dinero?</string>
+    <string name="debts_money_into">¿En qué cuenta entra el dinero?</string>
+    <string name="debts_no_account">No mover dinero</string>
     <string name="debts_settled">Saldada · se cobraron %1$s</string>
     <string name="debts_detail_title">Detalle de la deuda</string>
     <string name="debts_detail_total">Monto de la deuda</string>
@@ -442,6 +445,8 @@
     <string name="reports_no_expenses">Sin gastos aún</string>
     <string name="reports_total">Total</string>
     <string name="reports_income_vs_expenses">Ingresos vs Gastos</string>
+    <string name="reports_category_details_title">Detalle de gastos por categoría</string>
+    <string name="reports_category_details_empty">No hay gastos registrados en esta categoría.</string>
 
     <!-- Perfil -->
     <string name="profile_title">Perfil</string>
@@ -548,6 +553,7 @@
     <string name="email_sync_from">Sincronizar desde: %1$s</string>
     <string name="email_sync_summary">Revisados: %1$d · nuevos: %2$d · movimientos detectados: %3$d · conversiones actualizadas: %4$d</string>
     <string name="email_candidates_title">Movimientos detectados</string>
+    <string name="email_candidates_redirect_note">Los movimientos encontrados se revisan en Movimientos detectados. Esta pantalla queda para conectar y sincronizar tus cuentas de correo.</string>
     <string name="email_candidate_remove">Quitar de la lista</string>
     <string name="email_candidates_all_dates">Todas las fechas</string>
     <string name="email_candidate_mark_duplicate">Marcar como duplicado</string>
@@ -604,6 +610,10 @@
     <string name="settings_bank_notifications">Notificaciones bancarias</string>
     <string name="settings_bank_notifications_sub">Autoriza apps y revisa capturas locales</string>
     <string name="bank_notifications_listener_label">Captura bancaria de Wallet</string>
+    <string name="bank_notices_filter_all">Todas</string>
+    <string name="bank_notices_filter_banks">Bancos y tarjetas</string>
+    <string name="bank_notices_filter_email">Correo</string>
+    <string name="bank_notices_sources_empty_filtered">Ninguna app de este tipo te ha notificado todavía.</string>
     <string name="bank_notices_title">Notificaciones bancarias</string>
     <string name="bank_notices_access_title">1. Acceso del sistema</string>
     <string name="bank_notices_access_granted">Acceso concedido. Wallet puede detectar las apps que te notifican.</string>
@@ -670,6 +680,13 @@
     <string name="detected_movement_direction">Tipo</string>
     <string name="detected_movement_account">Cuenta</string>
     <string name="detected_movement_category">Categoría</string>
+    <string name="detected_movements_filter_date">Elegir fecha</string>
+    <string name="detected_movements_filter_clear_date">Todas las fechas</string>
+    <string name="detected_movements_sort_newest">Más recientes</string>
+    <string name="detected_movements_sort_oldest">Más antiguos</string>
+    <string name="detected_movement_amount_estimated">Estimado desde %1$s. Puedes corregir el monto exacto.</string>
+    <string name="detected_movement_current_rate">Tasa de hoy: 1 USD = %1$s DOP. El estimado se puede editar.</string>
+    <string name="detected_movement_remember_category">Recordar esta categoría para futuros correos</string>
     <string name="detected_movement_amount">Monto en %1$s</string>
     <string name="detected_movement_amount_invalid">Introduce un monto válido mayor que cero.</string>
     <string name="detected_movement_date">Fecha</string>

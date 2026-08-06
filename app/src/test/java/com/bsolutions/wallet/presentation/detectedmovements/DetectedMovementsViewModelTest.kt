@@ -1,6 +1,10 @@
 package com.bsolutions.wallet.presentation.detectedmovements
 
 import com.bsolutions.wallet.core.database.WalletOwnerScope
+import com.bsolutions.wallet.domain.email.SyncConnectedEmailAccounts
+import com.bsolutions.wallet.core.common.CategoryRuleRepository
+import com.bsolutions.wallet.core.network.UsdDopRateService
+import com.bsolutions.wallet.core.common.CustomCategoryRule
 import com.bsolutions.wallet.core.notifications.ParsedBankNotice
 import com.bsolutions.wallet.data.local.dao.DetectedMovementDao
 import com.bsolutions.wallet.data.local.entity.DetectedMovementEntity
@@ -137,7 +141,8 @@ class DetectedMovementsViewModelTest {
             categoryId = "cat_food",
             amountMinor = 10_000,
             direction = "expense",
-            occurredAt = 1_700_000_100_000
+            occurredAt = 1_700_000_100_000,
+             rememberCategory = true
         )
 
         viewModel.book(request)
@@ -146,6 +151,8 @@ class DetectedMovementsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, fixture.transactionRepository.added.size)
+        assertEquals("Amazon", fixture.categoryRules.state.value.single().keyword)
+        assertEquals("cat_food", fixture.categoryRules.state.value.single().categoryId)
         assertTrue(viewModel.uiState.value.groups.isEmpty())
     }
 
@@ -182,6 +189,7 @@ private class Fixture {
     val emailRepository = ViewModelEmailRepository()
     val accountRepository = ViewModelAccountRepository()
     val categoryRepository = ViewModelCategoryRepository()
+    val categoryRules = FakeCategoryRules()
     val transactionRepository = ViewModelTransactionRepository()
     private val ownerScope = WalletOwnerScope(ViewModelSessionStore())
     var nowMillis: Long = Instant.parse("2023-11-14T23:00:00Z").toEpochMilli()
@@ -193,7 +201,10 @@ private class Fixture {
         categoryRepository = categoryRepository,
         transactionRepository = transactionRepository,
         ownerScope = ownerScope,
-        bankNotificationRepository = null
+        bankNotificationRepository = null,
+        categoryRules = categoryRules,
+        usdDopRateService = UsdDopRateService(null),
+        syncConnectedEmailAccounts = SyncConnectedEmailAccounts(emailRepository)
     ).also { it.nowMillisProvider = { nowMillis } }
 
     suspend fun seedPending(id: String, occurredAt: String) {
@@ -283,6 +294,13 @@ private class ViewModelDetectedMovementDao : DetectedMovementDao {
         it.ownerId == ownerId && (it.id == canonicalId || it.canonicalId == canonicalId)
     }
 
+    override suspend fun findPendingPossibleDuplicatesPointingTo(
+        ownerId: String,
+        canonicalId: String
+    ) = movements.filter {
+        it.ownerId == ownerId && it.status == "PENDING" && it.duplicateOfId == null &&
+            it.possibleDuplicateOfId == canonicalId
+    }
     override suspend fun insertMovement(movement: DetectedMovementEntity): Long {
         if (movements.any {
                 it.ownerId == movement.ownerId &&
@@ -403,6 +421,17 @@ private class ViewModelDetectedMovementDao : DetectedMovementDao {
         publish()
         return count
     }
+}
+
+
+private class FakeCategoryRules : CategoryRuleRepository {
+    val state = MutableStateFlow<List<CustomCategoryRule>>(emptyList())
+    override val rules: Flow<List<CustomCategoryRule>> = state
+    override suspend fun add(keyword: String, categoryId: String) {
+        state.value = state.value.filterNot { it.keyword == keyword } + CustomCategoryRule(keyword, categoryId)
+    }
+    override suspend fun remove(keyword: String) { state.value = state.value.filterNot { it.keyword == keyword } }
+    override suspend fun removeByCategory(categoryId: String) { state.value = state.value.filterNot { it.categoryId == categoryId } }
 }
 
 private class ViewModelEmailRepository : EmailConnectionsRepository {

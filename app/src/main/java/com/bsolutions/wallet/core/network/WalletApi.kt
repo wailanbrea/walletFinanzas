@@ -8,6 +8,7 @@ import retrofit2.http.PATCH
 import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.Query
+import retrofit2.http.Url
 
 data class ApiEnvelope<T>(val data: T)
 
@@ -390,6 +391,9 @@ interface WalletApi {
         @Path("provider") provider: String,
         @Path("run") runId: Long
     ): ApiEnvelope<EmailSyncDto>
+
+    @GET
+    suspend fun currentUsdDopRate(@Url url: String): CurrentUsdDopRateDto
 
     @GET("email-candidates")
     suspend fun emailCandidates(): ApiEnvelope<List<EmailCandidateDto>>

@@ -719,98 +719,16 @@ fun EmailConnectionsScreen(
                         }
                     }
                 }
-                if (state.candidates.isNotEmpty()) {
-                    item {
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                         Text(
-                            text = stringResource(R.string.email_candidates_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            TextButton(
-                                onClick = { confirmClearAll = true },
-                                enabled = state.actionProvider == null && state.reviewCandidateId == null
-                            ) {
-                                Text(stringResource(R.string.email_candidates_clear_all))
-                            }
-                        }
-                    }
-                    // Filtro por día: un gasto se recuerda por cuándo pasó, no por
-                    // el proveedor de correo que lo trajo.
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedButton(onClick = { showDateFilter = true }) {
-                                Icon(
-                                    imageVector = Icons.Default.CalendarMonth,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    state.selectedDate?.let { formatCandidateDay(it) }
-                                        ?: stringResource(R.string.email_candidates_all_dates)
-                                )
-                            }
-                            if (state.selectedDate != null) {
-                                TextButton(onClick = { viewModel.selectDate(null) }) {
-                                    Text(stringResource(R.string.email_candidates_all_dates))
-                                }
-                            }
-                        }
-                    }
-
-                    val byDate = state.candidatesByDate
-                    if (byDate.isEmpty()) {
-                        item {
-                            Text(
-                                text = stringResource(R.string.email_candidates_none_that_day),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    byDate.forEach { (day, dayCandidates) ->
-                        item {
-                            Text(
-                                text = formatCandidateDay(day),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        items(dayCandidates, key = { it.id }) { candidate ->
-                            CandidateCard(
-                                candidate = candidate,
-                                isReviewing = state.reviewCandidateId != null || state.actionProvider != null,
-                                onClassify = { classifyCandidate = candidate },
-                                onDismiss = { dismissCandidate = candidate },
-                                onRemove = { viewModel.remove(candidate.id) },
-                                // Solo se ofrece si hay otro candidato con el que
-                                // emparejar: sin pareja, marcar duplicado no dice nada.
-                                onMarkDuplicate = state.duplicateCandidateFor(candidate)
-                                    ?.let { original -> { duplicatePair = candidate to original } }
-                            )
-                        }
-                    }
-                } else if (state.syncResult != null) {
-                    item {
-                        Text(
-                            text = stringResource(R.string.email_candidates_empty),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = stringResource(R.string.email_candidates_redirect_note),
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
+
                 item {
                     Text(
                         text = stringResource(R.string.email_privacy_note),

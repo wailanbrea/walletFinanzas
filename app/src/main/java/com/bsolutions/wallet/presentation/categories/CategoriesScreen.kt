@@ -32,7 +32,9 @@ import com.bsolutions.wallet.presentation.dashboard.getIconForName
 /** Colores predefinidos para categorías. */
 private val presetColors = listOf(
     "#2E7D32", "#1565C0", "#C62828", "#F9A825",
-    "#6A1B9A", "#00838F", "#EF6C00", "#4E342E"
+    "#6A1B9A", "#00838F", "#EF6C00", "#4E342E",
+    "#AD1457", "#4527A0", "#00695C", "#283593",
+    "#558B2F", "#5D4037", "#37474F", "#D84315"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

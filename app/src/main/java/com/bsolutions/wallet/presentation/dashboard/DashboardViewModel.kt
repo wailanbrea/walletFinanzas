@@ -171,6 +171,7 @@ class DashboardViewModel @Inject constructor(
             DefaultCategories.asCategories()
                 .filter { it.id !in existingIds }
                 .forEach { categoryRepository.addCategory(it) }
+            migrateFoodCategories()
         }
     }
 
@@ -182,6 +183,35 @@ class DashboardViewModel @Inject constructor(
     private val refreshTick = MutableStateFlow(0L)
     private val filtersWithRefresh = combine(filters, refreshTick) { activeFilters, _ -> activeFilters }
     internal var nowMillisProvider: () -> Long = System::currentTimeMillis
+
+
+    /** Normaliza el grupo de alimentos sin tocar montos ni saldos históricos. */
+    private suspend fun migrateFoodCategories() {
+        val categories = categoryRepository.getCategories().first()
+        val supermarket = categories.firstOrNull { it.id == "cat_supermercado" } ?: return
+        val aliases = categories.filter { category ->
+            category.id != supermarket.id && ExpenseCategorizer.normalizeText(category.name) in setOf("super mercado", "supermercado")
+        }
+        val transactions = transactionRepository.getTransactions().first()
+        val supermarketIds = aliases.mapTo(mutableSetOf()) { it.id } + supermarket.id
+        transactions.filter { transaction ->
+            transaction.categoryId in aliases.map { it.id } ||
+                (transaction.type == "EXPENSE" && transaction.categoryId == "cat_alimentacion" &&
+                    ExpenseCategorizer.inferCategoryId(transaction.note) == "cat_supermercado")
+        }.forEach { transaction ->
+            if (transaction.categoryId != supermarket.id) {
+                transactionRepository.updateTransaction(transaction.copy(categoryId = supermarket.id))
+            }
+        }
+        aliases.forEach { categoryRepository.deleteCategory(it.id) }
+        val supermarketWords = setOf("supermerc", "colmado", "nacional", "jumbo", "sirena", "pola", "bravo", "market", "grocer")
+        categoryRules.rules.first().filter { rule ->
+            rule.categoryId in supermarketIds && supermarketWords.any { word -> ExpenseCategorizer.normalizeText(rule.keyword).contains(word) }
+        }.forEach { rule ->
+            categoryRules.remove(rule.keyword)
+            categoryRules.add(rule.keyword, supermarket.id)
+        }
+    }
 
     fun toggleBalancesHidden() {
         viewModelScope.launch {

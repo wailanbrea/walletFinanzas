@@ -7,6 +7,8 @@ import com.bsolutions.wallet.domain.model.Debt
 import com.bsolutions.wallet.domain.repository.AccountRepository
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.domain.repository.DebtRepository
+import com.bsolutions.wallet.domain.usecase.DEBT_OWED_TO_ME
+import com.bsolutions.wallet.domain.usecase.LOAN_CATEGORY_ID
 import com.bsolutions.wallet.domain.repository.TransactionRepository
 import com.bsolutions.wallet.domain.usecase.DebtLedger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -64,19 +66,57 @@ class DebtsViewModel @Inject constructor(
             initialValue = DebtsUiState()
         )
 
-    fun addDebt(name: String, description: String, direction: String, totalAmount: Long) {
+    /**
+     * Abre una deuda y, si se dice de que cuenta sale (o entra) el dinero, registra
+     * tambien el movimiento.
+     *
+     * Antes la deuda era solo un apunte: prestabas RD$5,000 y ninguna cuenta bajaba, asi
+     * que el saldo decia que seguias teniendo ese dinero. Con [accountId] el prestamo sale
+     * de donde salio de verdad. Sigue pudiendo quedarse en null para apuntar una deuda
+     * vieja, de la que el dinero se movio hace tiempo y no toca volver a moverlo.
+     *
+     * El movimiento nace ya atado y no pasa por el libro de deudas: la deuda se crea con
+     * su importe entero, y aplicarle ademas el delta lo contaria dos veces.
+     */
+    fun addDebt(
+        name: String,
+        description: String,
+        direction: String,
+        totalAmount: Long,
+        accountId: String? = null
+    ) {
         if (name.isBlank() || totalAmount <= 0L) return
         viewModelScope.launch {
-            debtRepository.addDebt(
-                Debt(
+            val debt = Debt(
+                id = UUID.randomUUID().toString(),
+                name = name.trim(),
+                description = description.trim(),
+                direction = direction,
+                totalAmount = totalAmount,
+                paidAmount = 0L,
+                dueDate = null,
+                isClosed = false
+            )
+            debtRepository.addDebt(debt)
+
+            val account = accountId?.let { id -> uiState.value.accounts.firstOrNull { it.id == id } }
+                ?: return@launch
+
+            transactionRepository.addTransactionWithBalance(
+                Transaction(
                     id = UUID.randomUUID().toString(),
-                    name = name.trim(),
-                    description = description.trim(),
-                    direction = direction,
-                    totalAmount = totalAmount,
-                    paidAmount = 0L,
-                    dueDate = null,
-                    isClosed = false
+                    accountId = account.id,
+                    amount = totalAmount,
+                    // Prestar saca dinero de tu cuenta; pedir prestado lo mete.
+                    type = if (direction == DEBT_OWED_TO_ME) "EXPENSE" else "INCOME",
+                    // La categoria de prestamos es la que hace que la ida y la vuelta se
+                    // neteen en los graficos en vez de contarse como gasto e ingreso.
+                    categoryId = LOAN_CATEGORY_ID,
+                    date = System.currentTimeMillis(),
+                    note = if (direction == DEBT_OWED_TO_ME) "Prestamo a ${debt.name}"
+                    else "Prestamo de ${debt.name}",
+                    currency = account.currency,
+                    debtId = debt.id
                 )
             )
         }

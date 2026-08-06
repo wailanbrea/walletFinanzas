@@ -14,6 +14,7 @@ import com.bsolutions.wallet.core.network.LoginRequest
 import com.bsolutions.wallet.core.network.MessageResponse
 import com.bsolutions.wallet.core.network.RegisterRequest
 import com.bsolutions.wallet.core.network.WalletApi
+import com.bsolutions.wallet.core.network.CurrentUsdDopRateDto
 import com.bsolutions.wallet.core.network.handleWalletResponse
 import com.bsolutions.wallet.core.network.walletDeviceName
 import com.bsolutions.wallet.core.database.LocalDataIsolation
@@ -164,6 +165,7 @@ class WalletAuthRepositoryTest {
 }
 
 private class FakeWalletApi : WalletApi {
+    override suspend fun currentUsdDopRate(url: String) = CurrentUsdDopRateDto()
     override suspend fun getProfile(): ApiEnvelope<AuthUserDto> = error("sin uso")
     override suspend fun updateProfile(request: UpdateProfileRequest): ApiEnvelope<AuthUserDto> = error("sin uso")
     var registerRequest: RegisterRequest? = null

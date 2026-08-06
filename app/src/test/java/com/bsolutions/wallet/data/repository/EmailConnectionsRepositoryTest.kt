@@ -14,6 +14,7 @@ import com.bsolutions.wallet.core.network.LoginRequest
 import com.bsolutions.wallet.core.network.MessageResponse
 import com.bsolutions.wallet.core.network.RegisterRequest
 import com.bsolutions.wallet.core.network.WalletApi
+import com.bsolutions.wallet.core.network.CurrentUsdDopRateDto
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -149,6 +150,7 @@ private class FakeEmailConnectionsApi(
     private val authorizationUrl: String = "https://example.test/authorize",
     private val syncRuns: List<EmailSyncDto> = listOf(EmailSyncDto(syncRunId = 1L, status = "completed"))
 ) : WalletApi {
+    override suspend fun currentUsdDopRate(url: String) = CurrentUsdDopRateDto()
     override suspend fun getProfile(): ApiEnvelope<AuthUserDto> = error("sin uso")
     override suspend fun updateProfile(request: UpdateProfileRequest): ApiEnvelope<AuthUserDto> = error("sin uso")
     val authorizationProviders = mutableListOf<String>()

@@ -14,6 +14,8 @@ import androidx.work.WorkManager
 import com.bsolutions.wallet.core.email.EmailSyncWorker
 import com.bsolutions.wallet.core.notifications.PlannedPaymentWorker
 import com.bsolutions.wallet.core.sync.SyncScheduler
+import com.bsolutions.wallet.domain.email.SyncConnectedEmailAccounts
+import javax.inject.Provider
 import com.bsolutions.wallet.core.sync.SyncWorker
 import com.bsolutions.wallet.core.database.LocalDataIsolation
 import coil.ImageLoader
@@ -39,6 +41,9 @@ class WalletApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
     @Inject
     lateinit var syncScheduler: SyncScheduler
+
+    @Inject
+    lateinit var syncConnectedEmailAccounts: Provider<SyncConnectedEmailAccounts>
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -95,6 +100,15 @@ class WalletApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
                 // Sube lo pendiente y baja lo del servidor. Sin sesion sale enseguida.
                 syncScheduler.requestSyncNow()
+
+                // Y se mira el buzon. Antes solo lo hacia el trabajo periodico de 15
+                // minutos, que Android ademas difiere: comprar con la tarjeta, recibir el
+                // correo del banco y abrir la app no traia el movimiento hasta que a ese
+                // trabajo le tocara correr. Falla en silencio a proposito: si no hay
+                // correo conectado o no hay red, abrir la app no puede romperse por eso.
+                applicationScope.launch {
+                    runCatching { syncConnectedEmailAccounts.get().invoke() }
+                }
             }
 
             override fun onActivityStopped(activity: Activity) {

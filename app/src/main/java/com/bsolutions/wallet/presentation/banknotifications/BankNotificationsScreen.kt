@@ -63,7 +63,10 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.material3.FilterChip
 import com.bsolutions.wallet.R
+import com.bsolutions.wallet.core.notifications.NotificationSourceKind
+import com.bsolutions.wallet.core.notifications.notificationSourceKind
 import com.bsolutions.wallet.data.local.entity.NotificationSourceEntity
 import com.bsolutions.wallet.data.local.entity.RawBankNoticeEntity
 import com.bsolutions.wallet.presentation.common.walletTopBarColors
@@ -83,6 +86,8 @@ fun BankNotificationsScreen(
     val scope = rememberCoroutineScope()
     var hasListenerAccess by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
+    // Null es "todas": el filtro ordena la lista, no decide nada por ti.
+    var sourceFilter by remember { mutableStateOf<NotificationSourceKind?>(null) }
 
     fun refreshAccess() {
         hasListenerAccess = context.packageName in
@@ -190,10 +195,42 @@ fun BankNotificationsScreen(
                 Text(stringResource(R.string.bank_notices_sources_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(stringResource(R.string.bank_notices_sources_help), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (state.sources.isEmpty()) {
-                item { EmptyCard(stringResource(R.string.bank_notices_sources_empty)) }
+            item {
+                // La lista trae todo lo que ha notificado alguna vez: el clima, la tienda
+                // de apps, los mensajes. Encontrar el banco ahi dentro era buscar entre
+                // veinte, y es justo donde hay que fijarse para autorizar.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = sourceFilter == null,
+                        onClick = { sourceFilter = null },
+                        label = { Text(stringResource(R.string.bank_notices_filter_all)) }
+                    )
+                    FilterChip(
+                        selected = sourceFilter == NotificationSourceKind.BANK,
+                        onClick = { sourceFilter = NotificationSourceKind.BANK },
+                        label = { Text(stringResource(R.string.bank_notices_filter_banks)) }
+                    )
+                    FilterChip(
+                        selected = sourceFilter == NotificationSourceKind.EMAIL,
+                        onClick = { sourceFilter = NotificationSourceKind.EMAIL },
+                        label = { Text(stringResource(R.string.bank_notices_filter_email)) }
+                    )
+                }
+            }
+            val shownSources = state.sources.filter { source ->
+                sourceFilter == null || notificationSourceKind(source.packageName) == sourceFilter
+            }
+            if (shownSources.isEmpty()) {
+                item {
+                    EmptyCard(
+                        stringResource(
+                            if (state.sources.isEmpty()) R.string.bank_notices_sources_empty
+                            else R.string.bank_notices_sources_empty_filtered
+                        )
+                    )
+                }
             } else {
-                items(state.sources, key = { "${it.ownerId}:${it.packageName}" }) { source ->
+                items(shownSources, key = { "${it.ownerId}:${it.packageName}" }) { source ->
                     SourceRow(source, viewModel::setSourceEnabled)
                 }
             }

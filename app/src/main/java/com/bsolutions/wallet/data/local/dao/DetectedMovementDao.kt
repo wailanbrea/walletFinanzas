@@ -1,4 +1,4 @@
-package com.bsolutions.wallet.data.local.dao
+﻿package com.bsolutions.wallet.data.local.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
@@ -47,8 +47,16 @@ interface DetectedMovementDao {
             "AND (id = :canonicalId OR canonicalId = :canonicalId) ORDER BY occurredAt ASC"
     )
     suspend fun getEvidence(ownerId: String, canonicalId: String): List<DetectedMovementEntity>
+    @Query(
+        "SELECT * FROM detected_movements WHERE ownerId = :ownerId AND status = 'PENDING' " +
+            "AND duplicateOfId IS NULL AND possibleDuplicateOfId = :canonicalId ORDER BY occurredAt ASC"
+    )
+    suspend fun findPendingPossibleDuplicatesPointingTo(
+        ownerId: String,
+        canonicalId: String
+    ): List<DetectedMovementEntity>
 
-    /** Una evidencia recibida previamente nunca sobrescribe una decisión del usuario. */
+    /** Una evidencia recibida previamente nunca sobrescribe una decisiÃ³n del usuario. */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertMovement(movement: DetectedMovementEntity): Long
 

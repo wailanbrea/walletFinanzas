@@ -59,10 +59,33 @@ class DetectedMovementRepository @Inject constructor(
         dao.getPendingMovements(ownerId)
 
     suspend fun deduplicateExistingPendingMovements(ownerId: String = WALLET_GUEST_OWNER_ID) = ingestionMutex.withLock {
-        val pending = dao.getAll(ownerId).filter { it.status == "PENDING" && it.duplicateOfId == null }
+        val all = dao.getAll(ownerId)
+        val bookedGroups = mutableListOf<Pair<DetectedMovementEntity, String>>()
+        all.filter { it.status == "APPROVED" && it.duplicateOfId == null }.forEach { root ->
+            val canonicalId = root.canonicalId ?: root.id
+            val transactionId = transactionIdForCanonical(canonicalId)
+            if (transactionDao.getTransactionById(ownerId, transactionId) != null) {
+                bookedGroups += root to transactionId
+            }
+        }
+        val pending = all.filter { it.status == "PENDING" && it.duplicateOfId == null }
         for (i in pending.indices) {
             val current = pending[i]
             val currentCanonicalId = current.canonicalId ?: current.id
+
+            val bookedMatch = bookedGroups.firstOrNull { (bookedRoot, _) ->
+                FinancialEventMatcher.match(current.toEvidence(), listOf(bookedRoot.toEvidence())) is
+                    FinancialMatchResult.StrongMatch
+            }
+            if (bookedMatch != null) {
+                dao.resolveCanonicalAsTransactionDuplicate(
+                    ownerId = ownerId,
+                    canonicalId = currentCanonicalId,
+                    transactionReference = "transaction:${bookedMatch.second}",
+                    reason = "Movimiento ya registrado mediante otra evidencia del mismo cargo.",
+                )
+                continue
+            }
 
             val bookedTxId = transactionIdForCanonical(currentCanonicalId)
             if (transactionDao.getTransactionById(ownerId, bookedTxId) != null) {
@@ -170,23 +193,76 @@ class DetectedMovementRepository @Inject constructor(
             return@withLock PossibleDuplicateResolution.MATCHED_EXISTING_TRANSACTION
         }
 
-        val target = requireNotNull(dao.getMovementById(ownerId, possibleTarget)) {
-            "La otra evidencia ya no está disponible."
-        }
-        require(target.status == "PENDING" && target.duplicateOfId == null) {
-            "La otra detección ya fue procesada. Actualiza la bandeja."
+        val target = dao.getMovementById(ownerId, possibleTarget)
+        if (target == null) {
+            check(dao.resolveCanonicalAsSeparate(ownerId, canonicalId) == 1) {
+                "No se pudo conservar el movimiento como independiente."
+            }
+            return@withLock PossibleDuplicateResolution.KEPT_SEPARATE
         }
         val targetCanonicalId = target.canonicalId ?: target.id
         require(targetCanonicalId != canonicalId) { "Un movimiento no puede duplicarse a sí mismo." }
-        dao.reassignCanonicalGroup(
-            ownerId = ownerId,
-            oldCanonicalId = canonicalId,
-            newCanonicalId = targetCanonicalId,
-            reason = "El usuario confirmó que ambas detecciones representan el mismo movimiento."
-        )
+
+        if (target.status == "PENDING" && target.duplicateOfId == null) {
+            dao.reassignCanonicalGroup(
+                ownerId = ownerId,
+                oldCanonicalId = canonicalId,
+                newCanonicalId = targetCanonicalId,
+                reason = "El usuario confirmó que ambas detecciones representan el mismo movimiento."
+            )
+            return@withLock PossibleDuplicateResolution.MERGED_WITH_DETECTED_MOVEMENT
+        }
+
+        // El objetivo ya fue procesado (p. ej. contabilizado antes que esta evidencia).
+        // Vincular esta cola al mismo registro impide que reaparezca como pendiente.
+        val bookedTransactionId = transactionIdForCanonical(targetCanonicalId)
+        if (transactionDao.getTransactionById(ownerId, bookedTransactionId) != null) {
+            check(
+                dao.resolveCanonicalAsTransactionDuplicate(
+                    ownerId = ownerId,
+                    canonicalId = canonicalId,
+                    transactionReference = "transaction:$bookedTransactionId",
+                    reason = "El usuario confirmó que este cargo ya quedó registrado."
+                ) > 0
+            ) { "No se pudo vincular el movimiento con el registro existente." }
+            return@withLock PossibleDuplicateResolution.MATCHED_EXISTING_TRANSACTION
+        }
+
+        dao.updateCanonicalGroupStatus(ownerId, canonicalId, "DISMISSED", needsSync = false)
         PossibleDuplicateResolution.MERGED_WITH_DETECTED_MOVEMENT
     }
 
+
+    /**
+     * Tras contabilizar un grupo (ya existe su transacción), las raíces pendientes que
+     * lo señalaban como su posible duplicado se unen al mismo registro. Sin esto, la
+     * "cola" del par duplicado sigue apareciendo como pendiente aunque el usuario ya
+     * haya confirmado y agregado el movimiento.
+     *
+     * @return cuántas evidencias hermanas quedaron resueltas contra el registro.
+     */
+    suspend fun resolveSiblingsPointingToBooked(
+        canonicalId: String,
+        ownerId: String = WALLET_GUEST_OWNER_ID
+    ): Int = ingestionMutex.withLock {
+        val bookedTransactionId = transactionIdForCanonical(canonicalId)
+        if (transactionDao.getTransactionById(ownerId, bookedTransactionId) == null) {
+            return@withLock 0
+        }
+        val siblings = dao.findPendingPossibleDuplicatesPointingTo(ownerId, canonicalId)
+        var resolved = 0
+        for (sibling in siblings) {
+            val siblingCanonical = sibling.canonicalId ?: sibling.id
+            if (siblingCanonical == canonicalId) continue
+            resolved += dao.resolveCanonicalAsTransactionDuplicate(
+                ownerId = ownerId,
+                canonicalId = siblingCanonical,
+                transactionReference = "transaction:$bookedTransactionId",
+                reason = "El usuario confirmó varias evidencias del mismo cargo ya contabilizado."
+            )
+        }
+        resolved
+    }
     suspend fun dismissCanonicalGroup(
         canonicalId: String,
         ownerId: String = WALLET_GUEST_OWNER_ID
@@ -196,17 +272,18 @@ class DetectedMovementRepository @Inject constructor(
 
     suspend fun completeBookingReview(
         canonicalId: String,
+        reviewedEvidenceIds: Set<String>,
         failedEmailEvidenceIds: Set<String>,
         ownerId: String = WALLET_GUEST_OWNER_ID
     ) = ingestionMutex.withLock {
         dao.updateCanonicalGroupStatus(ownerId, canonicalId, "APPROVED", needsSync = false)
-        failedEmailEvidenceIds.forEach { evidenceId ->
+        reviewedEvidenceIds.forEach { evidenceId ->
             check(
                 dao.updateEvidenceReviewState(
                     ownerId = ownerId,
                     evidenceId = evidenceId,
                     status = "APPROVED",
-                    needsSync = true
+                    needsSync = evidenceId in failedEmailEvidenceIds
                 ) == 1
             ) { "No se pudo conservar la confirmación pendiente del correo." }
         }

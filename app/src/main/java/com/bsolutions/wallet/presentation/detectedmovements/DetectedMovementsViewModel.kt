@@ -7,6 +7,7 @@ import com.bsolutions.wallet.data.local.entity.DetectedMovementEntity
 import com.bsolutions.wallet.data.repository.BankNotificationRepository
 import com.bsolutions.wallet.data.repository.DetectedMovementRepository
 import com.bsolutions.wallet.data.repository.EmailConnectionsRepository
+import com.bsolutions.wallet.domain.email.SyncConnectedEmailAccounts
 import com.bsolutions.wallet.data.repository.PossibleDuplicateResolution
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Category
@@ -26,6 +27,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import com.bsolutions.wallet.core.common.ExpenseCategorizer
+import com.bsolutions.wallet.core.common.CategoryRuleRepository
+import com.bsolutions.wallet.core.common.CustomCategoryRule
+import com.bsolutions.wallet.core.common.EmptyCategoryRules
+import com.bsolutions.wallet.core.network.UsdDopRateService
+import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
@@ -57,12 +63,22 @@ data class DetectedMovementGroup(
         get() = root.possibleDuplicateOfId != null
 }
 
+internal data class DetectedMovementViewOptions(
+    val filter: DetectedMovementDateFilter,
+    val customDate: LocalDate?,
+    val sortAscending: Boolean,
+    val usdDopRateMicros: Long?
+)
+
 data class DetectedMovementsUiState(
     val phase: DetectedMovementsPhase = DetectedMovementsPhase.LOADING,
     val groups: List<DetectedMovementGroup> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val categories: List<Category> = emptyList(),
     val selectedDateFilter: DetectedMovementDateFilter = DetectedMovementDateFilter.TODAY,
+    val selectedDate: LocalDate? = null,
+    val sortAscending: Boolean = false,
+    val currentUsdDopRateMicros: Long? = null,
     val allActionableCount: Int = 0,
     val activeMovementId: String? = null,
     val isRefreshing: Boolean = false,
@@ -75,7 +91,8 @@ data class DetectedMovementBookingRequest(
     val categoryId: String,
     val amountMinor: Long,
     val direction: String,
-    val occurredAt: Long
+    val occurredAt: Long,
+    val rememberCategory: Boolean = false
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -87,19 +104,31 @@ class DetectedMovementsViewModel @Inject constructor(
     private val categoryRepository: CategoryRepository,
     private val transactionRepository: TransactionRepository,
     private val ownerScope: WalletOwnerScope,
-    private val bankNotificationRepository: BankNotificationRepository? = null
+    private val bankNotificationRepository: BankNotificationRepository? = null,
+    private val categoryRules: CategoryRuleRepository = EmptyCategoryRules,
+    private val usdDopRateService: UsdDopRateService,
+    private val syncConnectedEmailAccounts: SyncConnectedEmailAccounts
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DetectedMovementsUiState())
     val uiState: StateFlow<DetectedMovementsUiState> = _uiState.asStateFlow()
     private val selectedDateFilter = MutableStateFlow(DetectedMovementDateFilter.TODAY)
+    private val selectedDate = MutableStateFlow<LocalDate?>(null)
+    private val sortAscending = MutableStateFlow(false)
     private val dateRefreshTick = MutableStateFlow(0L)
-    private val dateFilterState = combine(selectedDateFilter, dateRefreshTick) { filter, _ -> filter }
+    private val dateFilterState = combine(selectedDateFilter, selectedDate, sortAscending, dateRefreshTick) { filter, customDate, ascending, _ ->
+        DetectedMovementViewOptions(filter, customDate, ascending, null)
+    }
+    private val currentUsdDopRateMicros = MutableStateFlow<Long?>(null)
+    private val viewOptionsState = combine(dateFilterState, currentUsdDopRateMicros) { options, rate ->
+        options.copy(usdDopRateMicros = rate)
+    }
     internal var nowMillisProvider: () -> Long = System::currentTimeMillis
 
     init {
         viewModelScope.launch {
             runCatching {
-                detectedMovementRepository.deduplicateExistingPendingMovements()
+                val ownerId = ownerScope.currentOwnerId()
+                detectedMovementRepository.deduplicateExistingPendingMovements(ownerId)
                 autoBookMultiEvidenceMovements()
             }
         }
@@ -108,23 +137,22 @@ class DetectedMovementsViewModel @Inject constructor(
                 ownerScope.ownerId.flatMapLatest(detectedMovementRepository::observeAll),
                 accountRepository.getAccounts(),
                 categoryRepository.getCategories(),
-                dateFilterState
-            ) { movements, accounts, categories, dateFilter ->
-                val allGroups = movements.toActionableGroups()
-                val groups = allGroups.filterByDate(
-                    filter = dateFilter,
-                    nowMillis = nowMillisProvider()
-                )
+                categoryRules.rules,
+                viewOptionsState,
+            ) { movements, accounts, categories, rules, options ->
+                val allGroups = movements.toActionableGroups().map { it.withCategorySuggestion(categories, rules) }
+                val groups = allGroups
+                    .filterByDate(options.filter, nowMillisProvider(), customDate = options.customDate)
+                    .sortedByDate(options.sortAscending)
                 _uiState.value.copy(
-                    phase = if (groups.isEmpty()) {
-                        DetectedMovementsPhase.EMPTY
-                    } else {
-                        DetectedMovementsPhase.CONTENT
-                    },
+                    phase = if (groups.isEmpty()) DetectedMovementsPhase.EMPTY else DetectedMovementsPhase.CONTENT,
                     groups = groups,
                     accounts = accounts.sortedBy { it.name },
                     categories = categories.sortedBy { it.name },
-                    selectedDateFilter = dateFilter,
+                    selectedDateFilter = options.filter,
+                    selectedDate = options.customDate,
+                    sortAscending = options.sortAscending,
+                    currentUsdDopRateMicros = options.usdDopRateMicros,
                     allActionableCount = allGroups.size
                 )
             }.collect(_uiState)
@@ -140,23 +168,41 @@ class DetectedMovementsViewModel @Inject constructor(
                 it.root.status == "PENDING" && !it.isPossibleDuplicate && it.evidence.size >= 2
             }
             if (groups.isEmpty()) return
+            // book() resuelve cuenta y categoria contra _uiState, asi que registrar antes
+            // de que el estado se llene falla siempre. Es lo que pasaba corriendo esto solo
+            // en el init: se ejecutaba contra un estado vacio y no registraba nada.
+            if (_uiState.value.accounts.isEmpty() || _uiState.value.categories.isEmpty()) return
             val accounts = accountRepository.getAccounts().first()
             val categories = categoryRepository.getCategories().first()
+            val customRules = categoryRules.rules.first()
 
             for (group in groups) {
                 val root = group.root
                 val amount = root.amountMinor ?: continue
+                // Solo se registra solo cuando se sabe a que cuenta va. Antes, si los
+                // cuatro digitos no cuadraban con ninguna, se cogia la primera de la lista:
+                // el movimiento acababa en una cuenta que no era, sin avisar, y descuadraba
+                // dos saldos de una vez. Sin cuenta identificada se queda pendiente, que es
+                // un toque, no una correccion.
                 val account = accounts.firstOrNull { acc ->
                     root.last4Digits != null && acc.cardLastFour == root.last4Digits
-                } ?: accounts.firstOrNull() ?: continue
+                } ?: continue
 
                 val targetText = root.merchant ?: root.title
+                // categoryIdFor y no inferCategoryId: el primero mira tus reglas propias
+                // antes que las integradas. Con inferCategoryId, apuntar "boxpaq -> Amazon"
+                // en Reglas de categorias no servia de nada por esta via, que es
+                // precisamente la que registra sin preguntar.
+                // Otros y no Alimentacion cuando no se reconoce el comercio. Un consumo
+                // sin identificar no es comida: WWW.BRAVE.COM entro como Alimentacion solo
+                // porque era el valor por defecto, y un dato inventado con confianza es
+                // peor que uno vacio, porque nadie va a ir a revisarlo.
                 val catId = root.suggestedCategoryId
-                    ?: ExpenseCategorizer.inferCategoryId(targetText)
-                    ?: "cat_alimentacion"
+                    ?: ExpenseCategorizer.categoryIdFor(targetText, categories, customRules)
+                    ?: "cat_otros"
 
                 val category = categories.firstOrNull { it.id == catId }
-                    ?: categories.firstOrNull { it.id == "cat_alimentacion" }
+                    ?: categories.firstOrNull { it.id == "cat_otros" }
                     ?: categories.firstOrNull() ?: continue
 
                 val request = DetectedMovementBookingRequest(
@@ -180,9 +226,23 @@ class DetectedMovementsViewModel @Inject constructor(
             val noticeFailure = runCatching {
                 bankNotificationRepository?.reconcileCapturedNotices()
             }.exceptionOrNull()
+            // Primero se le pide al buzon que se escanee, y solo despues se baja la lista.
+            // Sin la primera parte esto no actualizaba nada: descargaba los candidatos que
+            // el servidor ya tuviera, y el servidor solo los rehacia cuando le tocaba al
+            // worker de cada 15 minutos. Comprar con la tarjeta, recibir el correo, abrir
+            // la app y tocar actualizar no traia el movimiento: no habia nadie mirando el
+            // buzon en ese momento.
             val emailFailure = runCatching {
+                syncConnectedEmailAccounts()
                 emailConnectionsRepository.getCandidates()
             }.exceptionOrNull()
+            val currentRate = runCatching { usdDopRateService.currentRateMicros() }.getOrNull()
+            currentUsdDopRateMicros.value = currentRate
+
+            // Lo recien llegado tambien se registra solo. Correr esto una sola vez en el
+            // init dejaba fuera justo lo que acaba de entrar: comprabas, abrias la app, el
+            // movimiento aparecia con sus evidencias y ahi se quedaba esperando un toque.
+            autoBookMultiEvidenceMovements()
             _uiState.value = _uiState.value.copy(
                 isRefreshing = false,
                 message = when {
@@ -200,6 +260,15 @@ class DetectedMovementsViewModel @Inject constructor(
 
     fun setDateFilter(filter: DetectedMovementDateFilter) {
         selectedDateFilter.value = filter
+        selectedDate.value = null
+    }
+
+    fun setCustomDate(date: LocalDate?) {
+        selectedDate.value = date
+    }
+
+    fun toggleSortOrder() {
+        sortAscending.value = !sortAscending.value
     }
 
     fun resolvePossibleDuplicate(canonicalId: String, keepSeparate: Boolean) = runAction(canonicalId) {
@@ -253,7 +322,7 @@ class DetectedMovementsViewModel @Inject constructor(
             "La categoría no corresponde al tipo de movimiento."
         }
         require(request.amountMinor > 0L) { "El monto debe ser mayor que cero." }
-        require(amountForAccount(group.root, account) != null) {
+        require(amountForAccount(group.root, account, _uiState.value.currentUsdDopRateMicros) != null) {
             "La divisa detectada no es compatible con la cuenta."
         }
         require(request.occurredAt > 0L) { "La fecha del movimiento no es válida." }
@@ -286,9 +355,18 @@ class DetectedMovementsViewModel @Inject constructor(
         val failedEvidence = confirmEmailEvidence(group, bookedCategory.name)
         detectedMovementRepository.completeBookingReview(
             canonicalId = request.canonicalId,
+            reviewedEvidenceIds = group.evidence.map { it.id }.toSet(),
             failedEmailEvidenceIds = failedEvidence,
             ownerId = ownerScope.currentOwnerId()
         )
+        detectedMovementRepository.resolveSiblingsPointingToBooked(
+            canonicalId = request.canonicalId,
+            ownerId = ownerScope.currentOwnerId()
+        )
+        if (request.rememberCategory) {
+            val keyword = group.root.merchant ?: group.root.title
+            if (keyword.isNotBlank()) categoryRules.add(keyword, bookedCategory.id)
+        }
         if (failedEvidence.isEmpty()) {
             "Movimiento agregado a ${bookedAccount.name}."
         } else {
@@ -309,6 +387,7 @@ class DetectedMovementsViewModel @Inject constructor(
         val failedEvidence = confirmEmailEvidence(retryGroup, categoryName)
         detectedMovementRepository.completeBookingReview(
             canonicalId = canonicalId,
+            reviewedEvidenceIds = retryGroup.evidence.map { it.id }.toSet(),
             failedEmailEvidenceIds = failedEvidence,
             ownerId = ownerScope.currentOwnerId()
         )
@@ -345,6 +424,8 @@ class DetectedMovementsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(activeMovementId = canonicalId, message = null)
         viewModelScope.launch {
             val result = runCatching { action() }
+            val currentRate = runCatching { usdDopRateService.currentRateMicros() }.getOrNull()
+            currentUsdDopRateMicros.value = currentRate
             _uiState.value = _uiState.value.copy(
                 activeMovementId = null,
                 message = result.getOrElse { error ->
@@ -359,10 +440,26 @@ class DetectedMovementsViewModel @Inject constructor(
     ) { "El movimiento ya no está pendiente." }
 }
 
-internal fun amountForAccount(movement: DetectedMovementEntity, account: Account): Long? = when {
+internal fun amountForAccount(
+    movement: DetectedMovementEntity,
+    account: Account,
+    usdDopRateMicros: Long? = null
+): Long? = when {
     movement.currency.equals(account.currency, ignoreCase = true) -> movement.amountMinor?.safeAbsoluteValue()
+    movement.currency.equals("USD", ignoreCase = true) && account.currency.equals("DOP", ignoreCase = true) && usdDopRateMicros != null ->
+        movement.amountMinor?.let { UsdDopRateService.convertUsdMinorToDop(it, usdDopRateMicros) }?.safeAbsoluteValue()
     movement.baseCurrency.equals(account.currency, ignoreCase = true) -> movement.baseAmountMinor?.safeAbsoluteValue()
     else -> null
+}
+
+internal fun DetectedMovementGroup.withCategorySuggestion(
+    categories: List<Category>,
+    customRules: List<CustomCategoryRule>
+): DetectedMovementGroup {
+    val text = root.merchant ?: root.title
+    val suggestion = root.suggestedCategoryId ?: ExpenseCategorizer.categoryIdFor(text, categories, customRules)
+    return if (suggestion == root.suggestedCategoryId) this
+    else copy(root = root.copy(suggestedCategoryId = suggestion))
 }
 
 internal fun List<DetectedMovementEntity>.toActionableGroups(): List<DetectedMovementGroup> {
@@ -390,13 +487,20 @@ internal fun List<DetectedMovementEntity>.toActionableGroups(): List<DetectedMov
 internal fun List<DetectedMovementGroup>.filterByDate(
     filter: DetectedMovementDateFilter,
     nowMillis: Long,
-    zoneId: ZoneId = ZoneId.systemDefault()
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    customDate: LocalDate? = null
 ): List<DetectedMovementGroup> {
-    val bounds = filter.bounds(nowMillis, zoneId)
-    return this.filter {
-        it.root.occurredAt >= bounds.startInclusive && it.root.occurredAt < bounds.endExclusive
-    }
+    val bounds = customDate?.let { date ->
+        DetectedMovementDateBounds(
+            startInclusive = date.atStartOfDay(zoneId).toInstant().toEpochMilli(),
+            endExclusive = date.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+        )
+    } ?: filter.bounds(nowMillis, zoneId)
+    return filter { it.root.occurredAt >= bounds.startInclusive && it.root.occurredAt < bounds.endExclusive }
 }
+
+internal fun List<DetectedMovementGroup>.sortedByDate(ascending: Boolean): List<DetectedMovementGroup> =
+    if (ascending) sortedBy { it.root.occurredAt } else sortedByDescending { it.root.occurredAt }
 
 internal fun DetectedMovementDateFilter.bounds(
     nowMillis: Long,

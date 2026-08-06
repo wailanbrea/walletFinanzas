@@ -50,6 +50,19 @@ object FinancialEventMatcher {
     const val PUSH_EMAIL_WINDOW_MILLIS = 6L * 60L * 60L * 1_000L
     const val MANUAL_WINDOW_MILLIS = 24L * 60L * 60L * 1_000L
 
+    /**
+     * Cuanto puede separar a dos avisos del MISMO canal para seguir siendo el mismo evento.
+     *
+     * Corta a proposito. Dos avisos del mismo canal son una de dos cosas: el mismo mensaje
+     * que llego dos veces —cosa de segundos— o dos compras distintas. Con la ventana larga
+     * de antes, comprar dos veces lo mismo en la misma tienda el mismo dia hacia que la
+     * segunda compra se marcara como duplicado y desapareciera. Y ese error no se ve: el
+     * dinero salio de la cuenta y el movimiento no esta en ningun lado.
+     *
+     * Equivocarse al reves solo deja dos lineas que se descartan de un toque.
+     */
+    const val SAME_SOURCE_WINDOW_MILLIS = 10L * 60L * 1_000L
+
     private val gatewayPair = setOf("CARD_PURCHASE_APPROVED", "RECEIPT_CONFIRMED")
 
     fun match(
@@ -118,7 +131,7 @@ object FinancialEventMatcher {
         if (!directionsCompatible(first.direction, second.direction)) return null
         if (!eventsCompatible(first.eventType, second.eventType)) return null
 
-        val window = matchingWindow(first.source, second.source) ?: return null
+        val window = matchingWindow(first, second) ?: return null
         if (abs(first.occurredAt - second.occurredAt) > window) return null
         if (!amountsMatch(first, second)) return null
 
@@ -130,7 +143,8 @@ object FinancialEventMatcher {
         val secondMerchant = normalizeMerchant(second.merchant)
         val last4Match = firstLast4 != null && secondLast4 != null && firstLast4 == secondLast4
         val merchantMatch = firstMerchant != null && secondMerchant != null && firstMerchant == secondMerchant
-        val sameSourceWindow = first.source == second.source && abs(first.occurredAt - second.occurredAt) <= 6L * 60L * 60L * 1000L
+        val sameSourceWindow = first.source == second.source &&
+            abs(first.occurredAt - second.occurredAt) <= SAME_SOURCE_WINDOW_MILLIS
 
         if (first.source == FinancialEvidenceSource.MANUAL_TRANSACTION ||
             second.source == FinancialEvidenceSource.MANUAL_TRANSACTION
@@ -161,24 +175,43 @@ object FinancialEventMatcher {
     }
 
     private fun matchingWindow(
-        first: FinancialEvidenceSource,
-        second: FinancialEvidenceSource
-    ): Long? = when {
-        first == FinancialEvidenceSource.MANUAL_TRANSACTION ||
-            second == FinancialEvidenceSource.MANUAL_TRANSACTION -> MANUAL_WINDOW_MILLIS
+        first: FinancialEventEvidence,
+        second: FinancialEventEvidence
+    ): Long? {
+        val firstSource = first.source
+        val secondSource = second.source
 
-        first == second -> EMAIL_WINDOW_MILLIS
+        return when {
+            firstSource == FinancialEvidenceSource.MANUAL_TRANSACTION ||
+                secondSource == FinancialEvidenceSource.MANUAL_TRANSACTION -> MANUAL_WINDOW_MILLIS
 
-        setOf(first, second) == setOf(
-            FinancialEvidenceSource.EMAIL_GMAIL,
-            FinancialEvidenceSource.EMAIL_MICROSOFT
-        ) -> EMAIL_WINDOW_MILLIS
+            // Mismo canal: ventana corta, salvo que sean las dos mitades de un mismo aviso
+            // (el banco autoriza primero y confirma despues, y eso si tarda horas).
+            firstSource == secondSource ->
+                if (isTwoStageReport(first, second)) EMAIL_WINDOW_MILLIS else SAME_SOURCE_WINDOW_MILLIS
 
-        (first == FinancialEvidenceSource.BANK_NOTIFICATION && second.isEmail()) ||
-            (second == FinancialEvidenceSource.BANK_NOTIFICATION && first.isEmail()) ->
-            PUSH_EMAIL_WINDOW_MILLIS
+            setOf(firstSource, secondSource) == setOf(
+                FinancialEvidenceSource.EMAIL_GMAIL,
+                FinancialEvidenceSource.EMAIL_MICROSOFT
+            ) -> EMAIL_WINDOW_MILLIS
 
-        else -> null
+            (firstSource == FinancialEvidenceSource.BANK_NOTIFICATION && secondSource.isEmail()) ||
+                (secondSource == FinancialEvidenceSource.BANK_NOTIFICATION && firstSource.isEmail()) ->
+                PUSH_EMAIL_WINDOW_MILLIS
+
+            else -> null
+        }
+    }
+
+    /** La autorizacion y el recibo de una misma compra, que el banco manda por separado. */
+    private fun isTwoStageReport(
+        first: FinancialEventEvidence,
+        second: FinancialEventEvidence
+    ): Boolean {
+        val firstType = first.eventType ?: return false
+        val secondType = second.eventType ?: return false
+
+        return firstType != secondType && firstType in gatewayPair && secondType in gatewayPair
     }
 
     fun normalizeCurrency(currency: String?): String {

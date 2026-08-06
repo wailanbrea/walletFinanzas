@@ -4,6 +4,8 @@ import com.bsolutions.wallet.core.deduplication.FinancialEvidenceSource
 import com.bsolutions.wallet.core.notifications.ParsedBankNotice
 import com.bsolutions.wallet.data.local.dao.DetectedMovementDao
 import com.bsolutions.wallet.data.local.entity.DetectedMovementEntity
+import com.bsolutions.wallet.data.local.dao.TransactionDao
+import com.bsolutions.wallet.data.local.entity.TransactionEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -51,6 +53,13 @@ private class FakeDetectedMovementDao : DetectedMovementDao {
         it.ownerId == ownerId && (it.id == canonicalId || it.canonicalId == canonicalId)
     }
 
+    override suspend fun findPendingPossibleDuplicatesPointingTo(
+        ownerId: String,
+        canonicalId: String
+    ) = movements.filter {
+        it.ownerId == ownerId && it.status == "PENDING" && it.duplicateOfId == null &&
+            it.possibleDuplicateOfId == canonicalId
+    }
     override suspend fun insertMovement(movement: DetectedMovementEntity): Long {
         val conflicts = movements.any {
             it.ownerId == movement.ownerId &&
@@ -334,6 +343,152 @@ class DetectedMovementRepositoryTest {
         assertEquals(1, repository.allForTesting("user:2").size)
     }
 
+    @Test
+    fun `confirmar como duplicado cuando la otra deteccion ya fue contabilizada la une al registro`() = runTest {
+        val fakeDao = FakeDetectedMovementDao()
+        val bookedTransactionId = DetectedMovementRepository.transactionIdForCanonical("email-kept")
+        val repository = DetectedMovementRepository(fakeDao, bookedTransactionDao(bookedTransactionId))
+
+        repository.saveMovement(
+            DetectedMovementEntity(
+                id = "email-kept",
+                source = FinancialEvidenceSource.EMAIL_GMAIL.name,
+                merchant = "PayPal",
+                amountMinor = 21_000L,
+                currency = "DOP",
+                status = "PENDING",
+                sourceReference = "email-kept",
+                canonicalId = "email-kept",
+                ownerId = "guest"
+            )
+        )
+        repository.saveMovement(
+            DetectedMovementEntity(
+                id = "email-tail",
+                source = FinancialEvidenceSource.EMAIL_GMAIL.name,
+                merchant = "PayPal",
+                amountMinor = 21_000L,
+                currency = "USD",
+                baseAmountMinor = 21_000L,
+                baseCurrency = "DOP",
+                status = "PENDING",
+                sourceReference = "email-tail",
+                canonicalId = "email-tail",
+                possibleDuplicateOfId = "email-kept",
+                ownerId = "guest"
+            )
+        )
+
+        // El usuario ya agregó y confirmó la evidencia conservada: quedó APPROVED.
+        repository.updateStatus(id = "email-kept", status = "APPROVED")
+
+        val resolution = repository.resolvePossibleDuplicate("email-tail", keepSeparate = false)
+
+        assertEquals(PossibleDuplicateResolution.MATCHED_EXISTING_TRANSACTION, resolution)
+        assertEquals(0, repository.getPendingMovements().first().size)
+    }
+
+    @Test
+    fun `la cola de un duplicado ya procesado se descarta sin lanzar`() = runTest {
+        repository.saveMovement(
+            DetectedMovementEntity(
+                id = "root-processed",
+                source = FinancialEvidenceSource.EMAIL_GMAIL.name,
+                merchant = "Netflix",
+                amountMinor = 3_500L,
+                currency = "DOP",
+                status = "DISMISSED",
+                sourceReference = "root-processed",
+                canonicalId = "root-processed",
+                ownerId = "guest"
+            )
+        )
+        repository.saveMovement(
+            DetectedMovementEntity(
+                id = "leftover",
+                source = FinancialEvidenceSource.BANK_NOTIFICATION.name,
+                merchant = "Netflix",
+                amountMinor = 3_500L,
+                currency = "DOP",
+                status = "PENDING",
+                sourceReference = "leftover",
+                canonicalId = "leftover",
+                possibleDuplicateOfId = "root-processed",
+                ownerId = "guest"
+            )
+        )
+
+        val resolution = repository.resolvePossibleDuplicate("leftover", keepSeparate = false)
+
+        assertEquals(PossibleDuplicateResolution.MERGED_WITH_DETECTED_MOVEMENT, resolution)
+        assertEquals(0, repository.getPendingMovements().first().size)
+    }
+
+
+
+    @Test
+    fun `contabilizar una raiz resuelve las colas pendientes que la apuntan`() = runTest {
+        val fakeDao = FakeDetectedMovementDao()
+        val bookedTransactionId = DetectedMovementRepository.transactionIdForCanonical("kept-root")
+        val repository = DetectedMovementRepository(fakeDao, bookedTransactionDao(bookedTransactionId))
+
+        repository.saveMovement(
+            DetectedMovementEntity(
+                id = "kept-root",
+                source = FinancialEvidenceSource.EMAIL_GMAIL.name,
+                merchant = "Amazon",
+                amountMinor = 10_000L,
+                currency = "DOP",
+                status = "APPROVED",
+                sourceReference = "kept-root",
+                canonicalId = "kept-root",
+                ownerId = "guest"
+            )
+        )
+        repository.saveMovement(
+            DetectedMovementEntity(
+                id = "sibling-tail",
+                source = FinancialEvidenceSource.BANK_NOTIFICATION.name,
+                merchant = "Amazon",
+                amountMinor = 10_000L,
+                currency = "DOP",
+                status = "PENDING",
+                sourceReference = "sibling-tail",
+                canonicalId = "sibling-tail",
+                possibleDuplicateOfId = "kept-root",
+                ownerId = "guest"
+            )
+        )
+
+        val resolved = repository.resolveSiblingsPointingToBooked("kept-root", "guest")
+
+        assertEquals(1, resolved)
+        assertEquals(0, repository.getPendingMovements().first().size)
+        assertEquals("transaction:$bookedTransactionId", repository.getMovementById("sibling-tail")?.duplicateOfId)
+    }
+
+
+    private fun bookedTransactionDao(bookedTransactionId: String): TransactionDao =
+        java.lang.reflect.Proxy.newProxyInstance(
+            TransactionDao::class.java.classLoader,
+            arrayOf(TransactionDao::class.java)
+        ) { _, method, args ->
+            when (method.name) {
+                "findRecentByTypeAndDate", "findRecentPotentialDuplicates" -> emptyList<TransactionEntity>()
+                "getTransactionById" ->
+                    if (args != null && args.size > 1 && args[1] == bookedTransactionId) {
+                        TransactionEntity(
+                            id = bookedTransactionId,
+                            accountId = "acc-1",
+                            amount = 21_000,
+                            type = "EXPENSE",
+                            categoryId = "cat_compras",
+                            date = 0L
+                        )
+                    } else null
+                else -> null
+            }
+        } as TransactionDao
     private fun movement(id: String, merchant: String) = DetectedMovementEntity(
         id = id,
         source = FinancialEvidenceSource.EMAIL_GMAIL.name,

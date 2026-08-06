@@ -16,6 +16,7 @@ object DefaultCategories {
 
     val seeds: List<Seed> = listOf(
         Seed("cat_alimentacion", "Alimentación", "restaurant", "#E57373"),
+        Seed("cat_supermercado", "Supermercado", "shopping_bag", "#43A047"),
         Seed("cat_merienda", "Merienda", "fastfood", "#FF8A65"),
         Seed("cat_restaurantes", "Restaurantes", "restaurant_menu", "#EF5350"),
         Seed("cat_transporte", "Transporte", "directions_car", "#64B5F6"),
@@ -55,11 +56,17 @@ object ExpenseCategorizer {
         Regex("vuelo|hotel|airbnb|pasaje|aeropuerto|arajet|jetblue|resort|excursion|viaje") to "cat_viajes",
         Regex("gym|gimnasio|crossfit|pesas|futbol|beisbol|basket|padel|tenis|deporte|entrenamiento") to "cat_deporte",
         Regex("regalo|cumpleanos|aniversario|boda|detalle") to "cat_regalos",
-        Regex("supermerc|colmado|nacional|jumbo|sirena|pola|bravo|super |grocer|market|plaza lama|carniceria|panaderia|despensa|compra del mes|aliment") to "cat_alimentacion",
+        Regex("supermerc|colmado|nacional|jumbo|sirena|pola|bravo|super |grocer|market|plaza lama|carniceria|panaderia|despensa|compra del mes") to "cat_supermercado",
+        Regex("aliment|comida") to "cat_alimentacion",
         Regex("uber|taxi|didi|indriver|gasolina|combustible|peaje|parqueo|metro|guagua|omsa|transport|goma|mecanic|bonogas") to "cat_transporte",
         Regex("farmacia|carol|gbc|clinica|hospital|medic|dentista|laboratorio|salud|consulta|vacuna|pastilla|seguro medico|ars ") to "cat_salud",
         Regex("netflix|spotify|hbo|disney|cine|caribbean|entreten|juego|steam|concierto|teatro|bar |cerveza|discoteca|billar|karaoke") to "cat_entretenimiento",
         Regex("edeeste|edenorte|edesur|luz|agua|caasd|internet|claro|altice|viva|wind|factura|servicio|telefon|cable|propano") to "cat_servicios",
+        // Los couriers de RD: lo que se paga ahi es el envio de una compra por internet,
+        // asi que cae del mismo lado que la compra. Si prefieres que vaya a tu propia
+        // categoria (Amazon, por ejemplo), una regla tuya en Reglas de categorias manda
+        // sobre esta: las propias se miran antes que las integradas.
+        Regex("boxpaq|aeropaq|epaq|bluexpress|jetbox|caribe express|mailbox|courier|currier|paqueteria") to "cat_compras",
         Regex("zara|ropa|tienda|shopping|amazon|shein|temu|mall|zapato|calzado|jean|ikea|electrodomestico|celular") to "cat_compras",
         Regex("alquiler|renta|hipoteca|vivienda|condominio") to "cat_vivienda",
         Regex("colegio|universidad|educac|curso|libro|matricula|inscripcion|profesor") to "cat_educacion",

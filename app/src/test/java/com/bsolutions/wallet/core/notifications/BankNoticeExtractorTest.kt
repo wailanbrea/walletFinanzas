@@ -21,7 +21,8 @@ class BankNoticeExtractorTest {
         assertEquals("5678", parsed?.last4Digits)
         assertEquals("expense", parsed?.direction)
         assertEquals("CARD_PURCHASE_APPROVED", parsed?.eventType)
-        assertEquals("cat_alimentacion", parsed?.suggestedCategoryId)
+        // SUPERMERCADO BRAVO va a Supermercado desde que esa categoria existe aparte.
+        assertEquals("cat_supermercado", parsed?.suggestedCategoryId)
     }
 
     @Test
