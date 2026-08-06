@@ -12,6 +12,7 @@ import com.bsolutions.wallet.core.network.CategoryDto
 import com.bsolutions.wallet.core.network.CreateAccountRequest
 import com.bsolutions.wallet.core.network.CreateCategoryRequest
 import com.bsolutions.wallet.core.network.CreateTransactionRequest
+import com.bsolutions.wallet.core.network.CurrentUsdDopRateDto
 import com.bsolutions.wallet.core.network.CursorPage
 import com.bsolutions.wallet.core.network.EmailAuthorizationDto
 import com.bsolutions.wallet.core.network.EmailCandidateDto
@@ -377,6 +378,9 @@ private class CategorySyncFakeApi : WalletApi {
         request: EmailCandidateReviewRequest
     ): ApiEnvelope<EmailCandidateDto> = unsupported()
     override suspend fun deleteEmailConnection(provider: String) = Unit
+
+    /** La tasa vive fuera del backend; en las pruebas de sincronizacion no se consulta. */
+    override suspend fun currentUsdDopRate(url: String): CurrentUsdDopRateDto = unsupported()
     override suspend fun getProfile(): ApiEnvelope<AuthUserDto> = unsupported()
     override suspend fun updateProfile(request: UpdateProfileRequest): ApiEnvelope<AuthUserDto> = unsupported()
 
