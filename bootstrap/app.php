@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->redirectGuestsTo(fn () => null);
         $middleware->alias([
             'abilities' => CheckAbilities::class,
             'wallet-abilities' => CheckWalletAbilities::class,
@@ -24,7 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (AuthenticationException $exception, Request $request) {
-            if ($request->is('api/*') || $request->expectsJson()) {
+            if ($request->is('api/*') || $request->is('*/api/*') || $request->expectsJson()) {
                 return response()->json([
                     'message' => 'No autenticado.',
                     'code' => 'unauthenticated',
@@ -33,7 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (MissingAbilityException $exception, Request $request) {
-            if ($request->is('api/*') || $request->expectsJson()) {
+            if ($request->is('api/*') || $request->is('*/api/*') || $request->expectsJson()) {
                 return response()->json([
                     'message' => 'No tienes permisos para esta acción.',
                     'code' => 'missing_ability',

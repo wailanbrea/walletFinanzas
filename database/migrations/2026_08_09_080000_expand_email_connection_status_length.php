@@ -15,7 +15,9 @@ return new class extends Migration
             return;
         }
 
-        DB::statement("ALTER TABLE `email_connections` MODIFY `status` VARCHAR(40) NOT NULL DEFAULT 'connected'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE `email_connections` MODIFY `status` VARCHAR(40) NOT NULL DEFAULT 'connected'");
+        }
     }
 
     /**
@@ -27,6 +29,8 @@ return new class extends Migration
             return;
         }
 
-        DB::statement("ALTER TABLE `email_connections` MODIFY `status` VARCHAR(20) NOT NULL DEFAULT 'connected'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE `email_connections` MODIFY `status` VARCHAR(20) NOT NULL DEFAULT 'connected'");
+        }
     }
 };

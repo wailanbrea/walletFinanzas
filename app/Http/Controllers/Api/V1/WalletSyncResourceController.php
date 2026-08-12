@@ -50,6 +50,29 @@ class WalletSyncResourceController extends Controller
         return $this->store($request, 'debts');
     }
 
+    public function updateDebt(Request $request, string $debt): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['sometimes', 'string', 'max:120'],
+            'description' => ['sometimes', 'nullable', 'string'],
+            'direction' => ['sometimes', Rule::in(['I_OWE', 'OWED_TO_ME'])],
+            'total_amount' => ['sometimes', 'integer'],
+            'paid_amount' => ['sometimes', 'integer'],
+            'due_date' => ['sometimes', 'nullable', 'integer'],
+            'is_closed' => ['sometimes', 'boolean'],
+            'is_deleted' => ['sometimes', 'boolean'],
+        ]);
+
+        $record = $this->model('debts')->newQuery()
+            ->where('user_id', $request->user()->id)
+            ->where('id', $debt)
+            ->firstOrFail();
+
+        $record->update($validated);
+
+        return response()->json(['data' => $this->serialize($record->fresh())]);
+    }
+
     public function plannedPayments(Request $request): JsonResponse
     {
         return $this->index($request, 'planned_payments');
@@ -97,11 +120,20 @@ class WalletSyncResourceController extends Controller
                 $this->requireOwnedCategory($request, $validated['category_id']);
             }
         }
-        $model = $this->model($table);
-        $record = $model->newQuery()->updateOrCreate(
-            ['id' => $validated['id'], 'user_id' => $request->user()->id],
-            $validated,
-        );
+        $record = $this->model($table)->newQuery()
+            ->where('user_id', $request->user()->id)
+            ->where('id', $validated['id'])
+            ->first();
+
+        $wasRecentlyCreated = false;
+        if ($record) {
+            $record->update($validated);
+        } else {
+            $record = $this->model($table);
+            $record->fill(['user_id' => $request->user()->id] + $validated);
+            $record->save();
+            $wasRecentlyCreated = true;
+        }
         if ($table === 'categories' && $validated['is_deleted']) {
             foreach (['budgets', 'planned_payments'] as $dependentTable) {
                 $this->model($dependentTable)->newQuery()
@@ -111,7 +143,7 @@ class WalletSyncResourceController extends Controller
             }
         }
 
-        return response()->json(['data' => $this->serialize($record)], $record->wasRecentlyCreated ? 201 : 200);
+        return response()->json(['data' => $this->serialize($record)], $wasRecentlyCreated ? 201 : 200);
     }
 
     private function model(string $table): WalletSyncResource

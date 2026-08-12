@@ -49,4 +49,15 @@ class AuthApiTest extends TestCase
             'device_name' => 'android-test',
         ])->assertUnprocessable()->assertJsonValidationErrors(['email']);
     }
+
+    public function test_unauthenticated_request_returns_401_json_instead_of_500(): void
+    {
+        $response = $this->get('/api/v1/user');
+
+        $response->assertStatus(401)
+            ->assertJson([
+                'message' => 'No autenticado.',
+                'code' => 'unauthenticated',
+            ]);
+    }
 }
