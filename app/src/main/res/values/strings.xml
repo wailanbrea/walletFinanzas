@@ -389,6 +389,7 @@
     <string name="accounts_card_debit">DÉBITO</string>
     <string name="accounts_movements">Movimientos</string>
     <string name="accounts_no_transactions">No hay transacciones registradas en esta cuenta.</string>
+    <string name="accounts_load_error">No se pudieron cargar los movimientos: %1$s</string>
     <string name="accounts_card_last_four">Últimos 4 dígitos</string>
     <string name="accounts_institution_label">Entidad financiera (%1$s)</string>
     <string name="accounts_institution_other">Otro / no aparece</string>
@@ -504,6 +505,9 @@
     <string name="auth_forgot_password">¿Olvidé mi contraseña?</string>
     <string name="auth_toggle_password">Mostrar u ocultar contraseña</string>
     <string name="auth_login">Iniciar Sesión</string>
+    <string name="auth_remember_session">Recordar sesión</string>
+    <string name="auth_guest_title">Modo Local</string>
+    <string name="auth_guest_subtitle">Toca para iniciar sesión</string>
     <string name="auth_or">o</string>
     <string name="auth_create_account">Crear Cuenta</string>
     <string name="auth_register">Registrarse</string>

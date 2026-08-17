@@ -32,10 +32,12 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('/user', [AuthController::class, 'updateProfile'])->middleware('wallet-abilities:wallet.write');
         Route::get('/accounts', [AccountController::class, 'index'])->middleware('wallet-abilities:wallet.read');
         Route::post('/accounts', [AccountController::class, 'store'])->middleware('wallet-abilities:wallet.write');
+        Route::get('/accounts/{account}/consistency', [AccountController::class, 'consistency'])->middleware('wallet-abilities:wallet.read');
         Route::get('/transactions', [TransactionController::class, 'index'])->middleware('wallet-abilities:wallet.read');
         Route::post('/transactions', [TransactionController::class, 'store'])->middleware('wallet-abilities:wallet.write');
         Route::patch('/transactions/{transaction}', [TransactionController::class, 'update'])->middleware('wallet-abilities:wallet.write');
         Route::delete('/transactions/{transaction}', [TransactionController::class, 'destroy'])->middleware('wallet-abilities:wallet.delete');
+        Route::get('/transactions/export.csv', [TransactionController::class, 'exportCsv'])->middleware('wallet-abilities:wallet.read');
         Route::get('/categories', [WalletSyncResourceController::class, 'categories'])->middleware('wallet-abilities:wallet.read');
         Route::post('/categories', [WalletSyncResourceController::class, 'storeCategory'])->middleware('wallet-abilities:wallet.write');
         Route::get('/budgets', [WalletSyncResourceController::class, 'budgets'])->middleware('wallet-abilities:wallet.read');

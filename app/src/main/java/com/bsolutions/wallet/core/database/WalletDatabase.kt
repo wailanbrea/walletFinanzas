@@ -41,7 +41,7 @@ import com.bsolutions.wallet.data.local.entity.TransactionEntity
         NotificationSourceEntity::class,
         RawBankNoticeEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = true
 )
 abstract class WalletDatabase : RoomDatabase() {

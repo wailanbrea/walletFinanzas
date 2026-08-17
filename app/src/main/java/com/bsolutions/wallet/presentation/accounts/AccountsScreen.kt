@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.LoadState
 import com.bsolutions.wallet.R
 import com.bsolutions.wallet.core.common.MoneyFormat
 import com.bsolutions.wallet.core.common.MoneyParser
@@ -142,7 +145,7 @@ fun AccountsScreen(
                 // Account Detail View
                 AccountDetailView(
                     account = selectedAccount,
-                    transactions = uiState.selectedAccountTransactions
+                    transactions = viewModel.selectedTransactions.collectAsLazyPagingItems()
                 )
             } else {
                 // Accounts Master List View
@@ -432,10 +435,19 @@ fun AccountRow(
     }
 }
 
+/**
+ * Detalle de una cuenta: identidad, saldo y movimientos.
+ *
+ * Los movimientos llegan paginados ([LazyPagingItems]): la lista ya no carga toda la
+ * historia de la cuenta de golpe, va pidiendo páginas de 30 sobre el índice
+ * idx_transactions_account. El estado de carga se ve al final de la lista; si una
+ * página falla, se enseña el error con reintento en vez de una lista incompleta sin
+ * aviso.
+ */
 @Composable
 fun AccountDetailView(
     account: Account,
-    transactions: List<Transaction>
+    transactions: LazyPagingItems<Transaction>
 ) {
     LazyColumn(
         modifier = Modifier
@@ -539,8 +551,48 @@ fun AccountDetailView(
             )
         }
 
-        if (transactions.isEmpty()) {
-            item {
+        val loadState = transactions.loadState
+        val error = when {
+            loadState.refresh is LoadState.Error -> (loadState.refresh as LoadState.Error).error
+            loadState.prepend is LoadState.Error -> (loadState.prepend as LoadState.Error).error
+            loadState.append is LoadState.Error -> (loadState.append as LoadState.Error).error
+            else -> null
+        }
+        if (error != null) {
+            item(key = "load_error") {
+                PagingErrorItem(message = error.message, onRetry = { transactions.retry() })
+            }
+        }
+
+        items(
+            count = transactions.itemCount,
+            key = { index -> transactions[index]?.id ?: index }
+        ) { index ->
+            val tx = transactions[index] ?: return@items
+            val dateStr = SimpleDateFormat("dd MMM, hh:mm a", LocalConfiguration.current.locales[0]).format(Date(tx.date))
+            TransactionItem(
+                title = tx.note.ifEmpty { stringResource(R.string.tx_generic) },
+                subtitle = dateStr,
+                amount = tx.amount,
+                type = tx.type,
+                icon = getIconForName("shopping_cart"),
+                currency = tx.currency
+            )
+        }
+
+        when {
+            loadState.refresh is LoadState.Loading && transactions.itemCount == 0 -> item(key = "loading") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                }
+            }
+
+            transactions.itemCount == 0 && error == null -> item(key = "empty") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -554,22 +606,48 @@ fun AccountDetailView(
                     )
                 }
             }
-        } else {
-            items(transactions) { tx ->
-                val dateStr = SimpleDateFormat("dd MMM, hh:mm a", LocalConfiguration.current.locales[0]).format(Date(tx.date))
-                TransactionItem(
-                    title = tx.note.ifEmpty { stringResource(R.string.tx_generic) },
-                    subtitle = dateStr,
-                    amount = tx.amount,
-                    type = tx.type,
-                    icon = getIconForName("shopping_cart"),
-                    currency = tx.currency
-                )
+        }
+
+        if (loadState.append is LoadState.Loading) {
+            item(key = "loading_more") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
             }
         }
 
         item {
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Estado de error de la paginación: una página que no se pudo cargar no debe dejar la
+ * lista incompleta en silencio. Se enseña el fallo y se permite reintentar.
+ */
+@Composable
+private fun PagingErrorItem(message: String?, onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = stringResource(R.string.accounts_load_error, message.orEmpty()),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onRetry) {
+            Text(stringResource(R.string.email_retry))
         }
     }
 }

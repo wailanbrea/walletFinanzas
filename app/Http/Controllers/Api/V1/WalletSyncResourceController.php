@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\WalletSyncResource;
+use App\Rules\PaidAmountEqualsTotalWhenClosed;
+use App\Rules\PaidAmountNotExceedsTotal;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class WalletSyncResourceController extends Controller
@@ -52,23 +55,28 @@ class WalletSyncResourceController extends Controller
 
     public function updateDebt(Request $request, string $debt): JsonResponse
     {
-        $validated = $request->validate([
-            'name' => ['sometimes', 'string', 'max:120'],
-            'description' => ['sometimes', 'nullable', 'string'],
-            'direction' => ['sometimes', Rule::in(['I_OWE', 'OWED_TO_ME'])],
-            'total_amount' => ['sometimes', 'integer'],
-            'paid_amount' => ['sometimes', 'integer'],
-            'due_date' => ['sometimes', 'nullable', 'integer'],
-            'is_closed' => ['sometimes', 'boolean'],
-            'is_deleted' => ['sometimes', 'boolean'],
-        ]);
+        $record = DB::transaction(function () use ($request, $debt) {
+            $record = $this->model('debts')->newQuery()
+                ->where('user_id', $request->user()->id)
+                ->where('id', $debt)
+                ->firstOrFail();
 
-        $record = $this->model('debts')->newQuery()
-            ->where('user_id', $request->user()->id)
-            ->where('id', $debt)
-            ->firstOrFail();
+            $all = $request->all();
 
-        $record->update($validated);
+            $validated = $request->validate([
+                'name' => ['sometimes', 'string', 'max:120'],
+                'description' => ['sometimes', 'nullable', 'string'],
+                'direction' => ['sometimes', Rule::in(['I_OWE', 'OWED_TO_ME'])],
+                'total_amount' => ['sometimes', 'integer', 'min:0'],
+                'paid_amount' => ['sometimes', 'integer', 'min:0', new PaidAmountNotExceedsTotal($record, $all)],
+                'due_date' => ['sometimes', 'nullable', 'integer'],
+                'is_closed' => ['sometimes', 'boolean', new PaidAmountEqualsTotalWhenClosed($record, $all)],
+                'is_deleted' => ['sometimes', 'boolean'],
+            ]);
+
+            $record->update($validated);
+            return $record;
+        });
 
         return response()->json(['data' => $this->serialize($record->fresh())]);
     }
@@ -120,30 +128,38 @@ class WalletSyncResourceController extends Controller
                 $this->requireOwnedCategory($request, $validated['category_id']);
             }
         }
-        $record = $this->model($table)->newQuery()
-            ->where('user_id', $request->user()->id)
-            ->where('id', $validated['id'])
-            ->first();
 
-        $wasRecentlyCreated = false;
-        if ($record) {
-            $record->update($validated);
-        } else {
-            $record = $this->model($table);
-            $record->fill(['user_id' => $request->user()->id] + $validated);
-            $record->save();
-            $wasRecentlyCreated = true;
-        }
-        if ($table === 'categories' && $validated['is_deleted']) {
-            foreach (['budgets', 'planned_payments'] as $dependentTable) {
-                $this->model($dependentTable)->newQuery()
-                    ->where('user_id', $request->user()->id)
-                    ->where('category_id', $validated['id'])
-                    ->update(['is_deleted' => true, 'updated_at' => now()]);
+        $record = DB::transaction(function () use ($request, $table, $validated) {
+            $record = $this->model($table)->newQuery()
+                ->where('user_id', $request->user()->id)
+                ->where('id', $validated['id'])
+                ->first();
+
+            $wasRecentlyCreated = false;
+            if ($record) {
+                $record->update($validated);
+            } else {
+                $record = $this->model($table);
+                $record->fill(['user_id' => $request->user()->id] + $validated);
+                $record->save();
+                $wasRecentlyCreated = true;
             }
-        }
+            if ($table === 'categories' && $validated['is_deleted']) {
+                foreach (['budgets', 'planned_payments'] as $dependentTable) {
+                    $this->model($dependentTable)->newQuery()
+                        ->where('user_id', $request->user()->id)
+                        ->where('category_id', $validated['id'])
+                        ->update(['is_deleted' => true, 'updated_at' => now()]);
+                }
+            }
 
-        return response()->json(['data' => $this->serialize($record)], $wasRecentlyCreated ? 201 : 200);
+            return ['record' => $record, 'wasRecentlyCreated' => $wasRecentlyCreated];
+        });
+
+        return response()->json(
+            ['data' => $this->serialize($record['record'])],
+            $record['wasRecentlyCreated'] ? 201 : 200
+        );
     }
 
     private function model(string $table): WalletSyncResource

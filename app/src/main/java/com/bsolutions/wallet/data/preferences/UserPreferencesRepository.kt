@@ -206,6 +206,30 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
+    // --- Recordar sesión / credenciales de Login ---
+    private val KEY_REMEMBER_SESSION = booleanPreferencesKey("auth_remember_session")
+    private val KEY_REMEMBERED_EMAIL = stringPreferencesKey("auth_remembered_email")
+
+    val rememberSession: Flow<Boolean> = context.userPrefsDataStore.data.map { prefs ->
+        prefs[KEY_REMEMBER_SESSION] ?: true
+    }
+
+    val rememberedEmail: Flow<String> = context.userPrefsDataStore.data.map { prefs ->
+        prefs[KEY_REMEMBERED_EMAIL].orEmpty()
+    }
+
+    suspend fun setRememberSession(remember: Boolean) {
+        context.userPrefsDataStore.edit { prefs ->
+            prefs[KEY_REMEMBER_SESSION] = remember
+        }
+    }
+
+    suspend fun setRememberedEmail(email: String) {
+        context.userPrefsDataStore.edit { prefs ->
+            prefs[KEY_REMEMBERED_EMAIL] = email
+        }
+    }
+
     suspend fun mergeGuestInto(targetOwnerId: String) {
         val guest = scopedKeys(WALLET_GUEST_OWNER_ID)
         val target = scopedKeys(targetOwnerId)

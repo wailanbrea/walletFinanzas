@@ -375,6 +375,11 @@ class DashboardViewModelTest {
         val transactions = MutableStateFlow(initial)
         override fun getTransactions(): Flow<List<Transaction>> = transactions
         override fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>> = transactions
+        override fun getTransactionsPaging(ownerId: String, accountId: String): androidx.paging.PagingSource<Int, Transaction> =
+            object : androidx.paging.PagingSource<Int, Transaction>() {
+                override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Transaction> = LoadResult.Page(emptyList(), null, null)
+                override fun getRefreshKey(state: androidx.paging.PagingState<Int, Transaction>): Int? = null
+            }
         override suspend fun getTransaction(id: String): Transaction? = transactions.value.firstOrNull { it.id == id }
 
         override suspend fun getTransactionsForDebt(debtId: String): List<Transaction> =
@@ -385,6 +390,7 @@ class DashboardViewModelTest {
         override suspend fun updateTransactionWithBalance(transaction: Transaction, oldAmount: Long) { transactions.value = transactions.value.map { if (it.id == transaction.id) transaction else it } }
         override suspend fun deleteTransaction(id: String) { transactions.value = transactions.value.filterNot { it.id == id } }
         override suspend fun deleteTransactionWithBalance(transaction: Transaction) { transactions.value = transactions.value.filterNot { it.id == transaction.id } }
+        override suspend fun addTransactionsWithBalance(transactions: List<Transaction>) { this.transactions.value += transactions }
     }
 
     private class FakeUserProfilePreferences : UserProfilePreferences {

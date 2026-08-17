@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreAccountRequest;
 use App\Http\Resources\Api\V1\AccountResource;
 use App\Models\Account;
+use App\Models\Transaction;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -44,5 +45,38 @@ class AccountController extends Controller
         }
 
         return new AccountResource($account);
+    }
+
+    public function consistency(Request $request, string $accountId): JsonResponse
+    {
+        $account = $request->user()->accounts()->find($accountId);
+
+        abort_if(is_null($account), 404, 'Account not found.');
+
+        $summary = Transaction::query()
+            ->where('account_id', $account->id)
+            ->where('status', 'completed')
+            ->selectRaw('COALESCE(SUM(amount), 0) as calculated_balance, COUNT(*) as transaction_count')
+            ->first();
+
+        $storedBalance = (int) $account->balance;
+        $calculatedBalance = (int) $summary->calculated_balance;
+        $openingBalance = (int) $account->opening_balance;
+
+        // La linea base se congela en la migracion: opening = balance actual
+        // menos la suma de transacciones completadas en ese instante. Cualquier
+        // divergencia posterior indica corrupcion real.
+        $unexplainedDifference = $storedBalance - $openingBalance - $calculatedBalance;
+
+        return response()->json([
+            'account_id' => $account->id,
+            'account_name' => $account->name,
+            'stored_balance' => $storedBalance,
+            'calculated_balance' => $calculatedBalance,
+            'opening_balance' => $openingBalance,
+            'unexplained_difference' => $unexplainedDifference,
+            'transaction_count' => (int) $summary->transaction_count,
+            'consistent' => $unexplainedDifference === 0,
+        ]);
     }
 }

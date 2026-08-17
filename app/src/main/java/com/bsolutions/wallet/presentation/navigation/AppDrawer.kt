@@ -38,6 +38,10 @@ import androidx.compose.material.icons.outlined.SsidChart
 import androidx.compose.material.icons.outlined.TableRows
 import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material.icons.outlined.Update
+import androidx.compose.material.icons.outlined.Login
+import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -121,9 +125,35 @@ fun AppDrawerContent(
     userName: String,
     walletName: String,
     email: String = "",
+    isLoggedIn: Boolean = false,
     currentRoute: String?,
-    onNavigate: (String) -> Unit
+    onNavigate: (String) -> Unit,
+    onLoginClick: () -> Unit = {},
+    onLogoutClick: () -> Unit = {}
 ) {
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+
+    if (showLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirm = false },
+            title = { Text(stringResource(R.string.settings_logout)) },
+            text = { Text(stringResource(R.string.settings_logout_confirm, email.ifBlank { userName })) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLogoutConfirm = false
+                    onLogoutClick()
+                }) {
+                    Text(stringResource(R.string.common_accept), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirm = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
     val darkTheme = isSystemInDarkTheme()
     val drawerBg = if (darkTheme) DrawerBgDark else DrawerBgLight
     val pillColor = if (darkTheme) PillBlueDark else PillBlueLight
@@ -138,7 +168,16 @@ fun AppDrawerContent(
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
         ) {
-            DrawerHeader(userName = userName, walletName = walletName, email = email)
+            DrawerHeader(
+                userName = userName,
+                walletName = walletName,
+                email = email,
+                isLoggedIn = isLoggedIn,
+                onClick = {
+                    if (isLoggedIn) onNavigate("profile")
+                    else onLoginClick()
+                }
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -166,16 +205,41 @@ fun AppDrawerContent(
                 }
             }
 
+            if (isLoggedIn) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                DrawerRow(
+                    item = DrawerItem(
+                        route = "logout",
+                        labelRes = R.string.settings_logout,
+                        icon = Icons.Outlined.Logout,
+                        iconTint = IconRed
+                    ),
+                    selected = false,
+                    pillColor = pillColor,
+                    onClick = { showLogoutConfirm = true }
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-private fun DrawerHeader(userName: String, walletName: String, email: String) {
+private fun DrawerHeader(
+    userName: String,
+    walletName: String,
+    email: String,
+    isLoggedIn: Boolean = false,
+    onClick: () -> Unit = {}
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .background(
                 Brush.linearGradient(
                     colors = listOf(HeaderGradientStart, HeaderGradientEnd)
@@ -204,16 +268,15 @@ private fun DrawerHeader(userName: String, walletName: String, email: String) {
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = userName,
+                text = if (isLoggedIn) userName.ifBlank { "Wailan Brea" } else stringResource(R.string.auth_guest_title),
                 color = Color.White,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            // Con sesión iniciada se muestra el correo; sin ella, el nombre del wallet.
             Text(
-                text = email.ifBlank { walletName },
+                text = if (isLoggedIn) email.ifBlank { walletName } else stringResource(R.string.auth_guest_subtitle),
                 color = Color.White.copy(alpha = 0.9f),
                 fontSize = 14.sp,
                 maxLines = 1,

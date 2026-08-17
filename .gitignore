@@ -75,3 +75,7 @@ graphify-out/
 /vendor
 Homestead.json
 Homestead.yaml
+.playwright-mcp/
+.review-tmp/
+bugreport_extracted/
+

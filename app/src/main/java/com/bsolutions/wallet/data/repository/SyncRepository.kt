@@ -176,7 +176,6 @@ class SyncRepository @Inject constructor(
                 )
             } catch (exception: HttpException) {
                 if (exception.code() == 401) {
-                    session.clear()
                     throw SessionExpiredException()
                 }
                 throw exception
@@ -200,7 +199,7 @@ class SyncRepository @Inject constructor(
                 pushed++
             } catch (e: HttpException) {
                 when (e.code()) {
-                    401 -> { session.clear(); throw SessionExpiredException() }
+                    401 -> throw SessionExpiredException()
                     // 4xx (salvo 409 que es "ya existe" = éxito) => operación inválida
                     409 -> { pendingOps.delete(ownerId, op.id); pushed++ }
                     in 400..499 -> pendingOps.bumpAttempts(ownerId, op.id)

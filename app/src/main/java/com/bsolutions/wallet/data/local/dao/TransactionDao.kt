@@ -42,6 +42,18 @@ interface TransactionDao {
 
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND accountId = :accountId AND isDeleted = 0 ORDER BY date DESC")
     fun getTransactionsByAccount(ownerId: String, accountId: String): Flow<List<TransactionEntity>>
+
+    /** Lectura paginada para la UI del detalle de cuenta. Usa el índice idx_transactions_account. */
+    @Query(
+        "SELECT * FROM transactions WHERE ownerId = :ownerId AND accountId = :accountId AND " +
+            "isDeleted = 0 ORDER BY date DESC LIMIT :limit OFFSET :offset"
+    )
+    suspend fun getTransactionsPaginated(
+        ownerId: String,
+        accountId: String,
+        limit: Int,
+        offset: Int
+    ): List<TransactionEntity>
     
     @Query("SELECT * FROM transactions WHERE ownerId = :ownerId AND id = :id AND isDeleted = 0")
     suspend fun getTransactionById(ownerId: String, id: String): TransactionEntity?
@@ -230,5 +242,30 @@ interface TransactionDao {
         }
         check(balanceUpdated == 1) { "No se pudo revertir el saldo de la cuenta" }
         check(softDeleteTransaction(current.ownerId, current.id) == 1) { "No se pudo eliminar el movimiento" }
+    }
+
+    /**
+     * Inserta varias operaciones atómicamente: todas las transacciones y sus
+     * operaciones de sincronización en una sola transacción SQLite.
+     *
+     * Si alguna transacción falla (validación, duplicado, cuenta inexistente),
+     * se revierte todo el lote: no queda ningún movimiento escrito.
+     */
+    @Transaction
+    suspend fun insertAllWithBalanceAndOps(
+        transactions: List<TransactionEntity>,
+        ops: List<PendingOperationEntity?>
+    ) {
+        require(transactions.size == ops.size) {
+            "El número de transacciones y operaciones debe coincidir"
+        }
+        transactions.forEachIndexed { index, transaction ->
+            insertWithBalance(transaction).let { success ->
+                ops[index]?.let { insertPendingOp(it) }
+                if (!success) {
+                    throw IllegalStateException("No se pudo insertar la transacción ${transaction.id}")
+                }
+            }
+        }
     }
 }

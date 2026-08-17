@@ -64,6 +64,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class MainActivity : FragmentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
+    private val authViewModel: com.bsolutions.wallet.presentation.auth.AuthViewModel by viewModels()
     private val emailOAuthReturnNonce = MutableStateFlow(0L)
 
     private fun recordEmailOAuthReturn(intent: Intent?): Boolean {
@@ -132,6 +133,7 @@ class MainActivity : FragmentActivity() {
         setContent {
             WalletTheme {
                 val profile by mainViewModel.profile.collectAsState()
+                val authState by authViewModel.uiState.collectAsState()
 
                 SideEffect {
                     if (profile.screenCaptureProtectionEnabled) {
@@ -197,7 +199,8 @@ class MainActivity : FragmentActivity() {
                         AppDrawerContent(
                             userName = profile.userName,
                             walletName = profile.walletName,
-                            email = profile.email,
+                            email = if (authState.isLoggedIn) authState.userEmail else profile.email,
+                            isLoggedIn = authState.isLoggedIn,
                             currentRoute = currentRoute,
                             onNavigate = { route ->
                                 scope.launch { drawerState.close() }
@@ -214,6 +217,14 @@ class MainActivity : FragmentActivity() {
                                         navController.navigate(route) { launchSingleTop = true }
                                     }
                                 }
+                            },
+                            onLoginClick = {
+                                scope.launch { drawerState.close() }
+                                navController.navigate("login") { launchSingleTop = true }
+                            },
+                            onLogoutClick = {
+                                scope.launch { drawerState.close() }
+                                authViewModel.logout()
                             }
                         )
                     }

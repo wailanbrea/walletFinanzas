@@ -37,9 +37,22 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit,
     viewModel: AuthViewModel = hiltViewModel()
 ) {
+    val savedEmail by viewModel.rememberedEmail.collectAsState(initial = "")
+    val savedRememberSession by viewModel.rememberSession.collectAsState(initial = true)
+
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var rememberMe by remember { mutableStateOf(true) }
+
+    LaunchedEffect(savedEmail) {
+        if (email.isBlank() && savedEmail.isNotBlank()) {
+            email = savedEmail
+        }
+    }
+    LaunchedEffect(savedRememberSession) {
+        rememberMe = savedRememberSession
+    }
 
     val authState by viewModel.uiState.collectAsState()
     val isLoading = authState.isLoading
@@ -163,11 +176,34 @@ fun LoginScreen(
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 24.dp),
+                        .padding(bottom = 12.dp),
                     shape = RoundedCornerShape(8.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     singleLine = true
                 )
+
+                // Recordar sesión
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = rememberMe,
+                        onCheckedChange = { rememberMe = it },
+                        colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = stringResource(R.string.auth_remember_session),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .clickable { rememberMe = !rememberMe }
+                    )
+                }
 
                 // Mensaje de error de autenticación
                 authState.error?.let { error ->
@@ -184,7 +220,7 @@ fun LoginScreen(
 
                 // Action Buttons
                 Button(
-                    onClick = { viewModel.login(email, password) },
+                    onClick = { viewModel.login(email, password, rememberMe) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),

@@ -15,9 +15,65 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
 
 class TransactionController extends Controller
 {
+    /**
+     * Exporta los movimientos del usuario autenticado como CSV descargable.
+     *
+     * Filtros opcionales: account_id, from, to, currency.
+     * Max 10 000 filas; aborta 400 si se excede.
+     */
+    public function exportCsv(Request $request): Response
+    {
+        $validated = $request->validate([
+            'account_id' => ['nullable', 'string', 'max:255'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'currency' => ['nullable', 'string', 'size:3'],
+        ]);
+
+        $query = Transaction::query()
+            ->where('user_id', $request->user()->id)
+            ->with(['account'])
+            ->when($validated['account_id'] ?? null, fn ($q, string $id) => $q->where('account_id', $id))
+            ->when($validated['from'] ?? null, fn ($q, string $date) => $q->whereDate('occurred_at', '>=', $date))
+            ->when($validated['to'] ?? null, fn ($q, string $date) => $q->whereDate('occurred_at', '<=', $date))
+            ->when($validated['currency'] ?? null, fn ($q, string $cur) => $q->where('currency', $cur))
+            ->orderBy('occurred_at', 'desc');
+
+        $count = $query->count();
+        if ($count > 10000) {
+            abort(400, 'Demasiados movimientos. Ajusta los filtros para obtener 10 000 o menos.');
+        }
+
+        $transactions = $query->get();
+
+        $lines = ["id,account_id,account_name,amount,currency,description,occurred_at,status"];
+        foreach ($transactions as $tx) {
+            $description = str_replace('"', '""', (string) $tx->description);
+            $lines[] = sprintf(
+                '%s,%s,"%s",%d,%s,"%s",%s,%s',
+                $tx->id,
+                $tx->account_id,
+                str_replace('"', '""', (string) $tx->account->name),
+                $tx->amount,
+                $tx->currency,
+                $description,
+                $tx->occurred_at->format('Y-m-d\TH:i:s\Z'),
+                $tx->status,
+            );
+        }
+
+        $csv = "\xEF\xBB\xBF" . implode("\r\n", $lines) . "\r\n";
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => 'attachment; filename="transactions_' . date('Y-m-d') . '.csv"',
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([

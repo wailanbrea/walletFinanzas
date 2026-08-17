@@ -38,8 +38,6 @@ fun handleWalletResponse(
     rejectedToken: String?,
     session: WalletSessionStore
 ) {
-    // A delayed 401 from an old request must not erase a token saved by a newer login.
-    if (statusCode == 401 && rejectedToken != null && session.token == rejectedToken) {
-        session.clear()
-    }
+    // No borramos la sesión local silenciosamente por un 401 de endpoints auxiliares.
+    // La sesión solo se destruye ante un logout explícito del usuario.
 }

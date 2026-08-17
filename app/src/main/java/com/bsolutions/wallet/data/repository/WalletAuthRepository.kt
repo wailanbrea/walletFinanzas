@@ -9,14 +9,17 @@ import com.bsolutions.wallet.core.network.RegisterRequest
 import com.bsolutions.wallet.core.network.WalletApi
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
+import kotlinx.coroutines.flow.StateFlow
 import retrofit2.HttpException
 import java.io.IOException
 
 interface WalletSessionStore {
     val token: String?
     val user: AuthUser?
+    val rememberSession: Boolean
+    val userFlow: StateFlow<AuthUser?>
 
-    fun save(token: String, user: AuthUser)
+    fun save(token: String, user: AuthUser, rememberSession: Boolean = true)
     fun clear()
 }
 
@@ -26,10 +29,12 @@ class WalletAuthRepository(
     private val deviceName: String,
     private val localDataIsolation: LocalDataIsolation = NoOpLocalDataIsolation
 ) {
+    val currentUserFlow: StateFlow<AuthUser?> = session.userFlow
+
     val currentUser: AuthUser?
         get() = session.user
 
-    suspend fun signIn(email: String, password: String): AuthResult = runAuth {
+    suspend fun signIn(email: String, password: String, rememberMe: Boolean = true): AuthResult = runAuth(rememberMe) {
         api.login(
             LoginRequest(
                 email = email.trim().lowercase(),
@@ -39,7 +44,7 @@ class WalletAuthRepository(
         ).data
     }
 
-    suspend fun signUp(name: String, email: String, password: String): AuthResult = runAuth {
+    suspend fun signUp(name: String, email: String, password: String): AuthResult = runAuth(rememberMe = true) {
         api.register(
             RegisterRequest(
                 name = name.trim(),
@@ -65,14 +70,14 @@ class WalletAuthRepository(
         AuthResult.Error(mapAuthError(e))
     }
 
-    private suspend fun runAuth(request: suspend () -> AuthPayload): AuthResult = try {
+    private suspend fun runAuth(rememberMe: Boolean = true, request: suspend () -> AuthPayload): AuthResult = try {
         val payload = request()
         val user = AuthUser(
             uid = payload.user.id.toString(),
             email = payload.user.email,
             name = payload.user.name
         )
-        session.save(payload.token, user)
+        session.save(payload.token, user, rememberMe)
         try {
             localDataIsolation.activateUser(user.uid)
         } catch (e: Exception) {

@@ -188,7 +188,6 @@ class DefaultEmailConnectionsRepository(
         request()
     } catch (exception: HttpException) {
         if (exception.code() == 401) {
-            session.clear()
             throw EmailSessionExpiredException()
         }
         throw exception

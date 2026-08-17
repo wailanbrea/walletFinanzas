@@ -34,6 +34,20 @@ object WalletDatabaseMigrations {
         }
     }
 
+    /** v15 -> v16: índices para rendimiento de la pantalla de cuentas. */
+    val MIGRATION_15_16 = object : Migration(15, 16) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_transactions_account ON " +
+                    "transactions(ownerId, accountId, isDeleted)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_transactions_deleted ON " +
+                    "transactions(ownerId, isDeleted)"
+            )
+        }
+    }
+
     /** v13 -> v14: fuentes autorizadas y avisos push crudos de la Fase A. */
     val MIGRATION_13_14 = object : Migration(13, 14) {
         override fun migrate(database: SupportSQLiteDatabase) {

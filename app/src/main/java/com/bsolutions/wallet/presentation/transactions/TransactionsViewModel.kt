@@ -287,29 +287,30 @@ class TransactionsViewModel @Inject constructor(
             val now = System.currentTimeMillis()
             val baseNote = note.ifBlank { "Transacción dividida" }
 
-            splits.forEachIndexed { index, (amount, categoryId) ->
-                if (amount > 0L) {
-                    val finalCategoryId = categoryId.ifBlank {
-                        ExpenseCategorizer.categoryIdFor(
-                            text = baseNote,
-                            categories = categoryRepository.getCategories().first(),
-                            customRules = categoryRules.rules.first()
-                        ).orEmpty()
-                    }
-                    transactionRepository.addTransactionWithBalance(
-                        Transaction(
-                            id = UUID.randomUUID().toString(),
-                            accountId = accountId,
-                            amount = amount,
-                            type = type,
-                            categoryId = finalCategoryId,
-                            date = now + index,
-                            note = "$baseNote (${index + 1}/${splits.size})",
-                            currency = account.currency
-                        )
-                    )
+            // Construye todas las transacciones primero (resolviendo categoría de cada split).
+            val transactions = splits.mapIndexed { index, (amount, categoryId) ->
+                if (amount <= 0L) return@mapIndexed null
+                val finalCategoryId = categoryId.ifBlank {
+                    ExpenseCategorizer.categoryIdFor(
+                        text = baseNote,
+                        categories = categoryRepository.getCategories().first(),
+                        customRules = categoryRules.rules.first()
+                    ).orEmpty()
                 }
-            }
+                Transaction(
+                    id = UUID.randomUUID().toString(),
+                    accountId = accountId,
+                    amount = amount,
+                    type = type,
+                    categoryId = finalCategoryId,
+                    date = now + index,
+                    note = "$baseNote (${index + 1}/${splits.size})",
+                    currency = account.currency
+                )
+            }.filterNotNull()
+
+            // Una sola llamada batch: todas o ninguna.
+            transactionRepository.addTransactionsWithBalance(transactions)
         }
     }
 }

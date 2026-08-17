@@ -8,6 +8,7 @@ import com.bsolutions.wallet.data.preferences.UserPreferencesRepository
 import com.bsolutions.wallet.data.repository.AuthResult
 import com.bsolutions.wallet.data.repository.WalletAuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,12 +40,34 @@ class AuthViewModel @Inject constructor(
     )
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
-    fun login(email: String, password: String) {
+    init {
+        viewModelScope.launch {
+            authRepository.currentUserFlow.collect { user ->
+                _uiState.value = _uiState.value.copy(
+                    isLoggedIn = user != null,
+                    userEmail = user?.email.orEmpty()
+                )
+            }
+        }
+    }
+
+    val rememberSession: Flow<Boolean> = userPreferencesRepository.rememberSession
+    val rememberedEmail: Flow<String> = userPreferencesRepository.rememberedEmail
+
+    fun login(email: String, password: String, rememberMe: Boolean = true) {
         if (email.isBlank() || password.isBlank()) {
             _uiState.value = _uiState.value.copy(error = "Completa correo y contraseña.")
             return
         }
-        runAuth { authRepository.signIn(email, password) }
+        viewModelScope.launch {
+            userPreferencesRepository.setRememberSession(rememberMe)
+            if (rememberMe) {
+                userPreferencesRepository.setRememberedEmail(email.trim().lowercase())
+            } else {
+                userPreferencesRepository.setRememberedEmail("")
+            }
+        }
+        runAuth { authRepository.signIn(email, password, rememberMe) }
     }
 
     fun register(name: String, email: String, password: String) {

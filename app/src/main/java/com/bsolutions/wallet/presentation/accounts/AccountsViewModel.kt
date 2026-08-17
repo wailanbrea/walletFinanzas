@@ -2,7 +2,13 @@ package com.bsolutions.wallet.presentation.accounts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.bsolutions.wallet.core.common.AccountBalances
+import com.bsolutions.wallet.core.database.WalletOwnerScope
+import com.bsolutions.wallet.data.repository.TransactionPagingSource
 import com.bsolutions.wallet.domain.model.Account
 import com.bsolutions.wallet.domain.model.Transaction
 import com.bsolutions.wallet.data.preferences.UserPreferencesRepository
@@ -15,6 +21,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -26,11 +34,11 @@ data class AccountsUiState(
     /** Subtotales en divisas distintas de RD$ (null si todas las cuentas son DOP). */
     val foreignBalancesSubtitle: String? = null,
     val selectedAccountId: String? = null,
-    val selectedAccountTransactions: List<Transaction> = emptyList(),
     /**
-     * Movimientos de cada cuenta. Lo usa el aviso de borrado para enseñar lo que se va a
+     * Movimientos de cada cuenta. Solo lo usa el aviso de borrado para enseñar lo que se va a
      * llevar por delante: borrar una cuenta sin decir cuántos movimientos arrastra es
-     * pedir una confirmación a ciegas.
+     * pedir una confirmación a ciegas. La lista del detalle de cuenta NO va aquí: va
+     * paginada en [AccountsViewModel.selectedTransactions].
      */
     val transactionsByAccount: Map<String, List<Transaction>> = emptyMap(),
     val financialCountryCode: String = "DO",
@@ -43,10 +51,45 @@ class AccountsViewModel @Inject constructor(
     private val accountRepository: AccountRepository,
     private val transactionRepository: TransactionRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
-    private val debtLedger: DebtLedger
+    private val debtLedger: DebtLedger,
+    private val ownerScope: WalletOwnerScope
 ) : ViewModel() {
 
     private val selectedAccountId = MutableStateFlow<String?>(null)
+
+    /**
+     * Movimientos de la cuenta seleccionada, paginados.
+     *
+     * El detalle de cuenta ya no carga toda la historia de la cuenta en memoria: va
+     * paginando de [TransactionPagingSource.PAGE_SIZE] en [TransactionPagingSource.PAGE_SIZE]
+     * sobre el índice idx_transactions_account. Sin cuenta seleccionada el flujo es
+     * vacío; al cambiar de cuenta se crea un Pager nuevo y la lista se reinicia.
+     */
+    val selectedTransactions: StateFlow<PagingData<Transaction>> =
+        selectedAccountId.flatMapLatest { accountId ->
+            if (accountId == null) {
+                flowOf(PagingData.empty())
+            } else {
+                Pager(
+                    config = PagingConfig(
+                        pageSize = TransactionPagingSource.PAGE_SIZE,
+                        prefetchDistance = TransactionPagingSource.PAGE_SIZE / 2
+                    ),
+                    pagingSourceFactory = {
+                        transactionRepository.getTransactionsPaging(
+                            ownerScope.currentOwnerId(),
+                            accountId
+                        )
+                    }
+                ).flow
+            }
+        }
+        .cachedIn(viewModelScope)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = PagingData.empty()
+        )
 
     val uiState: StateFlow<AccountsUiState> = combine(
         accountRepository.getAccounts(),
@@ -56,18 +99,12 @@ class AccountsViewModel @Inject constructor(
     ) { accounts, allTransactions, selectedId, profile ->
         // Total principal solo en RD$; otras divisas como subtotales aparte
         val total = AccountBalances.primaryTotal(accounts)
-        val filteredTx = if (selectedId != null) {
-            allTransactions.filter { it.accountId == selectedId }
-        } else {
-            emptyList()
-        }
 
         AccountsUiState(
             accounts = accounts,
             totalBalance = total,
             foreignBalancesSubtitle = AccountBalances.foreignSubtitle(accounts),
             selectedAccountId = selectedId,
-            selectedAccountTransactions = filteredTx,
             transactionsByAccount = allTransactions.groupBy { it.accountId },
             financialCountryCode = profile.financialCountryCode,
             balancesHidden = profile.balancesHidden

@@ -8,6 +8,9 @@ import com.bsolutions.wallet.domain.model.Goal
 import com.bsolutions.wallet.domain.model.PlannedPayment
 import com.bsolutions.wallet.domain.model.Transaction
 import kotlinx.coroutines.flow.Flow
+import androidx.paging.PagingData
+import androidx.paging.PagingSource
+import androidx.paging.PagingState
 
 interface AccountRepository {
     fun getAccounts(): Flow<List<Account>>
@@ -26,6 +29,8 @@ interface AccountRepository {
 interface TransactionRepository {
     fun getTransactions(): Flow<List<Transaction>>
     fun getTransactionsByAccount(accountId: String): Flow<List<Transaction>>
+    /** Transacciones paginadas de una cuenta. */
+    fun getTransactionsPaging(ownerId: String, accountId: String): PagingSource<Int, Transaction>
     suspend fun getTransaction(id: String): Transaction?
     /** Movimientos de una deuda: el gasto que la originó y los abonos recibidos. */
     suspend fun getTransactionsForDebt(debtId: String): List<Transaction>
@@ -38,6 +43,11 @@ interface TransactionRepository {
     suspend fun deleteTransaction(id: String)
     /** Revierte el efecto del movimiento en el saldo y lo borra, atómicamente. */
     suspend fun deleteTransactionWithBalance(transaction: Transaction)
+    /**
+     * Inserta varias transacciones y ajusta los saldos en una sola transacción
+     * atómica. Si alguna falla, se revierte todo el lote.
+     */
+    suspend fun addTransactionsWithBalance(transactions: List<Transaction>)
 }
 
 interface CategoryRepository {

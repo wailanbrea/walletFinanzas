@@ -36,6 +36,8 @@ import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
+import androidx.paging.PagingSource
+import androidx.paging.PagingState
 import javax.inject.Inject
 
 // Mappers
@@ -194,6 +196,58 @@ class TransactionRepositoryImpl @Inject constructor(
         val entity = transaction.toEntity(ownerScope.currentOwnerId()).copy(isDeleted = true)
         dao.softDeleteWithBalanceAndOp(entity, SyncRepository.transactionOp(gson, entity))
         syncScheduler.requestSyncNow()
+    }
+
+    override suspend fun addTransactionsWithBalance(transactions: List<Transaction>) {
+        // Construye entidades y ops para todas, luego escribe en lote atómico.
+        val entities = transactions.map { it.toEntity(ownerScope.currentOwnerId()) }
+        val ops = transactions.map { SyncRepository.transactionOp(gson, it.toEntity(ownerScope.currentOwnerId())) }
+        dao.insertAllWithBalanceAndOps(entities, ops)
+        syncScheduler.requestSyncNow() // Una sola llamada, no una por split.
+    }
+
+    override fun getTransactionsPaging(ownerId: String, accountId: String): PagingSource<Int, Transaction> =
+        TransactionPagingSource(dao, ownerId, accountId)
+}
+
+/**
+ * PagingSource para cargar transacciones de una cuenta con LIMIT/OFFSET.
+ *
+ * Usa el índice idx_transactions_account para evitar full table scan.
+ */
+class TransactionPagingSource(
+    private val dao: TransactionDao,
+    private val ownerId: String,
+    private val accountId: String
+) : PagingSource<Int, Transaction>() {
+
+    companion object {
+        const val PAGE_SIZE = 30
+    }
+
+    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Transaction> {
+        val offset = params.key ?: 0
+        val limit = params.loadSize
+        val entities = dao.getTransactionsPaginated(ownerId, accountId, limit, offset)
+        return if (entities.isEmpty()) {
+            LoadResult.Page(
+                data = emptyList(),
+                prevKey = null,
+                nextKey = null
+            )
+        } else {
+            LoadResult.Page(
+                data = entities.map { it.toDomain() },
+                prevKey = if (offset == 0) null else offset,
+                nextKey = if (offset == 0 && entities.size < limit) null else offset + entities.size
+            )
+        }
+    }
+
+    override fun getRefreshKey(state: PagingState<Int, Transaction>): Int? {
+        val anchor = state.anchorPosition ?: return null
+        val currentPage = state.closestPageToPosition(anchor) ?: return null
+        return currentPage.prevKey
     }
 }
 

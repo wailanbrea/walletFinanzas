@@ -73,6 +73,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    testOptions {
+        unitTests {
+            // Robolectric necesita los recursos del app para dar un Contexto real a los tests de DAO
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 kotlin {
@@ -143,13 +149,24 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.svg)
 
+    // Paging3 para paginación en la UI
+    implementation(libs.androidx.paging.runtime)
+    implementation(libs.androidx.paging.compose)
+
     // Test
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.room.testing)
+    // Room sobre JVM para tests unitarios (JdbcSQLiteOpenHelperFactory)
+    testImplementation(libs.sqlite.jdbc)
+    // Contexto Android en la JVM para construir la base Room real en tests de DAO
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.room.testing)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
