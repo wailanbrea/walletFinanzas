@@ -114,7 +114,7 @@ class EmailMailboxScanner
         $connectionUpdate = ['status' => 'connected'];
         $nextCursor = $batch['next_cursor'];
         if ($nextCursor && $nextCursor === $cursor) {
-            throw new RuntimeException('email_provider_cursor_stalled');
+            $nextCursor = null;
         }
         if ($backfill) {
             if ($nextCursor) {
